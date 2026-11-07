@@ -287,7 +287,9 @@ check('hash configurato', strlen($hash) > 20);
 $page = App\Auth::loginPage('Password errata.', true);
 check('pagina di login in italiano con errore', str_contains($page, 'Accedi') && str_contains($page, 'Password errata.'));
 check('pagina di login escapa l\'HTML', !str_contains(App\Auth::loginPage('<script>x</script>'), '<script>x</script>'));
-check('avviso se password non configurata', str_contains(App\Auth::loginPage(null, false), 'admin_password_hash'));
+check('login con password in chiaro', (function(){ $_SESSION=[]; return App\Auth::attempt(['admin_password'=>'abc123'],'abc123'); })());
+check('login errato rifiutato', !App\Auth::attempt(['admin_password'=>'abc123'],'xxx'));
+check('avviso se password non configurata', str_contains(App\Auth::loginPage(null, false), 'admin_password'));
 
 echo "\n$passed ok, $failed falliti\n";
 exit($failed === 0 ? 0 : 1);

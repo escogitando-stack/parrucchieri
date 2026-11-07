@@ -13,7 +13,11 @@ return [
         'pass'   => 'PASSWORD_DATABASE',
     ],
 
-    // Password per entrare nell'app. Genera l'hash da Terminale cPanel con:
+    // Password per entrare nell'app (modo semplice): scrivila qui tra apici singoli.
+    // Il file server/config.php non è raggiungibile dal web.
+    'admin_password' => '',
+
+    // Alternativa più sicura: lascia vuoto sopra e inserisci un hash generato con
     //   php -r 'echo password_hash("LA_TUA_PASSWORD", PASSWORD_DEFAULT), "\n";'
     'admin_password_hash' => '',
 

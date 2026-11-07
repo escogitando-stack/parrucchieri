@@ -37,7 +37,8 @@ Poi fai il merge del branch su `main`. Quando l'azione è verde il branch `deplo
 1. In cPanel → *Git Version Control* → *Gestisci* → **Update from Remote**, poi **Deploy HEAD Commit**.
 2. In *File Manager*, nella cartella del dominio, copia `server/config.sample.php` in `server/config.php` e compilalo:
    - dati del database (punto 3),
-   - `admin_password_hash`: dal *Terminale* di cPanel esegui
+   - `admin_password`: la password per entrare, tra apici singoli (modo più semplice).
+   - In alternativa `admin_password_hash`: dal *Terminale* di cPanel esegui
      `php -r 'echo password_hash("LA_TUA_PASSWORD", PASSWORD_DEFAULT), "\n";'` e incolla il risultato.
 3. Apri **https://appuntamenti4me.it** e accedi con la password scelta.
 

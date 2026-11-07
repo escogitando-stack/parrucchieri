@@ -40,8 +40,15 @@ final class Auth
     /** @param array<string,mixed> $cfg */
     public static function attempt(array $cfg, string $password): bool
     {
-        $hash = (string)($cfg['admin_password_hash'] ?? '');
-        if ($hash === '' || !password_verify($password, $hash)) {
+        $hash = trim((string)($cfg['admin_password_hash'] ?? ''));
+        $plain = (string)($cfg['admin_password'] ?? '');
+        $ok = false;
+        if ($hash !== '') {
+            $ok = password_verify($password, $hash);
+        } elseif ($plain !== '') {
+            $ok = hash_equals($plain, $password);
+        }
+        if (!$ok) {
             sleep(1); // rallenta i tentativi a raffica
             return false;
         }
@@ -65,7 +72,7 @@ final class Auth
     public static function loginPage(?string $error = null, bool $configured = true): string
     {
         $err = $error ? '<p class="err">' . htmlspecialchars($error, ENT_QUOTES, 'UTF-8') . '</p>' : '';
-        $warn = $configured ? '' : '<p class="err">Password amministratore non configurata: imposta <code>admin_password_hash</code> in <code>server/config.php</code>.</p>';
+        $warn = $configured ? '' : '<p class="err">Password amministratore non configurata: imposta <code>admin_password</code> in <code>server/config.php</code>.</p>';
         return <<<HTML
 <!DOCTYPE html>
 <html lang="it">
