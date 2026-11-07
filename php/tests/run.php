@@ -433,11 +433,11 @@ check('vetrina: prova e categorie', str_contains($land, '30 giorni') && str_cont
 check('vetrina: vantaggi, costi, come funziona e FAQ', str_contains($land, 'id="vantaggi"') && str_contains($land, 'id="costi"') && str_contains($land, 'id="faq"') && str_contains($land, 'id="come-funziona"'));
 check('vetrina: prezzi dal file di configurazione', str_contains($land, '19 € al mese') && str_contains(Pages::landing($pub + ['x' => 1]), 'Mensile'));
 check('vetrina: senza prezzi niente cifre inventate', !str_contains(Pages::landing(['trial_days' => 30]), '€ al mese') && str_contains(Pages::landing(['trial_days' => 30]), 'Prova gratuita'));
-check('FAQ: dati dinamici e limiti dichiarati', str_contains(Pages::landing($pub), 'Quanto costa?') && str_contains(Pages::landing($pub), 'non sono ancora disponibili') && str_contains(Pages::landing($pub), 'faq@example.com') === false);
+check('FAQ: dati dinamici e limiti dichiarati', str_contains(Pages::landing($pub), 'Quanto costa?') && str_contains(Pages::landing($pub), 'Come vengono avvisati i clienti?') && str_contains(Pages::landing($pub), 'faq@example.com') === false);
 check('FAQ: email di assistenza se impostata', str_contains(Pages::landing($pub + ['contact_email' => 'aiuto@example.com']), 'aiuto@example.com'));
 check('vetrina: dati strutturati validi', (function () use ($land) { preg_match('#<script type="application/ld\+json">(.*?)</script>#s', $land, $m); $j = json_decode($m[1] ?? '', true); return is_array($j) && $j['@type'] === 'FAQPage' && count($j['mainEntity']) >= 10; })());
 check('vetrina: il testo dell\'utente non rompe lo script', (function () use ($pub) { $h = Pages::landing($pub + ['pricing' => ['monthly_label' => '</script><b>x']]); return substr_count($h, '</script>') === 1 && !str_contains($h, '<b>x'); })());
-check('vetrina: immagine e icone presenti', str_contains($land, 'class="shot"') && str_contains($land, '<svg viewBox="0 0 960 540"') && substr_count($land, 'class="ico"') === 8);
+check('vetrina: immagine e icone presenti', str_contains($land, 'class="shot"') && str_contains($land, '<svg viewBox="0 0 960 540"') && substr_count($land, 'class="ico"') === 9);
 check('vetrina: link ai contatti', str_contains($land, 'href="/contatti"'));
 $ct = Pages::contact($pub);
 check('contatti: email predefinita', str_contains($ct, 'mailto:info@appuntamenti4me.it'));

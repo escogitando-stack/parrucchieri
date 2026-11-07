@@ -290,8 +290,9 @@ SVG;
             ["Va bene per la mia attività?", "È pensata per chiunque lavori su appuntamento: parrucchieri, barbieri, centri unghie ed estetici, officine, studi di tatuaggi e altre attività. Scegli il tipo di attività e trovi già servizi e nomi adatti, poi cambi tutto come preferisci."],
             ['Posso gestire più collaboratori?', "Sì. L'agenda ha una colonna per ogni collaboratore, puoi bloccare gli orari (pausa pranzo, ferie) e ti avvisa quando due appuntamenti si sovrappongono."],
             ['I miei dati sono separati da quelli degli altri negozi?', 'Sì. Ogni negozio ha il proprio spazio e vede soltanto i propri clienti, appuntamenti, servizi e prodotti.'],
-            ['I miei clienti possono prenotare da soli online?', "Non ancora: l'agenda la gestisci tu e il tuo staff. Le prenotazioni online da parte dei clienti non sono ancora disponibili."],
-            ['Invia promemoria ai clienti?', 'Non ancora. Per ora non ci sono SMS o messaggi automatici di promemoria.'],
+            ['I miei clienti possono prenotare da soli online?', "Sì. Ogni negozio ha la sua pagina (per esempio appuntamenti4me.it/nome-del-negozio) con logo, contatti e orari. I clienti scelgono servizio, giorno e ora tra quelli liberi; se non trovano un orario adatto possono inviare comunque una richiesta. Le richieste le approvi tu dal backoffice."],
+            ['Come vengono avvisati i clienti?', "Con una email automatica quando inviano la richiesta e quando tu la confermi o la rifiuti. Per WhatsApp l'app prepara il messaggio già scritto e lo invii tu con un tocco: non c'è invio automatico. Non sono previsti SMS."],
+            ['Devo essere approvato per usare l\'app?', "Sì: ogni nuova registrazione viene controllata prima dell'attivazione, di solito in poco tempo. Appena approvata ricevi una email e parte la prova gratuita."],
             ['Come ricevo assistenza?', $contact],
         ];
     }
@@ -358,6 +359,7 @@ SVG;
         $i_chart = self::icon('chart');
         $i_chat = self::icon('chat');
         $i_euro = self::icon('euro');
+        $i_calendar = self::icon('calendar');
         $hero = self::heroImage();
         $body = <<<HTML
 <section class="hero">
@@ -380,6 +382,7 @@ SVG;
     <div class="card"><div class="ico">{$i_users}</div><h3>Storico dei clienti</h3><p>Ogni cliente ha la sua scheda con gli appuntamenti passati e le note, per ricordare gusti, lavori e dettagli.</p></div>
     <div class="card"><div class="ico">{$i_chart}</div><h3>Sotto controllo</h3><p>Vedi quanti appuntamenti hai oggi e in arrivo, l'incasso dei servizi completati e i prodotti in esaurimento.</p></div>
     <div class="card"><div class="ico">{$i_chat}</div><h3>Semplice e in italiano</h3><p>Importi in euro, date e orari all'italiana, comandi chiari: si impara in pochi minuti.</p></div>
+    <div class="card"><div class="ico">{$i_calendar}</div><h3>Prenotazioni online</h3><p>Ogni negozio ha la sua pagina con logo, contatti e orari: i clienti prenotano da soli negli orari liberi e tu approvi con un tocco.</p></div>
     <div class="card"><div class="ico">{$i_euro}</div><h3>Prezzo senza sorprese</h3><p>Un solo prezzo con tutte le funzioni, senza limiti di clienti o appuntamenti. Prima provi gratis, poi scegli.</p></div>
   </div>
 </section>
@@ -387,9 +390,9 @@ SVG;
 <section class="blk" id="come-funziona">
   <h2>Come funziona</h2>
   <div class="steps">
-    <div class="card"><h3>Ti registri</h3><p>Nome dell'attività, tipo di attività, email e password. Ci vuole un minuto e non serve la carta.</p></div>
+    <div class="card"><h3>Ti registri</h3><p>Nome dell'attività, tipo di attività, email e password. Ci vuole un minuto e non serve la carta. Dopo l'approvazione parte la prova.</p></div>
     <div class="card"><h3>Trovi già i servizi</h3><p>L'agenda parte con servizi e collaboratore pronti. Cambi prezzi, durate e nomi, aggiungi i tuoi clienti.</p></div>
-    <div class="card"><h3>Gestisci gli appuntamenti</h3><p>Prenoti, sposti, completi e annulli dall'agenda. Dopo la prova scegli se continuare.</p></div>
+    <div class="card"><h3>Gestisci gli appuntamenti</h3><p>Prenoti, sposti, completi e annulli dall'agenda, e approvi le richieste dei clienti dalla tua pagina. Dopo la prova scegli se continuare.</p></div>
   </div>
 </section>
 
@@ -472,7 +475,7 @@ HTML;
         $body = <<<HTML
 <form class="box" method="post" action="/registrati">
   <h1>Prova gratis per $days giorni</h1>
-  <p class="sub">Crea il tuo account: ti servono un minuto. Nessuna carta richiesta.</p>
+  <p class="sub">Crea il tuo account: ti serve un minuto. Nessuna carta richiesta. La registrazione viene approvata prima dell'attivazione.</p>
   $err
   <label for="business">Nome dell'attività</label>
   <input id="business" name="business" value="$b" maxlength="120" required autofocus>

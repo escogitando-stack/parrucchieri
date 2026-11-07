@@ -1,6 +1,6 @@
 export type View = "dashboard" | "calendar" | "appointments" | "clients" | "staff" | "services" | "products" | "settings";
 
-export type AppointmentStatus = "booked" | "confirmed" | "in_progress" | "completed" | "cancelled" | "no_show";
+export type AppointmentStatus = "requested" | "booked" | "confirmed" | "in_progress" | "completed" | "cancelled" | "no_show";
 
 export interface Appointment {
   id: number;
@@ -17,6 +17,9 @@ export interface Appointment {
   recurrence_interval: string;
   client_name?: string;
   client_phone?: string;
+  client_email?: string;
+  source?: string;
+  whatsapp?: { confirm: string; decline: string };
   staff_name?: string | null;
   staff_color?: string | null;
   service_names?: string | null;
@@ -77,6 +80,7 @@ export interface Service {
   color: string;
   category: string;
   active: number;
+  online: number;
   created_at: string;
 }
 
@@ -116,6 +120,7 @@ export interface Stats {
   completed_appointments: number;
   revenue: number;
   low_stock_products: number;
+  pending_requests: number;
 }
 
 export interface PaginatedState {

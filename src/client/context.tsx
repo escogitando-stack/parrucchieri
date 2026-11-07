@@ -31,6 +31,7 @@ export interface AppContextValue {
   }) => Promise<void>;
   updateAppointment: (id: number, data: Partial<Appointment> & { allow_conflict?: boolean }) => Promise<void>;
   deleteAppointment: (id: number) => Promise<void>;
+  decideAppointment: (id: number, approve: boolean, body?: { staff_id?: number; start_time?: string; allow_conflict?: boolean }) => Promise<{ email_sent: boolean; whatsapp_url: string }>;
 
   // Appointment detail
   selectedAppointment: Appointment | null;

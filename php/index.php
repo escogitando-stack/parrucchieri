@@ -210,6 +210,7 @@ if (preg_match('#^/([a-z0-9][a-z0-9-]{1,78}[a-z0-9])(?:/(logo|giorni|orari|preno
 
 if ($accountId === null) {
     if ($path === '/admin') {
+        Auth::start();
         $_SESSION['after_login'] = '/admin';
         redirect('/login');
     }

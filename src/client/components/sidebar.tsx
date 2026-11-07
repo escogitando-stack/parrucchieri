@@ -88,7 +88,10 @@ function SidebarContent({ currentView, onNavigate }: { currentView: View; onNavi
           >
             <item.icon className="h-4 w-4" />
             <span className="flex-1 text-left">{item.label}</span>
-            {item.view === "appointments" && stats.appointments > 0 && (
+            {item.view === "appointments" && stats.pending_requests > 0 && (
+              <Badge variant="destructive" className="h-5 px-1.5 text-xs" title="Richieste da approvare">{stats.pending_requests}</Badge>
+            )}
+            {item.view === "appointments" && !(stats.pending_requests > 0) && stats.appointments > 0 && (
               <Badge variant="secondary" className="h-5 px-1.5 text-xs">{stats.appointments}</Badge>
             )}
             {item.view === "clients" && stats.clients > 0 && (

@@ -66,6 +66,13 @@ export function ServiceList() {
                     >
                       {svc.active ? "Attivo" : "Non attivo"}
                     </button>
+                    <button
+                      className={`mt-1 block text-xs ${svc.online ? "text-primary" : "text-muted-foreground"}`}
+                      title="Se attivo, i clienti possono prenotarlo dalla tua pagina pubblica"
+                      onClick={() => updateService(svc.id, { online: svc.online ? 0 : 1 })}
+                    >
+                      {svc.online ? "Prenotabile online" : "Solo interno"}
+                    </button>
                   </TableCell>
                   <TableCell>
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => deleteService(svc.id)}>

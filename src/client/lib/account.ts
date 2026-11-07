@@ -19,8 +19,21 @@ export interface AccountInfo {
   category_label: string;
   terms: Terms;
   categories: Record<string, string>;
-  plan: { state: "trial" | "active" | "expired" | "suspended"; days_left: number; ends_at: string };
+  plan: { state: "trial" | "active" | "expired" | "suspended" | "pending"; days_left: number; ends_at: string };
   is_admin: boolean;
+  slug: string;
+  shop_url: string;
+  booking_enabled: number;
+  slot_minutes: number;
+  booking_notice_hours: number;
+  booking_horizon_days: number;
+  shop_phone: string;
+  shop_whatsapp: string;
+  shop_email: string;
+  shop_address: string;
+  shop_description: string;
+  shop_hours: string;
+  has_logo: boolean;
 }
 
 const DEFAULT_TERMS: Terms = {

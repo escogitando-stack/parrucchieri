@@ -8,7 +8,7 @@ import type {
 import type { AppContextValue } from "../context";
 
 export function useAppState(isAgent: boolean, navigate: (to: string) => void): AppContextValue {
-  const [stats, setStats] = useState<Stats>({ appointments: 0, clients: 0, staff: 0, services: 0, products: 0, today_appointments: 0, upcoming_appointments: 0, completed_appointments: 0, revenue: 0, low_stock_products: 0 });
+  const [stats, setStats] = useState<Stats>({ appointments: 0, clients: 0, staff: 0, services: 0, products: 0, today_appointments: 0, upcoming_appointments: 0, completed_appointments: 0, revenue: 0, low_stock_products: 0, pending_requests: 0 });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -175,6 +175,17 @@ export function useAppState(isAgent: boolean, navigate: (to: string) => void): A
     await Promise.all([fetchStats(), fetchCalendar(calendarDate)]);
   }, [appointmentsPag, appointmentsSearch, appointmentsStatusFilter, selectedAppointment, calendarDate, fetchAppointments, fetchStats, fetchCalendar]);
 
+  const decideAppointment = useCallback(async (id: number, approve: boolean, body: { staff_id?: number; start_time?: string; allow_conflict?: boolean } = {}) => {
+    const res = await api<{ email_sent: boolean; whatsapp_url: string }>("POST", `/api/appointments/${id}/${approve ? "approve" : "reject"}`, body);
+    await fetchAppointments(appointmentsPag, appointmentsSearch, appointmentsStatusFilter);
+    if (selectedAppointment && selectedAppointment.id === id) {
+      const r = await api<{ appointment: Appointment }>("GET", `/api/appointments/${id}`);
+      setSelectedAppointment(r.appointment);
+    }
+    await Promise.all([fetchStats(), fetchCalendar(calendarDate)]);
+    return res;
+  }, [appointmentsPag, appointmentsSearch, appointmentsStatusFilter, selectedAppointment, calendarDate, fetchAppointments, fetchStats, fetchCalendar]);
+
   const deleteAppointment = useCallback(async (id: number) => {
     await api("DELETE", `/api/appointments/${id}`);
     if (selectedAppointment && selectedAppointment.id === id) { setSelectedAppointment(null); navigate("/appointments"); }
@@ -317,7 +328,7 @@ export function useAppState(isAgent: boolean, navigate: (to: string) => void): A
     navigate, isAgent, stats,
     appointments, appointmentsPag, setAppointmentsPage, appointmentsSearch, setAppointmentsSearch,
     appointmentsStatusFilter, setAppointmentsStatusFilter,
-    addAppointment, updateAppointment, deleteAppointment,
+    addAppointment, updateAppointment, deleteAppointment, decideAppointment,
     selectedAppointment, selectAppointment, addAppointmentNote, deleteAppointmentNote,
     calendarAppointments, calendarBlocked, calendarDate, setCalendarDate,
     addBlockedSlot, deleteBlockedSlot,

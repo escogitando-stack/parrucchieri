@@ -140,3 +140,14 @@ php -S localhost:8080 -t /tmp/parrucchieri-site scripts/dev-router.php
 ```
 
 Poi apri http://localhost:8080 (password `prova`). I test dell'API: `php php/tests/run.php`.
+
+
+## Approvazione, pagina pubblica, prenotazioni e piani
+
+- **Approvazione:** ogni nuova registrazione è "Da approvare". Ti arriva una email a `contact_email` (predefinito `info@appuntamenti4me.it`) con il link a `/admin`: premi **Approva** e parte la prova gratuita; il cliente riceve una email. Con `'require_approval' => false` si attivano subito.
+- **Pagina pubblica:** dopo l'approvazione ogni negozio ha `https://appuntamenti4me.it/nome-negozio` (indirizzo modificabile da Impostazioni), con logo, descrizione, telefono, WhatsApp, indirizzo, orari e modulo di prenotazione.
+- **Prenotazioni:** il cliente sceglie servizi, giorno e ora tra quelli liberi (orari di lavoro per collaboratore, da Impostazioni) oppure invia una richiesta "fuori disponibilità". La richiesta è "Da approvare": il titolare approva o rifiuta dal backoffice, e il cliente riceve una email (con link per annullare). Il messaggio WhatsApp è un link già scritto che il titolare invia a mano.
+- **Email:** usano `mail()` del server. Imposta `'mail' => ['from' => 'no-reply@tuodominio.it']` con un indirizzo del tuo dominio e, se possibile, i record SPF/DKIM da cPanel per evitare lo spam. Se le email non partono, le richieste arrivano comunque nel backoffice.
+- **Piani:** da `/admin` → "Piani di abbonamento" crei piani con nome, durata in giorni e prezzo. I piani attivi compaiono nella home e nella pagina Abbonamento; con il codice `price_...` di Stripe il cliente paga online, senza codice li assegni tu da "Azioni → Assegna piano".
+- **Amministratore:** `admin_email` + `admin_password` (oppure `admin_emails`) nel `config.php`; il suo account non scade mai.
+- Aggiornamento database: al primo accesso dopo il caricamento lo schema passa alla versione 6 da solo. Fai una copia del database prima.

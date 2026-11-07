@@ -9,7 +9,7 @@ import { formatEuro } from "@/lib/format";
 
 export function Dashboard() {
   const t = useTerms();
-  const { stats, navigate, calendarAppointments } = useApp();
+  const { stats, navigate, calendarAppointments, setAppointmentsStatusFilter } = useApp();
 
   const todayStr = today();
   const todayAppointments = calendarAppointments
@@ -27,6 +27,17 @@ export function Dashboard() {
   return (
     <div className="space-y-6 p-6">
       <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+
+      {stats.pending_requests > 0 && (
+        <Card className="border-amber-300 bg-amber-50">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
+            <p className="font-medium text-amber-900">
+              {stats.pending_requests === 1 ? "Hai 1 richiesta di prenotazione da approvare" : `Hai ${stats.pending_requests} richieste di prenotazione da approvare`}
+            </p>
+            <Button size="sm" className="min-h-11 sm:min-h-0" onClick={() => { setAppointmentsStatusFilter("requested"); navigate("/appointments"); }}>Vedi richieste</Button>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         {statCards.map((stat) => (

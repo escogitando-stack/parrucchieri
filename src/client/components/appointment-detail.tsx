@@ -1,7 +1,7 @@
 import { useState } from "preact/hooks";
 import { useTerms, cap } from "@/lib/account";
 import { useApp } from "../context";
-import { ArrowLeft, Trash2, Send, Clock, User, DollarSign } from "lucide-preact";
+import { ArrowLeft, Trash2, Send, Clock, User, DollarSign, Check, X, MessageCircle } from "lucide-preact";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -16,10 +16,12 @@ export function AppointmentDetail() {
   const t = useTerms();
   const {
     selectedAppointment: apt, navigate, updateAppointment, deleteAppointment,
-    addAppointmentNote, deleteAppointmentNote, staffLookup, setError,
+    addAppointmentNote, deleteAppointmentNote, staffLookup, setError, decideAppointment,
   } = useApp();
   const [noteText, setNoteText] = useState("");
   const [rescheduling, setRescheduling] = useState(false);
+  const [deciding, setDeciding] = useState(false);
+  const [outcome, setOutcome] = useState<{ approved: boolean; email_sent: boolean; whatsapp_url: string } | null>(null);
 
   if (!apt) return null;
 
@@ -37,6 +39,23 @@ export function AppointmentDetail() {
 
   const handleStatusChange = (status: string) => save({ status } as Partial<typeof apt>);
   const handleStaffChange = (staffId: string) => save({ staff_id: staffId ? parseInt(staffId) : null } as Partial<typeof apt>);
+
+  const decide = async (approve: boolean, allow = false) => {
+    setDeciding(true);
+    try {
+      const res = await decideAppointment(apt.id, approve, allow ? { allow_conflict: true } : {});
+      setOutcome({ approved: approve, ...res });
+    } catch (err) {
+      const clashes = conflictsFrom(err);
+      if (clashes && window.confirm(`${conflictSentence(apt.staff_name ?? "", clashes)}\n\nConfermare comunque?`)) {
+        await decide(approve, true);
+        return;
+      }
+      if (!clashes) setError((err as Error).message);
+    } finally {
+      setDeciding(false);
+    }
+  };
 
   const handleAddNote = async () => {
     if (!noteText.trim()) return;
@@ -57,6 +76,38 @@ export function AppointmentDetail() {
         </Button>
       </div>
 
+      {apt.status === "requested" && (
+        <Card className="border-amber-300 bg-amber-50">
+          <CardContent className="space-y-3 p-4">
+            <p className="font-semibold text-amber-900">
+              {apt.source === "online_free" ? "Richiesta fuori disponibilità da approvare" : "Richiesta online da approvare"}
+            </p>
+            <p className="text-sm text-amber-900">
+              {apt.client_name} chiede {formatDateIt(apt.scheduled_date)} alle {apt.start_time}.
+              {apt.source === "online_free" && " Ha scelto un orario non tra quelli liberi: se confermi, puoi anche spostarla."}
+              {" "}Confermando, il cliente riceve un'email{apt.client_email ? ` a ${apt.client_email}` : ""}.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button className="min-h-11 sm:min-h-0" disabled={deciding} onClick={() => decide(true)}><Check className="mr-1 h-4 w-4" /> Approva</Button>
+              <Button variant="outline" className="min-h-11 sm:min-h-0" disabled={deciding} onClick={() => decide(false)}><X className="mr-1 h-4 w-4" /> Rifiuta</Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      {outcome && (
+        <Card className="border-emerald-300 bg-emerald-50">
+          <CardContent className="space-y-2 p-4 text-sm text-emerald-900">
+            <p className="font-semibold">{outcome.approved ? "Prenotazione confermata." : "Richiesta rifiutata."}</p>
+            <p>{outcome.email_sent ? "Abbiamo inviato l'email al cliente." : "Il cliente non ha un'email valida: avvisalo tu."}</p>
+            {outcome.whatsapp_url && (
+              <Button asChild variant="outline" size="sm">
+                <a href={outcome.whatsapp_url} target="_blank" rel="noopener noreferrer"><MessageCircle className="mr-1 h-4 w-4" /> Avvisa anche su WhatsApp</a>
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           <Card>
@@ -76,6 +127,12 @@ export function AppointmentDetail() {
                     {apt.client_name}
                   </button>
                   {apt.client_phone && <p className="text-xs text-muted-foreground">{apt.client_phone}</p>}
+                  {apt.client_email && <p className="text-xs text-muted-foreground">{apt.client_email}</p>}
+                  {apt.status !== "requested" && apt.whatsapp?.confirm && (
+                    <a className="inline-flex items-center gap-1 text-xs text-primary hover:underline" href={apt.whatsapp.confirm} target="_blank" rel="noopener noreferrer">
+                      <MessageCircle className="h-3 w-3" /> Scrivi su WhatsApp
+                    </a>
+                  )}
                 </div>
               </div>
               <Separator />
@@ -90,6 +147,7 @@ export function AppointmentDetail() {
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">Stato</Label>
                   <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={apt.status} onChange={(e) => handleStatusChange((e.target as HTMLSelectElement).value)}>
+                    <option value="requested">Da approvare</option>
                     <option value="booked">Prenotato</option>
                     <option value="confirmed">Confermato</option>
                     <option value="in_progress">In corso</option>

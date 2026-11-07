@@ -6,14 +6,18 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ShopSettings } from "./settings-shop";
+import { WorkingHours } from "./settings-hours";
 
 const selectClass = "h-11 w-full rounded-md border border-input bg-background px-3 text-sm sm:h-10";
 
 function planText(account: AccountInfo): string {
   const { state, days_left, ends_at } = account.plan;
+  if (state === "active" && account.is_admin) return "Account amministratore: nessuna scadenza.";
   if (state === "active") {
     return ends_at ? `Abbonamento attivo, prossimo rinnovo il ${new Date(ends_at.replace(" ", "T")).toLocaleDateString("it-IT")}.` : "Abbonamento attivo.";
   }
+  if (state === "pending") return "In attesa di approvazione.";
   if (state === "trial") {
     return `Prova gratuita: ${days_left} ${days_left === 1 ? "giorno rimasto" : "giorni rimasti"}.`;
   }
@@ -98,6 +102,9 @@ export function Settings() {
           </div>
         </CardContent>
       </Card>
+
+      <ShopSettings />
+      <WorkingHours />
 
       <Card>
         <CardContent className="space-y-3 p-4 sm:p-6">

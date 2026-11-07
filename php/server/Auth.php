@@ -49,8 +49,12 @@ final class Auth
     private static function openSession(int $accountId): void
     {
         self::start();
+        $after = $_SESSION['after_login'] ?? null;
         session_regenerate_id(true);
         $_SESSION = ['account_id' => $accountId];
+        if ($after !== null) {
+            $_SESSION['after_login'] = $after;
+        }
     }
 
     public static function logout(): void

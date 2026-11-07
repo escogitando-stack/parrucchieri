@@ -32,6 +32,15 @@ return [
     'admin_email' => '',
     'admin_password' => '',
 
+    // true (predefinito) = ogni nuova registrazione resta "da approvare" finché non la approvi da /admin.
+    // Ti arriva una email a contact_email. Metti false per attivare subito tutti.
+    'require_approval' => true,
+
+    // Invio email (richieste di prenotazione, conferme, approvazioni). Di norma basta mail() del server.
+    'mail' => [
+        'from' => 'no-reply@appuntamenti4me.it',  // deve essere un indirizzo del tuo dominio
+    ],
+
     'allow_registration' => true,
 
     // Email di contatto mostrata nel sito e nella pagina /contatti.
