@@ -10,6 +10,20 @@ import { CreateService } from "./create-service";
 import type { Service } from "../types";
 import { formatEuro } from "@/lib/format";
 
+function Switch({ on, label, hint, onChange }: { on: boolean; label: string; hint?: string; onChange: () => void }) {
+  return (
+    <div title={hint}>
+      <button type="button" role="switch" aria-checked={on} onClick={onChange} className="flex items-center gap-2 text-xs">
+        <span className={`relative inline-block h-4 w-7 shrink-0 rounded-full transition-colors ${on ? "bg-primary" : "bg-muted-foreground/30"}`}>
+          <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-all ${on ? "left-3.5" : "left-0.5"}`} />
+        </span>
+        <span className={on ? "font-medium" : "text-muted-foreground"}>{label}</span>
+      </button>
+      {hint && label === "Conferma immediata" && <p className="ml-9 mt-0.5 text-[11px] leading-tight text-muted-foreground">{hint}</p>}
+    </div>
+  );
+}
+
 export function ServiceList() {
   const t = useTerms();
   const { services, deleteService, updateService } = useApp();
@@ -40,7 +54,7 @@ export function ServiceList() {
                 <TableHead className="w-28">Categoria</TableHead>
                 <TableHead className="w-24 text-center">Durata</TableHead>
                 <TableHead className="w-20 text-right">Prezzo</TableHead>
-                <TableHead className="w-20">Stato</TableHead>
+                <TableHead className="w-56">Stato</TableHead>
                 <TableHead className="w-20" />
               </TableRow>
             </TableHeader>
@@ -63,28 +77,18 @@ export function ServiceList() {
                   <TableCell className="text-center">{svc.duration} min</TableCell>
                   <TableCell className="text-right font-medium">{formatEuro(svc.price)}</TableCell>
                   <TableCell>
-                    <button
-                      className={`text-xs font-medium ${svc.active ? "text-emerald-600" : "text-muted-foreground"}`}
-                      onClick={() => updateService(svc.id, { active: svc.active ? 0 : 1 })}
-                    >
-                      {svc.active ? "Attivo" : "Non attivo"}
-                    </button>
-                    <button
-                      className={`mt-1 block text-xs ${svc.online ? "text-primary" : "text-muted-foreground"}`}
-                      title="Se attivo, i clienti possono prenotarlo dalla tua pagina pubblica"
-                      onClick={() => updateService(svc.id, { online: svc.online ? 0 : 1 })}
-                    >
-                      {svc.online ? "Prenotabile online" : "Solo interno"}
-                    </button>
-                    {svc.online ? (
-                      <button
-                        className={`mt-1 block text-xs ${svc.auto_confirm ? "text-primary" : "text-muted-foreground"}`}
-                        title="Se attivo, la prenotazione online è confermata subito (nell'orario libero scelto), senza che tu debba approvarla"
-                        onClick={() => updateService(svc.id, { auto_confirm: svc.auto_confirm ? 0 : 1 })}
-                      >
-                        {svc.auto_confirm ? "Conferma immediata" : "Da approvare"}
-                      </button>
-                    ) : null}
+                    <div className="space-y-2">
+                      <Switch on={!!svc.active} label="Attivo" onChange={() => updateService(svc.id, { active: svc.active ? 0 : 1 })} />
+                      <Switch on={!!svc.online} label="Prenotabile online" hint="I clienti possono prenotarlo dalla tua pagina pubblica" onChange={() => updateService(svc.id, { online: svc.online ? 0 : 1 })} />
+                      {svc.online ? (
+                        <Switch
+                          on={!!svc.auto_confirm}
+                          label="Conferma immediata"
+                          hint={svc.auto_confirm ? "La prenotazione è confermata subito, senza che tu approvi" : "Ogni richiesta aspetta la tua approvazione"}
+                          onChange={() => updateService(svc.id, { auto_confirm: svc.auto_confirm ? 0 : 1 })}
+                        />
+                      ) : null}
+                    </div>
                   </TableCell>
                   <TableCell className="whitespace-nowrap">
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="Modifica" aria-label="Modifica" onClick={() => setEditing(svc)}>
