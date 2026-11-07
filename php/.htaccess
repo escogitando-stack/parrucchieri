@@ -13,7 +13,7 @@ RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 RewriteRule ^api(/|$) api.php [L]
 
 # Mai esporre il codice server né la pagina dell'app senza passare dal login
-RewriteRule ^(server/|app\.html$) - [F,L]
+RewriteRule ^(server/|app\.html$|\.ftp-deploy) - [F,L]
 
 # File statici (assets/...) serviti direttamente; ogni altra rotta passa dal login
 RewriteCond %{REQUEST_FILENAME} !-f

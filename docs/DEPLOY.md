@@ -44,6 +44,19 @@ Poi fai il merge del branch su `main`. Quando l'azione è verde il branch `deplo
 Alla prima apertura vengono creati gli otto servizi tipici da parrucchiere e un collaboratore "Titolare":
 modificali dall'app. Con `'seed_demo' => true` si aggiungono anche clienti, collaboratori e prodotti di esempio.
 
+## Alternativa più semplice: caricamento automatico via FTP in `public_html`
+
+Ad ogni merge su `main` GitHub può caricare il sito direttamente in `public_html`, senza usare Git su cPanel.
+
+1. In cPanel → *Account FTP* crea un account con directory `public_html` (o la cartella del dominio).
+2. Su GitHub → *Settings → Secrets and variables → Actions → Secrets* crea:
+   `FTP_SERVER` (il server FTP, es. `ftp.appuntamenti4me.it`), `FTP_USERNAME` e `FTP_PASSWORD`.
+3. Facoltativo: nella scheda *Variables* crea `FTP_DIR` se la cartella non è `public_html/`.
+4. In *Actions* avvia a mano **Build e pubblicazione** (*Run workflow*) oppure fai un nuovo merge.
+
+Il caricamento aggiorna solo i file del sito: `server/config.php` (con le password) resta sul server e non viene toccato.
+Attenzione: i file con lo stesso nome già presenti nella cartella (per esempio `index.php` e `.htaccess` di un altro sito) vengono sostituiti.
+
 ## Aggiornamenti successivi
 
 Ad ogni merge su `main` il branch `deploy` si aggiorna. Su cPanel basta *Update from Remote* + *Deploy HEAD Commit*.

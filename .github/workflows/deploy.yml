@@ -17,6 +17,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      FTP_SERVER: ${{ secrets.FTP_SERVER }}
     steps:
       - uses: actions/checkout@v4
 
@@ -63,11 +65,8 @@ jobs:
         env:
           DEPLOYPATH: ${{ vars.CPANEL_DEPLOYPATH }}
         run: |
-          if [ -z "$DEPLOYPATH" ]; then
-            echo "::notice::Variabile CPANEL_DEPLOYPATH non impostata: salto il branch deploy. Il sito è comunque scaricabile dagli artifact di questa esecuzione."
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          # Senza variabile si usa public_html dell'account cPanel.
+          if [ -z "$DEPLOYPATH" ]; then DEPLOYPATH='$HOME/public_html'; fi
           cat > "$RUNNER_TEMP/site/.cpanel.yml" <<YML
           ---
           deployment:
@@ -77,10 +76,8 @@ jobs:
               - /bin/cp -R .htaccess index.php api.php app.html assets server \$DEPLOYPATH
           YML
           cat "$RUNNER_TEMP/site/.cpanel.yml"
-          echo "ready=true" >> "$GITHUB_OUTPUT"
 
       - name: Pubblica sul branch deploy
-        if: steps.cpanel.outputs.ready == 'true'
         run: |
           cd "$RUNNER_TEMP/site"
           git init -q -b deploy
@@ -90,11 +87,28 @@ jobs:
           git commit -q -m "Deploy ${GITHUB_SHA::7}"
           git push -q --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" deploy
 
+      # Facoltativo: carica i file direttamente in public_html via FTP/FTPS.
+      # Si attiva da solo se esistono i secrets FTP_SERVER, FTP_USERNAME, FTP_PASSWORD.
+      # server/config.php non viene mai toccato (non è nel repository).
+      - name: Carica via FTP in public_html (opzionale)
+        if: ${{ env.FTP_SERVER != '' }}
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          local-dir: ${{ runner.temp }}/site/
+          server-dir: ${{ vars.FTP_DIR || 'public_html/' }}
+          exclude: |
+            **/.git*
+            **/.git*/**
+            .cpanel.yml
+
       # Facoltativo: aggiorna e distribuisce da solo su cPanel (UAPI).
       # Funziona solo se configuri questi secrets: CPANEL_HOST (es. server.tuohost.it),
       # CPANEL_USER, CPANEL_TOKEN (token API) e CPANEL_REPO_ROOT (es. /home/utente/repositories/parrucchieri).
       - name: Aggiorna cPanel (opzionale)
-        if: steps.cpanel.outputs.ready == 'true'
         env:
           CPANEL_HOST: ${{ secrets.CPANEL_HOST }}
           CPANEL_USER: ${{ secrets.CPANEL_USER }}
