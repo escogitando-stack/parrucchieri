@@ -476,10 +476,10 @@ foreach ([
     $old->exec($sql);
 }
 Schema::ensure($old);
-check('migrazione: versione e tabella account', $old->metaGet('schema_version') === '6' && $old->tableExists('accounts') && $old->columnExists('clients', 'account_id'));
+check('migrazione: versione e tabella account', $old->metaGet('schema_version') === '7' && $old->tableExists('accounts') && $old->columnExists('clients', 'account_id'));
 check('migrazione: dati esistenti senza proprietario', Schema::hasUnownedData($old));
 Schema::ensure($old);
-check('migrazione ripetibile', $old->metaGet('schema_version') === '6');
+check('migrazione ripetibile', $old->metaGet('schema_version') === '7');
 $first = Auth::register($old, ['trial_days' => 30], 'Salone Giulia', 'parrucchiere', 'giulia@example.com', 'password123');
 check('primo negozio eredita i dati', $first['ok'] && !Schema::hasUnownedData($old)
     && $old->row('SELECT COUNT(*) AS c FROM clients WHERE account_id = ?', [$first['id']])['c'] === 1
@@ -540,7 +540,7 @@ check('orari liberi di lunedì', isset($slots['09:00']) && !isset($slots['13:00'
 check('domenica chiuso', Availability::slots($dbB, $acctB, $sunday, $dur, null) === []);
 check('giorni del mese con orari', in_array($monday, Availability::days($dbB, $acctB, substr($monday, 0, 7), $dur, null), true) || in_array($monday, Availability::days($dbB, $acctB, date('Y-m', strtotime($monday)), $dur, null), true));
 check('data passata o troppo lontana non prenotabile', !Availability::dateAllowed($acctB, date('Y-m-d', strtotime('-1 day'))) && !Availability::dateAllowed($acctB, date('Y-m-d', strtotime('+400 days'))));
-$in = ['name' => 'Chiara Rossi', 'phone' => '333 1234567', 'email' => 'Chiara@Example.com', 'date' => $monday, 'time' => '09:00', 'service_ids' => [$one], 'notes' => 'Prima volta'];
+$in = ['name' => 'Chiara Rossi', 'phone' => '333 1234567', 'email' => 'Chiara@Example.com', 'date' => $monday, 'time' => '09:00', 'service_ids' => [$one], 'notes' => 'Prima volta', 'consent' => true];
 \App\Mailer::$sent = [];
 $res = Booking::create($dbB, $cfgB, $acctB, $in, '1.2.3.4');
 check('richiesta creata da approvare', $res['ok'] && $dbB->row('SELECT status, source FROM appointments WHERE id = ?', [$res['id']]) == ['status' => 'requested', 'source' => 'online']);
@@ -556,7 +556,7 @@ $free = Booking::create($dbB, $cfgB, $acctB, ['date' => $sunday, 'time' => '11:0
 $fr = $dbB->row('SELECT status, source, notes FROM appointments WHERE id = ?', [$free['id'] ?? 0]);
 check('richiesta senza orari liberi accettata', $free['ok'] && $fr['status'] === 'requested' && $fr['source'] === 'online_free' && str_contains($fr['notes'], 'orario preferito 11:00'));
 for ($i = 0; $i < 6; $i++) {
-    $last = Booking::create($dbB, $cfgB, $acctB, ['date' => $sunday, 'time' => '11:00', 'free' => true, 'email' => "spam$i@example.com", 'name' => 'Spam'] + $in, '7.7.7.7');
+    $last = Booking::create($dbB, $cfgB, $acctB, ['date' => $sunday, 'time' => '11:00', 'free' => true, 'email' => "spam$i@example.com", 'phone' => "340 00000$i", 'name' => 'Spam'] + $in, '7.7.7.7');
 }
 check('troppe richieste dallo stesso indirizzo', !$last['ok'] && str_contains($last['error'], 'molte richieste'));
 for ($i = 0; $i < 4; $i++) {
@@ -617,6 +617,60 @@ check('pagina pubblica escapa l\'HTML', !str_contains(Shop::page($cfgB, ['busine
 check('nuovo collaboratore ha orari di partenza', $s === 201 && (int)$dbB->row('SELECT COUNT(*) AS c FROM working_hours WHERE staff_id = ?', [$d['staff']['id']])['c'] === 10);
 $apiB->handle('PUT', '/api/services/' . $one, [], ['online' => 0]);
 check('servizio nascosto dalle prenotazioni online', Availability::pick($dbB, $idB, [$one]) === null);
+$apiB->handle('PUT', '/api/services/' . $one, [], ['online' => 1]);
+
+// ── Conferma automatica, link firmati, un solo recapito, privacy, calendario ──
+fwrite(STDOUT, "Conferma automatica e link\n");
+$tue = date('Y-m-d', strtotime('next tuesday', strtotime('+3 days')));
+check('senza consenso privacy → rifiutata', !Booking::create($dbB, $cfgB, $acctB, ['consent' => false, 'date' => $tue, 'time' => '09:00', 'email' => 'c0@example.com'] + $in, '2.2.2.2')['ok']);
+check('serve almeno un recapito', !Booking::create($dbB, $cfgB, $acctB, ['phone' => '', 'email' => '', 'date' => $tue, 'time' => '09:00'] + $in, '2.2.2.3')['ok']);
+\App\Mailer::$sent = [];
+$onlyPhone = Booking::create($dbB, $cfgB, $acctB, ['phone' => '347 0000111', 'email' => '', 'name' => 'Solo Telefono', 'date' => $tue, 'time' => '09:00'] + $in, '2.2.2.4');
+check('solo telefono: richiesta accettata, email solo al titolare', $onlyPhone['ok'] && count(\App\Mailer::$sent) === 1 && \App\Mailer::$sent[0]['to'] === 'bella@example.com' && str_contains(\App\Mailer::$sent[0]['text'], '/gestisci/'));
+$again = Booking::create($dbB, $cfgB, $acctB, ['phone' => '347 0000111', 'email' => '', 'name' => 'Solo Telefono', 'date' => $tue, 'time' => '11:00'] + $in, '2.2.2.5');
+check('stesso telefono: stesso cliente', $again['ok'] && (int)$dbB->row('SELECT COUNT(*) AS c FROM clients WHERE account_id = ? AND phone = ?', [$idB, '347 0000111'])['c'] === 1);
+check('consenso registrato', $dbB->row('SELECT consent_at FROM appointments WHERE id = ?', [$onlyPhone['id']])['consent_at'] !== '');
+
+// link firmato nell'email del titolare
+$tk = $dbB->row('SELECT public_token FROM appointments WHERE id = ?', [$onlyPhone['id']])['public_token'];
+$sig = Notify::sign($cfgB, 'gestisci|' . $tk);
+check('firma valida solo per quel link', Booking::byManageLink($dbB, $cfgB, $tk, $sig) !== null && Booking::byManageLink($dbB, $cfgB, $tk, str_repeat('0', 32)) === null && Booking::byManageLink($dbB, $cfgB, $tk, '') === null);
+check('un altro segreto → firma diversa', Notify::sign($cfgB, 'x') !== Notify::sign($cfgB + ['secret' => 'altro'], 'x'));
+\App\Mailer::$sent = [];
+$aptL = Booking::byManageLink($dbB, $cfgB, $tk, $sig);
+check('approvazione dal link', Booking::decide($dbB, $cfgB, $aptL, true)['ok'] && $dbB->row('SELECT status, staff_id FROM appointments WHERE id = ?', [$onlyPhone['id']])['status'] === 'confirmed');
+check('già gestita → errore', !Booking::decide($dbB, $cfgB, Booking::byToken($dbB, $tk), true)['ok']);
+$tk2 = $dbB->row('SELECT public_token FROM appointments WHERE id = ?', [$again['id']])['public_token'];
+check('rifiuto dal link', Booking::decide($dbB, $cfgB, Booking::byToken($dbB, $tk2), false)['ok'] && $dbB->row('SELECT status FROM appointments WHERE id = ?', [$again['id']])['status'] === 'cancelled');
+$mkReq = static fn(string $n, string $ph) => Booking::create($dbB, $cfgB, $acctB, ['free' => true, 'name' => $n, 'phone' => $ph, 'email' => '', 'date' => $tue, 'time' => '09:00'] + $in, '2.2.2.' . random_int(10, 250));
+$tokOf = static fn(int $id): string => $dbB->row('SELECT public_token FROM appointments WHERE id = ?', [$id])['public_token'];
+$r1 = $mkReq('Sovrapposta 1', '347 0000222');
+$r2 = $mkReq('Sovrapposta 2', '347 0000333');
+check('approvazione dal link sceglie il collaboratore libero', Booking::decide($dbB, $cfgB, Booking::byToken($dbB, $tokOf($r1['id'])), true)['ok']);
+check('approvazione dal link con tutti occupati → errore', !Booking::decide($dbB, $cfgB, Booking::byToken($dbB, $tokOf($r2['id'])), true)['ok'] && $dbB->row('SELECT status FROM appointments WHERE id = ?', [$r2['id']])['status'] === 'requested');
+check('pagina gestione', str_contains(Shop::managePage($cfgB, Booking::byToken($dbB, $tk), $tk, $sig), 'Stato') && str_contains(Shop::managePage($cfgB, null, 'x', 'y'), 'non è corretto'));
+
+// conferma automatica per servizio
+$wed = date('Y-m-d', strtotime('next wednesday', strtotime('+3 days')));
+$apiB->handle('PUT', '/api/services/' . $one, [], ['auto_confirm' => 1]);
+\App\Mailer::$sent = [];
+$auto = Booking::create($dbB, $cfgB, $acctB, ['name' => 'Auto', 'email' => 'auto@example.com', 'phone' => '', 'date' => $wed, 'time' => '09:00'] + $in, '3.3.3.3');
+$ar = $dbB->row('SELECT status, staff_id, public_token FROM appointments WHERE id = ?', [$auto['id'] ?? 0]);
+check('conferma automatica: subito confermata', $auto['ok'] && $auto['auto'] === true && $ar['status'] === 'confirmed' && $ar['staff_id'] !== null);
+check('conferma automatica: email con calendario e annulla', count(\App\Mailer::$sent) === 2 && str_contains(\App\Mailer::$sent[0]['text'], '/calendario/') && str_contains(\App\Mailer::$sent[0]['subject'], 'confermata') && str_contains(\App\Mailer::$sent[1]['subject'], 'Nuova prenotazione'));
+$autoFree = Booking::create($dbB, $cfgB, $acctB, ['free' => true, 'name' => 'Auto2', 'email' => 'auto2@example.com', 'date' => $sunday, 'time' => '10:00'] + $in, '3.3.3.4');
+check('richiesta fuori disponibilità resta da approvare', $autoFree['ok'] && $autoFree['auto'] === false && $dbB->row('SELECT status FROM appointments WHERE id = ?', [$autoFree['id']])['status'] === 'requested');
+$two = (int)$svc[1]['id'];
+$mixed = Booking::create($dbB, $cfgB, $acctB, ['name' => 'Mista', 'email' => 'mista@example.com', 'service_ids' => [$one, $two], 'date' => $wed, 'time' => '15:00'] + $in, '3.3.3.5');
+check('un servizio non automatico → da approvare', $mixed['ok'] && $mixed['auto'] === false);
+
+// calendario .ics
+$ics = Booking::ics(Auth::account($dbB, $idB), Booking::byToken($dbB, $ar['public_token']), 'Taglio, piega');
+check('file calendario', str_starts_with($ics, "BEGIN:VCALENDAR\r\n") && str_contains($ics, 'DTSTART:' . str_replace('-', '', $wed) . 'T090000') && str_contains($ics, 'SUMMARY:Taglio\\, piega') && str_contains($ics, 'END:VCALENDAR'));
+// informativa privacy
+$pv = Shop::privacyPage($cfgB, Auth::account($dbB, $idB));
+check('informativa privacy del negozio', str_contains($pv, 'Titolare del trattamento') && str_contains($pv, 'Salone Bella Vita') && str_contains($pv, 'Garante'));
+check('pagina pubblica: consenso e recapito', str_contains($page, 'id="consent"') && str_contains($page, '/bella-vita/privacy') && !str_contains($page, 'id="phone" type="tel" autocomplete="tel" required'));
 
 // ── Piani gestiti dall'amministratore ──
 fwrite(STDOUT, "Piani\n");

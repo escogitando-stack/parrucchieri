@@ -151,3 +151,12 @@ Poi apri http://localhost:8080 (password `prova`). I test dell'API: `php php/tes
 - **Piani:** da `/admin` → "Piani di abbonamento" crei piani con nome, durata in giorni e prezzo. I piani attivi compaiono nella home e nella pagina Abbonamento; con il codice `price_...` di Stripe il cliente paga online, senza codice li assegni tu da "Azioni → Assegna piano".
 - **Amministratore:** `admin_email` + `admin_password` (oppure `admin_emails`) nel `config.php`; il suo account non scade mai.
 - Aggiornamento database: al primo accesso dopo il caricamento lo schema passa alla versione 6 da solo. Fai una copia del database prima.
+
+## Conferma automatica, link nelle email, privacy (schema 7)
+
+- **Conferma immediata**: in *Servizi* ogni servizio prenotabile online ha l'interruttore "Conferma immediata / Da approvare". Se tutti i servizi scelti dal cliente sono a conferma immediata e l'orario è tra quelli liberi, la prenotazione è subito confermata (email al cliente con calendario e annullamento, avviso al titolare). Le richieste "fuori disponibilità" restano sempre da approvare.
+- **Approva dall'email**: la mail che ricevi per ogni richiesta ha il pulsante "Approva o rifiuta" (link firmato con `secret` di `config.php`): si apre una pagina con due pulsanti, senza accedere. Se a quell'ora non c'è nessun collaboratore libero, il link chiede di aprire il pannello.
+- **Telefono o email**: il cliente deve lasciare almeno un recapito. Senza email non riceve messaggi automatici: scrivigli dal pulsante WhatsApp.
+- **Privacy**: il modulo ha il consenso obbligatorio e il link a `/nome/privacy`, un'informativa generata dal nome e dai contatti del negozio. È un modello: fai verificare il testo prima di usarlo con clienti reali.
+- **Calendario**: il link `/calendario/<codice>.ics` nelle email aggiunge l'appuntamento a Google/Apple Calendar.
+- Aggiorna il database (migrazione automatica alla prima visita): nuove colonne e tabella `password_resets`.

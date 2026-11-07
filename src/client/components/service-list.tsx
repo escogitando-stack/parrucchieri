@@ -73,6 +73,15 @@ export function ServiceList() {
                     >
                       {svc.online ? "Prenotabile online" : "Solo interno"}
                     </button>
+                    {svc.online ? (
+                      <button
+                        className={`mt-1 block text-xs ${svc.auto_confirm ? "text-primary" : "text-muted-foreground"}`}
+                        title="Se attivo, la prenotazione online è confermata subito (nell'orario libero scelto), senza che tu debba approvarla"
+                        onClick={() => updateService(svc.id, { auto_confirm: svc.auto_confirm ? 0 : 1 })}
+                      >
+                        {svc.auto_confirm ? "Conferma immediata" : "Da approvare"}
+                      </button>
+                    ) : null}
                   </TableCell>
                   <TableCell>
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => deleteService(svc.id)}>

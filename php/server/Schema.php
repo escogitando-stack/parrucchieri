@@ -11,10 +11,13 @@ namespace App;
  *   2 = più negozi: tabella accounts (con prova gratuita e abbonamento) e colonna account_id
  *   3 = pannello amministratore: sospensione e ultimo accesso degli account
  *   4 = prenotazioni online: orari di lavoro, indirizzo pubblico e richieste da approvare
+ *   5 = approvazione dei nuovi negozi e profilo pubblico
+ *   6 = piani di abbonamento gestiti dall'amministratore
+ *   7 = conferma automatica, promemoria, email automatiche e recupero password
  */
 final class Schema
 {
-    public const VERSION = 6;
+    public const VERSION = 7;
 
     /** Tabelle i cui dati appartengono a un negozio. */
     private const OWNED = ['clients', 'staff', 'services', 'appointments', 'blocked_slots', 'products', 'working_hours'];
@@ -40,6 +43,9 @@ final class Schema
         }
         if ($version < 6) {
             self::migrateTo6($db);
+        }
+        if ($version < 7) {
+            self::migrateTo7($db);
         }
     }
 
@@ -87,6 +93,8 @@ final class Schema
                 shop_hours VARCHAR(500) NOT NULL DEFAULT '',
                 logo_mime VARCHAR(32) NOT NULL DEFAULT '',
                 logo_data MEDIUMTEXT NULL,
+                trial_mail_stage $int NOT NULL DEFAULT 0,
+                onboard_mail $int NOT NULL DEFAULT 0,
                 created_at $ts
             )$tail";
     }
@@ -129,6 +137,7 @@ final class Schema
                 category VARCHAR(255) NOT NULL DEFAULT '',
                 active $int NOT NULL DEFAULT 1,
                 online $int NOT NULL DEFAULT 1,
+                auto_confirm $int NOT NULL DEFAULT 0,
                 created_at $ts
             )$tail",
             "CREATE TABLE appointments (
@@ -148,6 +157,8 @@ final class Schema
                 source VARCHAR(16) NOT NULL DEFAULT 'owner',
                 public_token VARCHAR(48) NOT NULL DEFAULT '',
                 ip_hash VARCHAR(64) NOT NULL DEFAULT '',
+                reminded $int NOT NULL DEFAULT 0,
+                consent_at VARCHAR(19) NOT NULL DEFAULT '',
                 created_at $ts,
                 updated_at $ts,
                 FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
@@ -204,6 +215,7 @@ final class Schema
                 FOREIGN KEY (staff_id) REFERENCES staff(id) ON DELETE CASCADE
             )$tail",
             self::plansSql($db),
+            self::resetsSql($db),
             "CREATE TABLE _meta (
                 meta_key VARCHAR(64) NOT NULL PRIMARY KEY,
                 meta_value VARCHAR(255) NOT NULL
@@ -224,6 +236,7 @@ final class Schema
             'CREATE INDEX idx_staff_account ON staff(account_id)',
             'CREATE INDEX idx_services_account ON services(account_id)',
             'CREATE INDEX idx_products_account ON products(account_id)',
+            'CREATE INDEX idx_password_resets_hash ON password_resets(token_hash)',
         ];
         foreach ($statements as $sql) {
             $db->exec($sql);
@@ -370,6 +383,41 @@ final class Schema
     {
         if (!$db->tableExists('plans')) {
             $db->exec(self::plansSql($db));
+        }
+        $db->metaSet('schema_version', (string)self::VERSION);
+    }
+
+    private static function resetsSql(Db $db): string
+    {
+        [$pk, $int, , $tail] = self::types($db);
+        return "CREATE TABLE password_resets (
+                id $pk,
+                account_id $int NOT NULL,
+                token_hash VARCHAR(64) NOT NULL,
+                expires_at VARCHAR(19) NOT NULL,
+                created_at VARCHAR(19) NOT NULL DEFAULT ''
+            )$tail";
+    }
+
+    /** Conferma automatica dei servizi, promemoria, email automatiche, recupero password. */
+    private static function migrateTo7(Db $db): void
+    {
+        $int = $db->driver === 'sqlite' ? 'INTEGER' : 'INT';
+        $cols = [
+            'services' => ['auto_confirm' => "$int NOT NULL DEFAULT 0"],
+            'appointments' => ['reminded' => "$int NOT NULL DEFAULT 0", 'consent_at' => "VARCHAR(19) NOT NULL DEFAULT ''"],
+            'accounts' => ['trial_mail_stage' => "$int NOT NULL DEFAULT 0", 'onboard_mail' => "$int NOT NULL DEFAULT 0"],
+        ];
+        foreach ($cols as $table => $defs) {
+            foreach ($defs as $col => $def) {
+                if (!$db->columnExists($table, $col)) {
+                    $db->exec("ALTER TABLE $table ADD COLUMN $col $def");
+                }
+            }
+        }
+        if (!$db->tableExists('password_resets')) {
+            $db->exec(self::resetsSql($db));
+            $db->exec('CREATE INDEX idx_password_resets_hash ON password_resets(token_hash)');
         }
         $db->metaSet('schema_version', (string)self::VERSION);
     }

@@ -11,7 +11,7 @@ final class Availability
     /** Servizi prenotabili online. @return array<int,array<string,mixed>> */
     public static function services(Db $db, int $accountId): array
     {
-        return $db->all('SELECT id, name, description, duration, price, category FROM services WHERE account_id = ? AND active = 1 AND online = 1 ORDER BY category, name', [$accountId]);
+        return $db->all('SELECT id, name, description, duration, price, category, auto_confirm FROM services WHERE account_id = ? AND active = 1 AND online = 1 ORDER BY category, name', [$accountId]);
     }
 
     /** @return array<int,array<string,mixed>> */
@@ -24,7 +24,7 @@ final class Availability
      * Durata complessiva dei servizi scelti (solo quelli prenotabili online del negozio).
      *
      * @param array<int,mixed> $ids
-     * @return array{ids:array<int,int>,duration:int,price:float}|null null se la scelta non è valida
+     * @return array{ids:array<int,int>,duration:int,price:float,auto:bool}|null null se la scelta non è valida
      */
     public static function pick(Db $db, int $accountId, array $ids): ?array
     {
@@ -33,7 +33,7 @@ final class Availability
             return null;
         }
         $in = implode(',', array_fill(0, count($ids), '?'));
-        $rows = $db->all("SELECT id, duration, price FROM services WHERE account_id = ? AND active = 1 AND online = 1 AND id IN ($in)", array_merge([$accountId], $ids));
+        $rows = $db->all("SELECT id, duration, price, auto_confirm FROM services WHERE account_id = ? AND active = 1 AND online = 1 AND id IN ($in)", array_merge([$accountId], $ids));
         if (count($rows) !== count($ids)) {
             return null;
         }
@@ -41,7 +41,11 @@ final class Availability
         if ($duration <= 0 || $duration > 600) {
             return null;
         }
-        return ['ids' => $ids, 'duration' => $duration, 'price' => (float)array_sum(array_map(static fn($r): float => (float)$r['price'], $rows))];
+        $auto = true;
+        foreach ($rows as $r) {
+            $auto = $auto && (int)$r['auto_confirm'] === 1;
+        }
+        return ['ids' => $ids, 'duration' => $duration, 'price' => (float)array_sum(array_map(static fn($r): float => (float)$r['price'], $rows)), 'auto' => $auto];
     }
 
     /** Fasce di lavoro [inizio, fine] in minuti per un collaboratore in una data. @return array<int,array{0:int,1:int}> */

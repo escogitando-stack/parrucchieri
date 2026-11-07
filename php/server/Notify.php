@@ -18,6 +18,39 @@ final class Notify
         return (Auth::isHttps() ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost');
     }
 
+    /** Chiave per firmare i link inviati per email (da config 'secret', altrimenti ricavata dalla configurazione). @param array<string,mixed> $cfg */
+    public static function secret(array $cfg): string
+    {
+        if (!empty($cfg['secret'])) {
+            return (string)$cfg['secret'];
+        }
+        return hash('sha256', 'a4m|' . ($cfg['db']['pass'] ?? '') . '|' . ($cfg['db']['name'] ?? '') . '|' . ($cfg['admin_password'] ?? '') . '|' . ($cfg['db']['path'] ?? ''));
+    }
+
+    /** Firma di 32 caratteri per un testo. @param array<string,mixed> $cfg */
+    public static function sign(array $cfg, string $what): string
+    {
+        return substr(hash_hmac('sha256', $what, self::secret($cfg)), 0, 32);
+    }
+
+    /** @param array<string,mixed> $cfg */
+    public static function verify(array $cfg, string $what, string $sig): bool
+    {
+        return $sig !== '' && hash_equals(self::sign($cfg, $what), $sig);
+    }
+
+    /** Link per approvare o rifiutare una richiesta senza entrare nel pannello. @param array<string,mixed> $cfg */
+    public static function manageUrl(array $cfg, string $token): string
+    {
+        return self::baseUrl($cfg) . '/gestisci/' . $token . '/' . self::sign($cfg, 'gestisci|' . $token);
+    }
+
+    /** @param array<string,mixed> $cfg */
+    public static function icsUrl(array $cfg, string $token): string
+    {
+        return self::baseUrl($cfg) . '/calendario/' . $token . '.ics';
+    }
+
     /** "2026-11-07" → "sabato 7 novembre 2026". */
     public static function dateIt(string $date): string
     {
@@ -83,7 +116,14 @@ final class Notify
             . (!empty($apt['staff_name']) ? 'Con: ' . $apt['staff_name'] . "\n" : '');
     }
 
-    /** Richiesta ricevuta: email al cliente e al titolare. @param array<string,mixed> $cfg @param array<string,mixed> $acct @param array<string,mixed> $apt @param array<string,mixed> $client */
+    /** @param array<string,mixed> $client */
+    private static function contactLines(array $client, array $apt): string
+    {
+        return 'Cliente: ' . $client['name'] . "\nTelefono: " . (($client['phone'] ?? '') !== '' ? $client['phone'] : '-') . (!empty($client['email']) ? "\nEmail: " . $client['email'] : '')
+            . (!empty($apt['notes']) ? "\nNote: " . $apt['notes'] : '');
+    }
+
+    /** Richiesta ricevuta: email al cliente e al titolare (con il link per rispondere). @param array<string,mixed> $cfg @param array<string,mixed> $acct @param array<string,mixed> $apt @param array<string,mixed> $client */
     public static function requestReceived(array $cfg, array $acct, array $apt, array $client, string $services): void
     {
         $cancel = self::baseUrl($cfg) . '/annulla/' . $apt['public_token'];
@@ -93,10 +133,24 @@ final class Notify
                 . "\nLa richiesta deve essere confermata dal negozio: ti scriveremo appena possibile.\nSe non puoi più venire, puoi annullarla qui sotto.";
             self::mail($cfg, (string)$client['email'], 'Richiesta di prenotazione ricevuta', $text, 'Annulla la richiesta', $cancel, $replyTo, (string)$acct['business_name']);
         }
-        $text = 'Nuova richiesta di prenotazione da approvare.' . "\n\n" . self::summary($acct, $apt, $services)
-            . 'Cliente: ' . $client['name'] . "\nTelefono: " . ($client['phone'] ?? '') . (!empty($client['email']) ? "\nEmail: " . $client['email'] : '')
-            . (!empty($apt['notes']) ? "\nNote: " . $apt['notes'] : '');
-        self::mail($cfg, $replyTo, 'Nuova richiesta di prenotazione', $text, 'Apri le richieste', self::baseUrl($cfg) . '/appointments', !empty($client['email']) ? (string)$client['email'] : '');
+        $text = "Nuova richiesta di prenotazione da approvare.\n\n" . self::summary($acct, $apt, $services) . self::contactLines($client, $apt)
+            . "\n\nPuoi rispondere con un clic dal pulsante qui sotto, senza accedere al pannello.";
+        self::mail($cfg, $replyTo, 'Nuova richiesta di prenotazione', $text, 'Approva o rifiuta', self::manageUrl($cfg, (string)$apt['public_token']), !empty($client['email']) ? (string)$client['email'] : '');
+    }
+
+    /** Prenotazione confermata subito (servizi a conferma automatica): email al cliente e avviso al titolare. @param array<string,mixed> $cfg @param array<string,mixed> $acct @param array<string,mixed> $apt @param array<string,mixed> $client */
+    public static function bookingConfirmed(array $cfg, array $acct, array $apt, array $client, string $services): void
+    {
+        $replyTo = self::ownerEmail($acct);
+        if (!empty($client['email'])) {
+            $text = 'Ciao ' . $client['name'] . ", la tua prenotazione è confermata.\n\n" . self::summary($acct, $apt, $services)
+                . (!empty($acct['shop_phone']) ? "\nPer informazioni: " . $acct['shop_phone'] : '')
+                . "\n\nAggiungila al calendario: " . self::icsUrl($cfg, (string)$apt['public_token'])
+                . "\nSe devi cambiare orario: " . self::baseUrl($cfg) . '/sposta/' . $apt['public_token'];
+            self::mail($cfg, (string)$client['email'], 'Prenotazione confermata', $text, 'Annulla la prenotazione', self::baseUrl($cfg) . '/annulla/' . $apt['public_token'], $replyTo, (string)$acct['business_name']);
+        }
+        $text = "Nuova prenotazione confermata automaticamente.\n\n" . self::summary($acct, $apt, $services) . self::contactLines($client, $apt);
+        self::mail($cfg, $replyTo, 'Nuova prenotazione: ' . $client['name'], $text, 'Apri il calendario', self::baseUrl($cfg) . '/calendar', !empty($client['email']) ? (string)$client['email'] : '');
     }
 
     /** Esito deciso dal titolare. @param array<string,mixed> $apt @param array<string,mixed> $client */
@@ -108,7 +162,8 @@ final class Notify
         $text = 'Ciao ' . $client['name'] . ($approved ? ", la tua prenotazione è confermata.\n\n" : ", purtroppo non riusciamo a confermare la richiesta.\n\n")
             . self::summary($acct, $apt, $services)
             . ($approved ? '' : "\nPuoi scegliere un altro giorno o orario dalla nostra pagina.\n")
-            . (!empty($acct['shop_phone']) ? "\nPer informazioni: " . $acct['shop_phone'] : '');
+            . (!empty($acct['shop_phone']) ? "\nPer informazioni: " . $acct['shop_phone'] : '')
+            . ($approved && !empty($apt['public_token']) ? "\n\nAggiungila al calendario: " . self::icsUrl($cfg, (string)$apt['public_token']) : '');
         return self::mail(
             $cfg,
             (string)$client['email'],

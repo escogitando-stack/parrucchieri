@@ -103,7 +103,7 @@ final class Shop
             $book = '<div class="card"><h3>Prenota</h3><p>' . $msg . ($phone !== '' ? ' Contattaci al ' . self::h($phone) . '.' : '') . '</p></div>';
             $script = '';
         } else {
-            $book = self::bookingCard($services, $staff);
+            $book = self::bookingCard($services, $staff, $slug);
             $script = '<script>' . str_replace('__BASE__', '/' . $slug, self::js()) . '</script>';
         }
 
@@ -114,12 +114,12 @@ final class Shop
     }
 
     /** @param array<int,array<string,mixed>> $services @param array<int,array<string,mixed>> $staff */
-    private static function bookingCard(array $services, array $staff): string
+    private static function bookingCard(array $services, array $staff, string $slug): string
     {
         $svc = '';
         foreach ($services as $s) {
             $price = (float)$s['price'] > 0 ? ' · ' . number_format((float)$s['price'], 2, ',', '.') . ' €' : '';
-            $svc .= '<label class="svc"><input type="checkbox" name="svc" value="' . (int)$s['id'] . '"><span><b>' . self::h((string)$s['name']) . '</b><small>' . (int)$s['duration'] . ' min' . $price . '</small></span></label>';
+            $svc .= '<label class="svc"><input type="checkbox" name="svc" value="' . (int)$s['id'] . '"><span><b>' . self::h((string)$s['name']) . '</b><small>' . (int)$s['duration'] . ' min' . $price . ((int)($s['auto_confirm'] ?? 0) === 1 ? ' · conferma immediata' : '') . '</small></span></label>';
         }
         $staffSel = '';
         if (count($staff) > 1) {
@@ -129,10 +129,10 @@ final class Shop
             }
             $staffSel = '<label for="staff">Con chi</label><select id="staff">' . $opts . '</select>';
         }
-        return <<<HTML
+        $html = <<<HTML
 <div class="card book" id="book">
   <h3>Prenota online</h3>
-  <p class="hint">Scegli cosa ti serve e quando: il negozio ti confermerà la richiesta via email.</p>
+  <p class="hint">Scegli cosa ti serve e quando. Alcuni servizi si confermano subito, per gli altri il negozio ti risponde appena possibile.</p>
   <div id="ok" class="ok" hidden></div>
   <div id="flow">
     <div class="step"><b>1 · Servizi</b><div class="svcs">$svc</div>$staffSel</div>
@@ -152,9 +152,11 @@ final class Shop
       <b id="s4t">4 · I tuoi dati</b>
       <p class="chosen" id="chosen"></p>
       <label for="name">Nome e cognome</label><input id="name" autocomplete="name" required maxlength="120">
-      <label for="phone">Telefono</label><input id="phone" type="tel" autocomplete="tel" required maxlength="30">
-      <label for="email">Email</label><input id="email" type="email" autocomplete="email" required maxlength="190">
+      <p class="hint">Basta un recapito: telefono oppure email.</p>
+      <label for="phone">Telefono</label><input id="phone" type="tel" autocomplete="tel" maxlength="30">
+      <label for="email">Email</label><input id="email" type="email" autocomplete="email" maxlength="190">
       <label for="notes">Note (facoltative)</label><input id="notes" maxlength="500">
+      <label class="consent"><input type="checkbox" id="consent"><span>Ho letto l'<a href="__PRIVACY__" target="_blank" rel="noopener">informativa sulla privacy</a> e acconsento al trattamento dei miei dati per gestire la prenotazione.</span></label>
       <input class="hp" id="website" tabindex="-1" autocomplete="off" aria-hidden="true">
       <p class="err" id="err" hidden></p>
       <button class="btn" id="send" type="submit">Invia richiesta</button>
@@ -162,6 +164,7 @@ final class Shop
   </div>
 </div>
 HTML;
+        return str_replace('__PRIVACY__', '/' . $slug . '/privacy', $html);
     }
 
     private static function css(): string
@@ -197,6 +200,7 @@ label.svc input{margin:0}label.svc span{display:flex;flex-direction:column}label
 .chosen{background:#f5f5f4;border-radius:8px;padding:8px 12px;margin:0 0 4px;font-size:14px}
 #s4 .btn{width:100%;margin-top:16px}
 a{color:#be185d}
+.consent{display:flex;gap:8px;align-items:flex-start;font-size:13px;color:#57534e;margin-top:12px;font-weight:400}.consent input{margin-top:3px;flex:none}
 CSS;
     }
 
@@ -264,7 +268,7 @@ if($('staff')){$('staff').onchange=function(){st.date=null;reset3();loadMonth()}
 $('s4').onsubmit=function(e){
   e.preventDefault();var err=$('err');err.hidden=true;$('send').disabled=true;
   fetch(BASE+'/prenota',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-    name:$('name').value,phone:$('phone').value,email:$('email').value,notes:$('notes').value,website:$('website').value,
+    name:$('name').value,phone:$('phone').value,email:$('email').value,notes:$('notes').value,website:$('website').value,consent:$('consent').checked,
     date:st.date,time:st.time,free:st.free,staff_id:+staffId(),service_ids:services().split(',').map(Number)})})
   .then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j}})})
   .then(function(x){
@@ -291,5 +295,50 @@ JS;
             . ($active ? '<p>Vuoi annullare questa prenotazione?</p><button class="btn" type="submit">Sì, annulla</button>' : '<p>Questa prenotazione non è più attiva.</p>')
             . '</form>';
         return Pages::layout($cfg, 'Annulla prenotazione', $body, true);
+    }
+
+    /** Informativa privacy generata per il negozio (modello da verificare, non è una consulenza legale). @param array<string,mixed> $cfg @param array<string,mixed> $acct */
+    public static function privacyPage(array $cfg, array $acct): string
+    {
+        $name = self::h((string)$acct['business_name']);
+        $contact = trim((string)($acct['shop_email'] ?? '')) !== '' ? (string)$acct['shop_email'] : (string)$acct['email'];
+        $site = self::h((string)($cfg['site_name'] ?? 'Appuntamenti4me'));
+        $body = '<div class="box legal"><h1>Informativa sulla privacy</h1>'
+            . '<p class="sub">Prenotazioni online di ' . $name . '</p>'
+            . '<p><b>Titolare del trattamento</b>: ' . $name . ' (contatto: ' . self::h($contact) . (trim((string)($acct['shop_phone'] ?? '')) !== '' ? ', tel. ' . self::h((string)$acct['shop_phone']) : '') . ').</p>'
+            . '<p><b>Dati raccolti</b>: nome, telefono e/o email, note facoltative, servizio, data e ora richiesti. Per prevenire abusi viene conservata anche una sigla anonima (hash) dell\'indirizzo di rete usato per inviare la richiesta.</p>'
+            . '<p><b>Finalità e base giuridica</b>: gestire la tua prenotazione, contattarti per confermarla, modificarla o annullarla, inviarti promemoria (base: esecuzione della richiesta e tuo consenso).</p>'
+            . '<p><b>Conservazione</b>: per il tempo necessario a gestire il rapporto e gli obblighi di legge; puoi chiedere la cancellazione in qualsiasi momento.</p>'
+            . '<p><b>Destinatari</b>: i dati sono visibili al titolare e al suo personale. La piattaforma ' . $site . ' li ospita e li tratta per conto del titolare come fornitore del servizio. Non vengono ceduti a terzi per marketing.</p>'
+            . '<p><b>I tuoi diritti</b>: accesso, rettifica, cancellazione, limitazione, opposizione e portabilità, scrivendo al contatto indicato sopra. Puoi anche proporre reclamo al Garante per la protezione dei dati personali.</p>'
+            . '<p class="sub">Testo generato automaticamente come modello: il titolare è tenuto a verificarlo e adattarlo alla propria attività.</p>'
+            . '<p><a href="/' . self::h((string)$acct['slug']) . '">← Torna alla prenotazione</a></p></div>';
+        return Pages::layout($cfg, 'Privacy - ' . (string)$acct['business_name'], $body, true);
+    }
+
+    /**
+     * Pagina per approvare o rifiutare una richiesta dal link nell'email del titolare.
+     *
+     * @param array<string,mixed> $cfg
+     * @param array<string,mixed>|null $apt
+     */
+    public static function managePage(array $cfg, ?array $apt, string $token, string $sig, string $services = '', ?string $notice = null, bool $error = false): string
+    {
+        if ($apt === null) {
+            return Pages::layout($cfg, 'Link non valido', '<form class="box"><h1>Link non valido</h1><p class="sub">Questo link non è corretto o è scaduto.</p></form>', true);
+        }
+        $when = Notify::dateIt((string)$apt['scheduled_date']) . ' alle ' . $apt['start_time'];
+        $pending = $apt['status'] === 'requested';
+        $states = ['confirmed' => 'Confermata', 'cancelled' => 'Annullata o rifiutata', 'requested' => 'Da approvare'];
+        $body = '<form class="box" method="post" action="/gestisci/' . self::h($token) . '/' . self::h($sig) . '"><h1>Richiesta di prenotazione</h1>'
+            . ($notice !== null ? '<p class="' . ($error ? 'err' : 'ok') . '">' . self::h($notice) . '</p>' : '')
+            . '<p><b>' . self::h((string)($apt['client_name'] ?? '')) . '</b></p>'
+            . '<p class="sub">' . self::h($when) . ($services !== '' ? '<br>' . self::h($services) : '') . '</p>'
+            . (!empty($apt['notes']) ? '<p>' . self::h((string)$apt['notes']) . '</p>' : '')
+            . ($pending
+                ? '<button class="btn" type="submit" name="azione" value="approva">Conferma la prenotazione</button><p style="margin-top:10px"><button class="btn" type="submit" name="azione" value="rifiuta" style="background:#78716c">Rifiuta</button></p>'
+                : '<p>Stato: ' . self::h($states[(string)$apt['status']] ?? (string)$apt['status']) . '</p>')
+            . '<p class="sub"><a href="/appointments">Apri il pannello</a></p></form>';
+        return Pages::layout($cfg, 'Richiesta di prenotazione', $body, true);
     }
 }

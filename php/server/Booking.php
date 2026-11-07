@@ -7,7 +7,7 @@ namespace App;
 final class Booking
 {
     /** Parole che non possono essere usate come indirizzo (servono al sito). */
-    private const RESERVED = ['admin', 'api', 'login', 'registrati', 'register', 'contatti', 'abbonamento', 'prenota', 'annulla', 'app', 'logout', 'dashboard', 'calendar', 'appointments', 'clients', 'staff', 'services', 'products', 'settings', 'stripe-webhook', 'logo', 'assets', 'favicon', 'robots', 'sitemap', 'index', 'public', 'static', 'www', 'mail', 'test'];
+    private const RESERVED = ['admin', 'api', 'login', 'registrati', 'register', 'contatti', 'abbonamento', 'prenota', 'annulla', 'gestisci', 'calendario', 'sposta', 'password-dimenticata', 'reimposta', 'app', 'logout', 'dashboard', 'calendar', 'appointments', 'clients', 'staff', 'services', 'products', 'settings', 'stripe-webhook', 'logo', 'assets', 'favicon', 'robots', 'sitemap', 'index', 'public', 'static', 'www', 'mail', 'test'];
 
     /** Ricava un indirizzo breve e unico (a-z, 0-9, trattini) dal nome dell'attività. */
     public static function makeSlug(Db $db, string $name): string
@@ -50,12 +50,12 @@ final class Booking
 
     /**
      * Nuova richiesta di prenotazione dal sito pubblico: resta "da approvare" finché il titolare non risponde.
-     * $in: name, phone, email, notes, date, time, staff_id, service_ids[], free (true = richiesta senza orario libero)
+     * $in: name, phone, email (almeno uno dei due), consent, notes, date, time, staff_id, service_ids[], free (true = richiesta senza orario libero)
      *
      * @param array<string,mixed> $cfg
      * @param array<string,mixed> $acct
      * @param array<string,mixed> $in
-     * @return array{ok:bool,error?:string,token?:string,id?:int}
+     * @return array{ok:bool,error?:string,token?:string,id?:int,auto?:bool,email?:string,phone?:string}
      */
     public static function create(Db $db, array $cfg, array $acct, array $in, string $ip = '', ?int $now = null): array
     {
@@ -75,11 +75,17 @@ final class Booking
         if (mb_strlen($name) < 2 || mb_strlen($name) > 120) {
             return $fail('Inserisci il tuo nome.');
         }
-        if (strlen(preg_replace('/\D/', '', $phone) ?? '') < 6 || strlen($phone) > 30) {
-            return $fail('Inserisci un numero di telefono valido.');
+        if ($phone === '' && $email === '') {
+            return $fail('Inserisci almeno un recapito: telefono oppure email.');
         }
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($email) > 190) {
-            return $fail('Inserisci un indirizzo email valido: ti serve per ricevere la conferma.');
+        if ($phone !== '' && (strlen(preg_replace('/\D/', '', $phone) ?? '') < 6 || strlen($phone) > 30)) {
+            return $fail('Il numero di telefono non sembra valido.');
+        }
+        if ($email !== '' && (!filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($email) > 190)) {
+            return $fail('L\'indirizzo email non sembra valido.');
+        }
+        if (empty($in['consent'])) {
+            return $fail('Per inviare la richiesta devi accettare l\'informativa sulla privacy.');
         }
         if (mb_strlen($notes) > 500) {
             return $fail('Le note sono troppo lunghe (massimo 500 caratteri).');
@@ -102,13 +108,14 @@ final class Booking
             return $fail('Hai inviato molte richieste: riprova più tardi o chiama il negozio.');
         }
         $open = (int)$db->row(
-            "SELECT COUNT(*) AS c FROM appointments a JOIN clients c ON c.id = a.client_id WHERE a.account_id = ? AND a.status = 'requested' AND c.email = ?",
-            [$accountId, $email]
+            "SELECT COUNT(*) AS c FROM appointments a JOIN clients c ON c.id = a.client_id WHERE a.account_id = ? AND a.status = 'requested' AND (c.email = ? OR c.phone = ?)",
+            [$accountId, $email !== '' ? $email : "\0", $phone !== '' ? $phone : "\0"]
         )['c'];
         if ($open >= 3) {
             return $fail('Hai già alcune richieste in attesa di conferma: aspetta la risposta del negozio.');
         }
 
+        $auto = false;
         if (!$db->lock('book_' . $accountId)) {
             return $fail('Il sistema è occupato, riprova tra un istante.');
         }
@@ -122,7 +129,10 @@ final class Booking
             } elseif ($staffId !== null && $db->row('SELECT id FROM staff WHERE id = ? AND account_id = ? AND active = 1', [$staffId, $accountId]) === null) {
                 $staffId = null;
             }
-            $client = $db->row('SELECT * FROM clients WHERE account_id = ? AND email = ? LIMIT 1', [$accountId, $email]);
+            $client = $email !== '' ? $db->row('SELECT * FROM clients WHERE account_id = ? AND email = ? LIMIT 1', [$accountId, $email]) : null;
+            if ($client === null && $phone !== '') {
+                $client = $db->row('SELECT * FROM clients WHERE account_id = ? AND phone = ? LIMIT 1', [$accountId, $phone]);
+            }
             if ($client === null) {
                 $db->exec('INSERT INTO clients (account_id, name, email, phone, notes) VALUES (?, ?, ?, ?, ?)', [$accountId, $name, $email, $phone, '']);
                 $client = $db->row('SELECT * FROM clients WHERE id = ?', [$db->lastId()]);
@@ -130,10 +140,11 @@ final class Booking
             $end = addMinutes($time, $pick['duration']);
             $token = bin2hex(random_bytes(16));
             $text = $free ? 'Richiesta fuori disponibilità: orario preferito ' . $time . '.' . ($notes !== '' ? ' ' . $notes : '') : $notes;
+            $auto = !$free && $pick['auto'];
             $db->exec(
-                "INSERT INTO appointments (account_id, identifier, client_id, staff_id, status, scheduled_date, start_time, end_time, total_price, notes, source, public_token, ip_hash)
-                 VALUES (?, ?, ?, ?, 'requested', ?, ?, ?, ?, ?, ?, ?, ?)",
-                [$accountId, 'APP-' . $db->nextCounter($accountId), (int)$client['id'], $staffId, $date, $time, $end, $pick['price'], $text, $free ? 'online_free' : 'online', $token, $ipHash]
+                "INSERT INTO appointments (account_id, identifier, client_id, staff_id, status, scheduled_date, start_time, end_time, total_price, notes, source, public_token, ip_hash, consent_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [$accountId, 'APP-' . $db->nextCounter($accountId), (int)$client['id'], $staffId, $auto ? 'confirmed' : 'requested', $date, $time, $end, $pick['price'], $text, $free ? 'online_free' : 'online', $token, $ipHash, date('Y-m-d H:i:s', $now)]
             );
             $aptId = $db->lastId();
             foreach ($pick['ids'] as $sid) {
@@ -145,9 +156,13 @@ final class Booking
         }
         $apt = self::detail($db, $aptId);
         if ($apt !== null) {
-            Notify::requestReceived($cfg, $acct, $apt, $client ?? [], self::serviceNames($db, $aptId));
+            if ($auto) {
+                Notify::bookingConfirmed($cfg, $acct, $apt, $client ?? [], self::serviceNames($db, $aptId));
+            } else {
+                Notify::requestReceived($cfg, $acct, $apt, $client ?? [], self::serviceNames($db, $aptId));
+            }
         }
-        return ['ok' => true, 'token' => $token, 'id' => $aptId];
+        return ['ok' => true, 'token' => $token, 'id' => $aptId, 'auto' => $auto, 'email' => $email, 'phone' => $phone];
     }
 
     /** @return array<string,mixed>|null */
@@ -190,5 +205,87 @@ final class Booking
             Notify::cancelledByCustomer($cfg, $acct, $apt, ['name' => $apt['client_name'], 'email' => $apt['client_email']], self::serviceNames($db, (int)$apt['id']));
         }
         return true;
+    }
+
+    /** Richiesta da gestire con il link firmato ricevuto dal titolare. @param array<string,mixed> $cfg @return array<string,mixed>|null */
+    public static function byManageLink(Db $db, array $cfg, string $token, string $sig): ?array
+    {
+        if (!Notify::verify($cfg, 'gestisci|' . $token, $sig)) {
+            return null;
+        }
+        return self::byToken($db, $token);
+    }
+
+    /**
+     * Il titolare approva o rifiuta una richiesta (dal link nell'email).
+     * Se il collaboratore non è già indicato si prende il primo attivo; se l'orario è occupato non si conferma.
+     *
+     * @param array<string,mixed> $cfg
+     * @param array<string,mixed> $apt riga di byToken()
+     * @return array{ok:bool,error?:string}
+     */
+    public static function decide(Db $db, array $cfg, array $apt, bool $approve): array
+    {
+        if ($apt['status'] !== 'requested') {
+            return ['ok' => false, 'error' => 'Questa richiesta è già stata gestita.'];
+        }
+        $accountId = (int)$apt['account_id'];
+        $acct = Auth::account($db, $accountId);
+        if ($acct === null) {
+            return ['ok' => false, 'error' => 'Negozio non trovato.'];
+        }
+        if ($approve) {
+            $candidates = $apt['staff_id'] !== null
+                ? [(int)$apt['staff_id']]
+                : array_map(static fn(array $r): int => (int)$r['id'], $db->all('SELECT id FROM staff WHERE account_id = ? AND active = 1 ORDER BY id', [$accountId]));
+            $staffId = 0;
+            foreach ($candidates as $cand) {
+                // Impegni dello stesso collaboratore, esclusa la richiesta stessa; i blocchi contano sempre.
+                $others = [];
+                foreach ($db->all("SELECT start_time, end_time FROM appointments WHERE account_id = ? AND staff_id = ? AND scheduled_date = ? AND status <> 'cancelled' AND id <> ?", [$accountId, $cand, $apt['scheduled_date'], (int)$apt['id']]) as $a) {
+                    $others[] = ['kind' => 'appointment', 'start_time' => (string)$a['start_time'], 'end_time' => (string)$a['end_time'], 'label' => 'occupato'];
+                }
+                foreach (Availability::busy($db, $accountId, $cand, (string)$apt['scheduled_date']) as $bl) {
+                    if ($bl['kind'] === 'blocked') {
+                        $others[] = $bl;
+                    }
+                }
+                if (findConflicts((string)$apt['start_time'], (string)$apt['end_time'], $others) === []) {
+                    $staffId = $cand;
+                    break;
+                }
+            }
+            if ($staffId === 0) {
+                return ['ok' => false, 'error' => $candidates === [] ? 'Nessun collaboratore disponibile: apri il pannello per confermare.' : 'A quell\'ora c\'è già un impegno: apri il pannello per scegliere un altro orario.'];
+            }
+            $db->exec("UPDATE appointments SET status = 'confirmed', staff_id = ? WHERE id = ? AND account_id = ?", [$staffId, (int)$apt['id'], $accountId]);
+        } else {
+            $db->exec("UPDATE appointments SET status = 'cancelled' WHERE id = ? AND account_id = ?", [(int)$apt['id'], $accountId]);
+        }
+        $fresh = self::byToken($db, (string)$apt['public_token']) ?? $apt;
+        Notify::decision($cfg, $acct, $fresh, ['name' => $fresh['client_name'], 'email' => $fresh['client_email']], self::serviceNames($db, (int)$apt['id']), $approve);
+        return ['ok' => true];
+    }
+
+    /** File calendario (.ics) di una prenotazione. @param array<string,mixed> $acct @param array<string,mixed> $apt */
+    public static function ics(array $acct, array $apt, string $services): string
+    {
+        $esc = static fn(string $s): string => str_replace(["\\", ';', ',', "\r\n", "\n"], ["\\\\", '\\;', '\\,', '\\n', '\\n'], $s);
+        $stamp = static fn(string $d, string $t): string => str_replace('-', '', $d) . 'T' . str_replace(':', '', $t) . '00';
+        $lines = [
+            'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Appuntamenti4me//IT', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'BEGIN:VEVENT',
+            'UID:' . $apt['public_token'] . '@appuntamenti4me',
+            'DTSTAMP:' . gmdate('Ymd\THis\Z'),
+            'DTSTART:' . $stamp((string)$apt['scheduled_date'], (string)$apt['start_time']),
+            'DTEND:' . $stamp((string)$apt['scheduled_date'], (string)$apt['end_time']),
+            'SUMMARY:' . $esc(($services !== '' ? $services . ' - ' : '') . $acct['business_name']),
+        ];
+        if (!empty($acct['shop_address'])) {
+            $lines[] = 'LOCATION:' . $esc((string)$acct['shop_address']);
+        }
+        $lines[] = 'STATUS:' . ($apt['status'] === 'cancelled' ? 'CANCELLED' : 'CONFIRMED');
+        $lines[] = 'END:VEVENT';
+        $lines[] = 'END:VCALENDAR';
+        return implode("\r\n", $lines) . "\r\n";
     }
 }

@@ -35,6 +35,10 @@ return [
     // Ti arriva una email a contact_email. Metti false per attivare subito tutti.
     'require_approval' => true,
 
+    // Chiave per firmare i link nelle email ("Approva / Rifiuta" senza accedere). Scrivi una frase lunga a caso;
+    // se la lasci vuota se ne ricava una dalla configurazione. Se la cambi, i vecchi link smettono di funzionare.
+    'secret' => '',
+
     // Invio email (richieste di prenotazione, conferme, approvazioni). Di norma basta mail() del server.
     'mail' => [
         'from' => 'no-reply@appuntamenti4me.it',  // deve essere un indirizzo del tuo dominio

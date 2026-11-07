@@ -81,6 +81,7 @@ export interface Service {
   category: string;
   active: number;
   online: number;
+  auto_confirm: number;
   created_at: string;
 }
 

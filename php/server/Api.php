@@ -962,7 +962,7 @@ final class Api
     private function createService(array $m, array $q, array $b): array
     {
         $this->db->exec(
-            'INSERT INTO services (account_id, name, description, duration, price, color, category, online) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO services (account_id, name, description, duration, price, color, category, online, auto_confirm) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [
                 $this->acct,
                 $this->reqString($b, 'name'),
@@ -972,6 +972,7 @@ final class Api
                 $this->color($this->optString($b, 'color')) ?: '#6b7280',
                 $this->optString($b, 'category') ?? '',
                 ($this->optInt($b, 'online') ?? 1) ? 1 : 0,
+                ($this->optInt($b, 'auto_confirm') ?? 0) ? 1 : 0,
             ]
         );
         return [201, ['service' => $this->db->row('SELECT * FROM services WHERE id = ? AND account_id = ?', [$this->db->lastId(), $this->acct])]];
@@ -997,6 +998,7 @@ final class Api
             'category' => $this->optString($b, 'category'),
             'active' => $this->optInt($b, 'active'),
             'online' => ($o = $this->optInt($b, 'online')) !== null ? ($o ? 1 : 0) : null,
+            'auto_confirm' => ($o = $this->optInt($b, 'auto_confirm')) !== null ? ($o ? 1 : 0) : null,
         ]);
         if ($sets) {
             $params[] = $id;

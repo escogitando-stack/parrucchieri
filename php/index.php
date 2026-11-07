@@ -141,8 +141,40 @@ if (preg_match('#^/annulla/([a-f0-9]{32})$#', $path, $mm)) {
     exit;
 }
 
+// Il titolare approva o rifiuta una richiesta dal link firmato ricevuto per email.
+if (preg_match('#^/gestisci/([a-f0-9]{32})/([a-f0-9]{32})$#', $path, $mm)) {
+    $apt = Booking::byManageLink($db, $cfg, $mm[1], $mm[2]);
+    $notice = null;
+    $isErr = false;
+    if ($apt !== null && $method === 'POST') {
+        $res = Booking::decide($db, $cfg, $apt, ($_POST['azione'] ?? '') === 'approva');
+        $notice = $res['ok'] ? (($_POST['azione'] ?? '') === 'approva' ? 'Prenotazione confermata: il cliente è stato avvisato.' : 'Richiesta rifiutata: il cliente è stato avvisato.') : (string)$res['error'];
+        $isErr = !$res['ok'];
+        $apt = Booking::byToken($db, $mm[1]);
+    }
+    if ($apt === null) {
+        http_response_code(404);
+    }
+    echo Shop::managePage($cfg, $apt, $mm[1], $mm[2], $apt !== null ? Booking::serviceNames($db, (int)$apt['id']) : '', $notice, $isErr);
+    exit;
+}
+
+// Calendario (.ics) della prenotazione, dal link nell'email del cliente.
+if (preg_match('#^/calendario/([a-f0-9]{32})\.ics$#', $path, $mm)) {
+    $apt = Booking::byToken($db, $mm[1]);
+    $own = $apt !== null ? Auth::account($db, (int)$apt['account_id']) : null;
+    if ($apt === null || $own === null) {
+        http_response_code(404);
+        exit('Non trovato');
+    }
+    header('Content-Type: text/calendar; charset=utf-8');
+    header('Content-Disposition: attachment; filename="prenotazione.ics"');
+    echo Booking::ics($own, $apt, Booking::serviceNames($db, (int)$apt['id']));
+    exit;
+}
+
 // Pagina pubblica del negozio: /nome, con logo, orari e prenotazione online.
-if (preg_match('#^/([a-z0-9][a-z0-9-]{1,78}[a-z0-9])(?:/(logo|giorni|orari|prenota))?$#', $path, $mm)) {
+if (preg_match('#^/([a-z0-9][a-z0-9-]{1,78}[a-z0-9])(?:/(logo|giorni|orari|prenota|privacy))?$#', $path, $mm)) {
     $shopAcct = Booking::accountBySlug($db, $mm[1]);
     if ($shopAcct !== null) {
         $sub = $mm[2] ?? '';
@@ -154,6 +186,10 @@ if (preg_match('#^/([a-z0-9][a-z0-9-]{1,78}[a-z0-9])(?:/(logo|giorni|orari|preno
         }
         if ($sub === '') {
             echo Shop::page($cfg, $shopAcct, Availability::services($db, (int)$shopAcct['id']), Availability::staff($db, (int)$shopAcct['id']), Booking::open($cfg, $shopAcct));
+            exit;
+        }
+        if ($sub === 'privacy') {
+            echo Shop::privacyPage($cfg, $shopAcct);
             exit;
         }
         if ($sub === 'logo') {
@@ -202,7 +238,13 @@ if (preg_match('#^/([a-z0-9][a-z0-9-]{1,78}[a-z0-9])(?:/(logo|giorni|orari|preno
                 $json(400, ['error' => $res['error'] ?? 'Richiesta non riuscita.']);
             }
             $free = !empty($in['free']);
-            $json(200, ['ok' => true, 'message' => ($free ? 'Richiesta inviata! Il negozio la valuterà e ti risponderà' : 'Richiesta inviata! Il negozio la confermerà appena possibile e ti scriverà') . ' all\'indirizzo ' . $email . '.']);
+            $where = $res['email'] !== '' ? ' all\'indirizzo ' . $res['email'] : ' al numero ' . $res['phone'];
+            if (!empty($res['auto'])) {
+                $msg = 'Prenotazione confermata!' . ($res['email'] !== '' ? ' Ti abbiamo scritto' . $where . ' con il riepilogo.' : ' Ti aspettiamo.');
+            } else {
+                $msg = ($free ? 'Richiesta inviata! Il negozio la valuterà e ti risponderà' : 'Richiesta inviata! Il negozio la confermerà appena possibile e ti scriverà') . $where . '.';
+            }
+            $json(200, ['ok' => true, 'message' => $msg]);
         }
         $json(405, ['error' => 'Metodo non consentito']);
     }
