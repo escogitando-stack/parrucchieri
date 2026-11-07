@@ -49,13 +49,24 @@ jobs:
       - name: Assembla il sito
         run: scripts/assemble.sh "$RUNNER_TEMP/site"
 
+      # Il sito completo, pronto da caricare a mano in cPanel (File Manager → Carica → Estrai).
+      - name: Salva il sito come file scaricabile
+        uses: actions/upload-artifact@v4
+        with:
+          name: sito-appuntamenti4me
+          path: ${{ runner.temp }}/site
+          include-hidden-files: true
+          retention-days: 30
+
       - name: Prepara il deploy per cPanel
+        id: cpanel
         env:
           DEPLOYPATH: ${{ vars.CPANEL_DEPLOYPATH }}
         run: |
           if [ -z "$DEPLOYPATH" ]; then
-            echo "::error::Manca la variabile CPANEL_DEPLOYPATH (Settings → Secrets and variables → Actions → Variables). Esempio: /home/NOMEUTENTE/appuntamenti4me.it"
-            exit 1
+            echo "::notice::Variabile CPANEL_DEPLOYPATH non impostata: salto il branch deploy. Il sito è comunque scaricabile dagli artifact di questa esecuzione."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           cat > "$RUNNER_TEMP/site/.cpanel.yml" <<YML
           ---
@@ -66,8 +77,10 @@ jobs:
               - /bin/cp -R .htaccess index.php api.php app.html assets server \$DEPLOYPATH
           YML
           cat "$RUNNER_TEMP/site/.cpanel.yml"
+          echo "ready=true" >> "$GITHUB_OUTPUT"
 
       - name: Pubblica sul branch deploy
+        if: steps.cpanel.outputs.ready == 'true'
         run: |
           cd "$RUNNER_TEMP/site"
           git init -q -b deploy
@@ -81,6 +94,7 @@ jobs:
       # Funziona solo se configuri questi secrets: CPANEL_HOST (es. server.tuohost.it),
       # CPANEL_USER, CPANEL_TOKEN (token API) e CPANEL_REPO_ROOT (es. /home/utente/repositories/parrucchieri).
       - name: Aggiorna cPanel (opzionale)
+        if: steps.cpanel.outputs.ready == 'true'
         env:
           CPANEL_HOST: ${{ secrets.CPANEL_HOST }}
           CPANEL_USER: ${{ secrets.CPANEL_USER }}
