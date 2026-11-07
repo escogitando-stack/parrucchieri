@@ -10,13 +10,14 @@ namespace App;
  *   1 = app per un solo salone, senza account (installazioni precedenti)
  *   2 = più negozi: tabella accounts (con prova gratuita e abbonamento) e colonna account_id
  *   3 = pannello amministratore: sospensione e ultimo accesso degli account
+ *   4 = prenotazioni online: orari di lavoro, indirizzo pubblico e richieste da approvare
  */
 final class Schema
 {
-    public const VERSION = 3;
+    public const VERSION = 4;
 
     /** Tabelle i cui dati appartengono a un negozio. */
-    private const OWNED = ['clients', 'staff', 'services', 'appointments', 'blocked_slots', 'products'];
+    private const OWNED = ['clients', 'staff', 'services', 'appointments', 'blocked_slots', 'products', 'working_hours'];
 
     public static function ensure(Db $db): void
     {
@@ -30,6 +31,9 @@ final class Schema
         }
         if ($version < 3) {
             self::migrateTo3($db);
+        }
+        if ($version < 4) {
+            self::migrateTo4($db);
         }
     }
 
@@ -63,6 +67,13 @@ final class Schema
                 stripe_subscription_id VARCHAR(64) NOT NULL DEFAULT '',
                 suspended $int NOT NULL DEFAULT 0,
                 last_login_at VARCHAR(19) NOT NULL DEFAULT '',
+                slug VARCHAR(80) NOT NULL DEFAULT '',
+                booking_enabled $int NOT NULL DEFAULT 1,
+                slot_minutes $int NOT NULL DEFAULT 30,
+                booking_notice_hours $int NOT NULL DEFAULT 2,
+                booking_horizon_days $int NOT NULL DEFAULT 60,
+                shop_phone VARCHAR(64) NOT NULL DEFAULT '',
+                shop_address VARCHAR(255) NOT NULL DEFAULT '',
                 created_at $ts
             )$tail";
     }
@@ -104,6 +115,7 @@ final class Schema
                 color VARCHAR(16) NOT NULL DEFAULT '#6b7280',
                 category VARCHAR(255) NOT NULL DEFAULT '',
                 active $int NOT NULL DEFAULT 1,
+                online $int NOT NULL DEFAULT 1,
                 created_at $ts
             )$tail",
             "CREATE TABLE appointments (
@@ -120,6 +132,9 @@ final class Schema
                 notes TEXT NOT NULL,
                 is_recurring $int NOT NULL DEFAULT 0,
                 recurrence_interval VARCHAR(64) NOT NULL DEFAULT '',
+                source VARCHAR(16) NOT NULL DEFAULT 'owner',
+                public_token VARCHAR(48) NOT NULL DEFAULT '',
+                ip_hash VARCHAR(64) NOT NULL DEFAULT '',
                 created_at $ts,
                 updated_at $ts,
                 FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
@@ -166,11 +181,23 @@ final class Schema
                 created_at $ts,
                 updated_at $ts
             )$tail",
+            "CREATE TABLE working_hours (
+                id $pk,
+                account_id $int NOT NULL DEFAULT 0,
+                staff_id $int NOT NULL,
+                weekday $int NOT NULL,
+                start_time VARCHAR(5) NOT NULL,
+                end_time VARCHAR(5) NOT NULL,
+                FOREIGN KEY (staff_id) REFERENCES staff(id) ON DELETE CASCADE
+            )$tail",
             "CREATE TABLE _meta (
                 meta_key VARCHAR(64) NOT NULL PRIMARY KEY,
                 meta_value VARCHAR(255) NOT NULL
             )$tail",
             'CREATE UNIQUE INDEX uq_appointments_account_identifier ON appointments(account_id, identifier)',
+            'CREATE UNIQUE INDEX uq_accounts_slug ON accounts(slug)',
+            'CREATE INDEX idx_appointments_token ON appointments(public_token)',
+            'CREATE INDEX idx_working_hours_staff ON working_hours(staff_id, weekday)',
             'CREATE INDEX idx_appointments_client ON appointments(client_id)',
             'CREATE INDEX idx_appointments_staff ON appointments(staff_id)',
             'CREATE INDEX idx_appointments_date ON appointments(account_id, scheduled_date)',
@@ -197,6 +224,9 @@ final class Schema
             $db->exec(self::accountsSql($db));
         }
         foreach (self::OWNED as $table) {
+            if (!$db->tableExists($table)) {
+                continue;
+            }
             if (!$db->columnExists($table, 'account_id')) {
                 $db->exec("ALTER TABLE $table ADD COLUMN account_id " . ($db->driver === 'sqlite' ? 'INTEGER' : 'INT') . ' NOT NULL DEFAULT 0');
                 $db->exec("CREATE INDEX idx_{$table}_account ON $table(account_id)");
@@ -225,6 +255,90 @@ final class Schema
         $db->metaSet('schema_version', (string)self::VERSION);
     }
 
+    /** Prenotazioni online: orari di lavoro, indirizzo pubblico (slug) e richieste da approvare. */
+    private static function migrateTo4(Db $db): void
+    {
+        $int = $db->driver === 'sqlite' ? 'INTEGER' : 'INT';
+        $cols = [
+            'accounts' => [
+                'slug' => "VARCHAR(80) NOT NULL DEFAULT ''",
+                'booking_enabled' => "$int NOT NULL DEFAULT 1",
+                'slot_minutes' => "$int NOT NULL DEFAULT 30",
+                'booking_notice_hours' => "$int NOT NULL DEFAULT 2",
+                'booking_horizon_days' => "$int NOT NULL DEFAULT 60",
+                'shop_phone' => "VARCHAR(64) NOT NULL DEFAULT ''",
+                'shop_address' => "VARCHAR(255) NOT NULL DEFAULT ''",
+            ],
+            'services' => ['online' => "$int NOT NULL DEFAULT 1"],
+            'appointments' => [
+                'source' => "VARCHAR(16) NOT NULL DEFAULT 'owner'",
+                'public_token' => "VARCHAR(48) NOT NULL DEFAULT ''",
+                'ip_hash' => "VARCHAR(64) NOT NULL DEFAULT ''",
+            ],
+        ];
+        foreach ($cols as $table => $defs) {
+            foreach ($defs as $col => $def) {
+                if (!$db->columnExists($table, $col)) {
+                    $db->exec("ALTER TABLE $table ADD COLUMN $col $def");
+                }
+            }
+        }
+        if (!$db->tableExists('working_hours')) {
+            [$pk, $int2, , $tail] = self::types($db);
+            $db->exec("CREATE TABLE working_hours (
+                id $pk,
+                account_id $int2 NOT NULL DEFAULT 0,
+                staff_id $int2 NOT NULL,
+                weekday $int2 NOT NULL,
+                start_time VARCHAR(5) NOT NULL,
+                end_time VARCHAR(5) NOT NULL,
+                FOREIGN KEY (staff_id) REFERENCES staff(id) ON DELETE CASCADE
+            )$tail");
+            $db->exec('CREATE INDEX idx_working_hours_staff ON working_hours(staff_id, weekday)');
+        }
+        // Un indirizzo pubblico per ogni negozio già registrato, poi l'indice che lo rende unico.
+        foreach ($db->all("SELECT id, business_name FROM accounts WHERE slug = ''") as $a) {
+            $db->exec('UPDATE accounts SET slug = ? WHERE id = ?', [Booking::makeSlug($db, (string)$a['business_name']), (int)$a['id']]);
+        }
+        if (!self::indexExists($db, 'accounts', 'uq_accounts_slug')) {
+            $db->exec('CREATE UNIQUE INDEX uq_accounts_slug ON accounts(slug)');
+        }
+        if (!self::indexExists($db, 'appointments', 'idx_appointments_token')) {
+            $db->exec('CREATE INDEX idx_appointments_token ON appointments(public_token)');
+        }
+        // Orari di partenza per i collaboratori già presenti (il titolare li modifica dalle Impostazioni).
+        foreach ($db->all('SELECT id, account_id FROM staff WHERE account_id > 0') as $st) {
+            if ($db->row('SELECT id FROM working_hours WHERE staff_id = ? LIMIT 1', [(int)$st['id']]) === null) {
+                self::defaultHours($db, (int)$st['account_id'], (int)$st['id']);
+            }
+        }
+        $db->metaSet('schema_version', (string)self::VERSION);
+    }
+
+    private static function indexExists(Db $db, string $table, string $index): bool
+    {
+        if ($db->driver === 'sqlite') {
+            return $db->row("SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?", [$index]) !== null;
+        }
+        return $db->row(
+            'SELECT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ? LIMIT 1',
+            [$table, $index]
+        ) !== null;
+    }
+
+    /** Dal lunedì al venerdì, mattina e pomeriggio: un punto di partenza da adattare. */
+    public static function defaultHours(Db $db, int $accountId, int $staffId): void
+    {
+        foreach ([1, 2, 3, 4, 5] as $day) {
+            foreach ([['09:00', '13:00'], ['15:00', '19:00']] as [$from, $to]) {
+                $db->exec(
+                    'INSERT INTO working_hours (account_id, staff_id, weekday, start_time, end_time) VALUES (?, ?, ?, ?, ?)',
+                    [$accountId, $staffId, $day, $from, $to]
+                );
+            }
+        }
+    }
+
     /** Servizi di partenza e primo collaboratore, secondo il tipo di attività. */
     public static function seedAccount(Db $db, int $accountId, string $category): void
     {
@@ -239,6 +353,7 @@ final class Schema
             'INSERT INTO staff (account_id, name, title, color) VALUES (?, ?, ?, ?)',
             [$accountId, 'Titolare', $preset['staff_title'], '#3b82f6']
         );
+        self::defaultHours($db, $accountId, $db->lastId());
     }
 
     /** Ci sono dati della vecchia versione (senza proprietario) da assegnare al primo negozio? */

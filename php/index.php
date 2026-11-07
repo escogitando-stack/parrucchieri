@@ -82,6 +82,11 @@ if ($path === '/login') {
     exit;
 }
 
+if ($path === '/contatti') {
+    echo Pages::contact($cfg);
+    exit;
+}
+
 if ($path === '/registrati' || $path === '/register') {
     if ($accountId !== null) {
         redirect('/');

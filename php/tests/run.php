@@ -44,8 +44,8 @@ function newDb(): Db
 function addAccount(Db $db, string $email, string $category = 'parrucchiere'): int
 {
     $db->exec(
-        'INSERT INTO accounts (email, password_hash, business_name, category, trial_ends_at) VALUES (?, ?, ?, ?, ?)',
-        [$email, password_hash('segretissima', PASSWORD_DEFAULT), 'Negozio ' . $email, $category, date('Y-m-d H:i:s', time() + 30 * 86400)]
+        'INSERT INTO accounts (email, password_hash, business_name, category, slug, trial_ends_at) VALUES (?, ?, ?, ?, ?, ?)',
+        [$email, password_hash('segretissima', PASSWORD_DEFAULT), 'Negozio ' . $email, $category, \App\Booking::makeSlug($db, "Negozio " . $email), date('Y-m-d H:i:s', time() + 30 * 86400)]
     );
     $id = $db->lastId();
     Schema::seedAccount($db, $id, $category);
@@ -436,6 +436,13 @@ check('FAQ: dati dinamici e limiti dichiarati', str_contains(Pages::landing($pub
 check('FAQ: email di assistenza se impostata', str_contains(Pages::landing($pub + ['contact_email' => 'aiuto@example.com']), 'aiuto@example.com'));
 check('vetrina: dati strutturati validi', (function () use ($land) { preg_match('#<script type="application/ld\+json">(.*?)</script>#s', $land, $m); $j = json_decode($m[1] ?? '', true); return is_array($j) && $j['@type'] === 'FAQPage' && count($j['mainEntity']) >= 10; })());
 check('vetrina: il testo dell\'utente non rompe lo script', (function () use ($pub) { $h = Pages::landing($pub + ['pricing' => ['monthly_label' => '</script><b>x']]); return substr_count($h, '</script>') === 1 && !str_contains($h, '<b>x'); })());
+check('vetrina: immagine e icone presenti', str_contains($land, 'class="shot"') && str_contains($land, '<svg viewBox="0 0 960 540"') && substr_count($land, 'class="ico"') === 8);
+check('vetrina: link ai contatti', str_contains($land, 'href="/contatti"'));
+$ct = Pages::contact($pub);
+check('contatti: email predefinita', str_contains($ct, 'mailto:info@appuntamenti4me.it'));
+check('contatti: senza config niente riferimenti inventati', !str_contains($ct, 'Telefono') && !str_contains($ct, 'P. IVA') && !str_contains($ct, 'WhatsApp'));
+$ct2 = Pages::contact($pub + ['contact_email' => 'x@y.it', 'contact' => ['name' => 'Mario <b>Rossi</b>', 'phone' => '+39 333 123', 'whatsapp' => '+39 333 123', 'address' => 'Via Roma 1', 'vat' => '123']]);
+check('contatti: riferimenti da config, escapati', str_contains($ct2, 'mailto:x@y.it') && str_contains($ct2, 'tel:+39333123') && str_contains($ct2, 'wa.me/39333123') && str_contains($ct2, 'P. IVA 123') && !str_contains($ct2, '<b>Rossi'));
 $reg = Pages::register($pub, 'Errore <b>x</b>', ['business' => '"><script>', 'email' => 'a@b.it', 'category' => 'tattoo']);
 check('registrazione: moduli e termini', str_contains($reg, 'name="category"') && str_contains($reg, 'name="terms"') && str_contains($reg, 'name="website"'));
 check('registrazione escapa l\'HTML', !str_contains($reg, '<script>') && !str_contains($reg, '<b>x</b>'));
@@ -468,10 +475,10 @@ foreach ([
     $old->exec($sql);
 }
 Schema::ensure($old);
-check('migrazione: versione e tabella account', $old->metaGet('schema_version') === '3' && $old->tableExists('accounts') && $old->columnExists('clients', 'account_id'));
+check('migrazione: versione e tabella account', $old->metaGet('schema_version') === '4' && $old->tableExists('accounts') && $old->columnExists('clients', 'account_id'));
 check('migrazione: dati esistenti senza proprietario', Schema::hasUnownedData($old));
 Schema::ensure($old);
-check('migrazione ripetibile', $old->metaGet('schema_version') === '3');
+check('migrazione ripetibile', $old->metaGet('schema_version') === '4');
 $first = Auth::register($old, ['trial_days' => 30], 'Salone Giulia', 'parrucchiere', 'giulia@example.com', 'password123');
 check('primo negozio eredita i dati', $first['ok'] && !Schema::hasUnownedData($old)
     && $old->row('SELECT COUNT(*) AS c FROM clients WHERE account_id = ?', [$first['id']])['c'] === 1

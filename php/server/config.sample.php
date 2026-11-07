@@ -29,8 +29,17 @@ return [
     // false = chiude le nuove registrazioni (chi ha già un account entra normalmente).
     'allow_registration' => true,
 
-    // Email per l'assistenza, mostrata nelle domande frequenti (facoltativa).
-    'contact_email' => '',
+    // Email di contatto mostrata nel sito e nella pagina /contatti.
+    'contact_email' => 'info@appuntamenti4me.it',
+
+    // Altri riferimenti per la pagina /contatti: compaiono solo se compilati.
+    'contact' => [
+        'name' => '',      // es. ragione sociale o nome
+        'phone' => '',     // es. '+39 333 1234567'
+        'whatsapp' => '',  // numero con prefisso, es. '393331234567'
+        'address' => '',
+        'vat' => '',       // partita IVA
+    ],
 
     // Prezzi mostrati sul sito: sono solo testi, il prezzo vero si imposta in Stripe.
     'pricing' => [

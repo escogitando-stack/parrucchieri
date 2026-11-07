@@ -145,8 +145,8 @@ final class Auth
         $days = max(1, (int)($cfg['trial_days'] ?? 30));
         $first = $db->row('SELECT id FROM accounts LIMIT 1') === null;
         $db->exec(
-            'INSERT INTO accounts (email, password_hash, business_name, category, plan_status, trial_ends_at) VALUES (?, ?, ?, ?, ?, ?)',
-            [$email, password_hash($password, PASSWORD_DEFAULT), $business, $category, 'trial', date('Y-m-d H:i:s', time() + $days * 86400)]
+            'INSERT INTO accounts (email, password_hash, business_name, category, plan_status, slug, trial_ends_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [$email, password_hash($password, PASSWORD_DEFAULT), $business, $category, 'trial', Booking::makeSlug($db, $business), date('Y-m-d H:i:s', time() + $days * 86400)]
         );
         $id = $db->lastId();
         // Il primo negozio eredita i dati inseriti prima dell'arrivo degli account.

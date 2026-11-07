@@ -24,7 +24,7 @@ final class Pages
         $t = self::h($title);
         $wrap = $narrow ? 'wrap narrow' : ($wide ? 'wrap wide' : 'wrap');
         $nav ??= '<a href="/login">Accedi</a><a href="/registrati">Prova gratis</a>';
-        $links = '';
+        $links = ' · <a href="/contatti">Contatti</a>';
         foreach (['terms_url' => 'Termini', 'privacy_url' => 'Privacy'] as $k => $label) {
             if (!empty($cfg[$k])) {
                 $links .= ' · <a href="' . self::h((string)$cfg[$k]) . '">' . $label . '</a>';
@@ -72,6 +72,11 @@ $head<style>
   .hero{padding:56px 0 36px;text-align:center}
   .hero h1{font-size:clamp(30px,5vw,48px);line-height:1.15;margin:0 0 16px;letter-spacing:-.02em}
   .hero p{font-size:19px;color:#57534e;max-width:640px;margin:0 auto 26px}
+  .shot{max-width:980px;margin:34px auto 0;border-radius:18px;overflow:hidden;box-shadow:0 24px 60px rgba(190,24,93,.18),0 4px 14px rgba(0,0,0,.08);background:#fff}
+  .shot svg{display:block;width:100%;height:auto}
+  .ico{width:42px;height:42px;border-radius:12px;background:#fce7f3;color:#be185d;display:flex;align-items:center;justify-content:center;margin-bottom:12px}
+  .contact-list{list-style:none;padding:0;margin:0}.contact-list li{padding:10px 0;border-bottom:1px solid #f0eeed;display:flex;gap:12px;align-items:center}.contact-list li:last-child{border:0}
+  .contact-list .ico{margin:0;flex:none}.contact-list small{display:block;color:#78716c;font-size:12px}
   .chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:26px 0 0}
   .chip{background:#fff;border:1px solid #e7e5e4;border-radius:999px;padding:6px 14px;font-size:14px;color:#44403c}
   .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px;margin:30px 0}
@@ -127,6 +132,122 @@ $body
 </body>
 </html>
 HTML;
+    }
+
+
+    /** Illustrazione della home: agenda sul computer e prenotazione sul telefono (disegno originale). */
+    public static function heroImage(): string
+    {
+        return <<<'SVG'
+<svg viewBox="0 0 960 540" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Anteprima dell'agenda sul computer e della prenotazione sul telefono" font-family="system-ui,-apple-system,'Segoe UI',sans-serif">
+  <defs>
+    <radialGradient id="g1" cx="25%" cy="30%" r="60%"><stop offset="0" stop-color="#f9a8d4" stop-opacity=".75"/><stop offset="1" stop-color="#f9a8d4" stop-opacity="0"/></radialGradient>
+    <radialGradient id="g2" cx="80%" cy="70%" r="60%"><stop offset="0" stop-color="#c4b5fd" stop-opacity=".7"/><stop offset="1" stop-color="#c4b5fd" stop-opacity="0"/></radialGradient>
+    <filter id="sh" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#1c1917" flood-opacity=".18"/></filter>
+    <filter id="sh2" x="-20%" y="-20%" width="140%" height="160%"><feDropShadow dx="0" dy="8" stdDeviation="9" flood-color="#1c1917" flood-opacity=".2"/></filter>
+  </defs>
+  <rect width="960" height="540" fill="url(#g1)"/><rect width="960" height="540" fill="url(#g2)"/>
+
+  <!-- finestra del computer -->
+  <g filter="url(#sh)">
+    <rect x="30" y="34" width="650" height="440" rx="16" fill="#fff" stroke="#e7e5e4"/>
+  </g>
+  <path d="M30 50a16 16 0 0 1 16-16h618a16 16 0 0 1 16 16v22H30z" fill="#f5f5f4"/>
+  <circle cx="54" cy="53" r="5" fill="#fca5a5"/><circle cx="72" cy="53" r="5" fill="#fcd34d"/><circle cx="90" cy="53" r="5" fill="#86efac"/>
+  <rect x="140" y="45" width="220" height="17" rx="8" fill="#fff" stroke="#e7e5e4"/>
+  <text x="152" y="57.5" font-size="10" fill="#78716c">appuntamenti4me.it/calendar</text>
+  <!-- menu laterale -->
+  <rect x="30" y="72" width="140" height="402" fill="#faf8f7"/>
+  <rect x="44" y="88" width="22" height="22" rx="6" fill="#be185d"/>
+  <rect x="74" y="93" width="76" height="9" rx="4" fill="#44403c"/>
+  <g fill="#d6d3d1"><rect x="44" y="132" width="100" height="9" rx="4"/><rect x="44" y="160" width="84" height="9" rx="4"/><rect x="44" y="188" width="92" height="9" rx="4"/><rect x="44" y="216" width="70" height="9" rx="4"/><rect x="44" y="244" width="88" height="9" rx="4"/></g>
+  <rect x="36" y="150" width="128" height="30" rx="8" fill="#fce7f3"/><rect x="44" y="160" width="84" height="9" rx="4" fill="#be185d"/>
+  <rect x="48" y="396" width="106" height="52" rx="10" fill="#fff" stroke="#e7e5e4"/>
+  <text x="62" y="418" font-size="10" fill="#78716c">Oggi</text><text x="62" y="438" font-size="18" font-weight="700" fill="#1c1917">7</text>
+  <text x="104" y="418" font-size="10" fill="#78716c">In arrivo</text><text x="104" y="438" font-size="18" font-weight="700" fill="#1c1917">24</text>
+  <!-- agenda -->
+  <text x="192" y="104" font-size="16" font-weight="700" fill="#1c1917">Agenda · sabato 7 novembre</text>
+  <rect x="520" y="88" width="140" height="24" rx="8" fill="#be185d"/><text x="590" y="104" font-size="11" font-weight="600" fill="#fff" text-anchor="middle">+ Nuova prenotazione</text>
+  <g font-size="11" font-weight="600" fill="#44403c">
+    <circle cx="262" cy="140" r="9" fill="#ec4899"/><text x="278" y="144">Giulia</text>
+    <circle cx="398" cy="140" r="9" fill="#3b82f6"/><text x="414" y="144">Marco</text>
+    <circle cx="534" cy="140" r="9" fill="#f59e0b"/><text x="550" y="144">Sara</text>
+  </g>
+  <g stroke="#f0eeed"><line x1="192" y1="164" x2="664" y2="164"/><line x1="192" y1="214" x2="664" y2="214"/><line x1="192" y1="264" x2="664" y2="264"/><line x1="192" y1="314" x2="664" y2="314"/><line x1="192" y1="364" x2="664" y2="364"/><line x1="192" y1="414" x2="664" y2="414"/><line x1="192" y1="464" x2="664" y2="464"/>
+    <line x1="334" y1="152" x2="334" y2="470"/><line x1="470" y1="152" x2="470" y2="470"/></g>
+  <g font-size="9" fill="#a8a29e"><text x="192" y="176">09:00</text><text x="192" y="226">10:00</text><text x="192" y="276">11:00</text><text x="192" y="326">12:00</text><text x="192" y="376">15:00</text><text x="192" y="426">16:00</text></g>
+  <!-- appuntamenti -->
+  <rect x="228" y="168" width="100" height="62" rx="8" fill="#fce7f3" stroke="#ec4899"/><text x="238" y="186" font-size="11" font-weight="700" fill="#9d174d">Taglio donna</text><text x="238" y="202" font-size="10" fill="#9d174d">Chiara Rossi</text><text x="238" y="217" font-size="9" fill="#be185d">09:00 – 10:00</text>
+  <rect x="228" y="268" width="100" height="94" rx="8" fill="#ede9fe" stroke="#8b5cf6"/><text x="238" y="286" font-size="11" font-weight="700" fill="#5b21b6">Colore</text><text x="238" y="302" font-size="10" fill="#5b21b6">Francesca Verdi</text><text x="238" y="317" font-size="9" fill="#6d28d9">11:00 – 12:30</text>
+  <rect x="364" y="168" width="100" height="40" rx="8" fill="#dbeafe" stroke="#3b82f6"/><text x="374" y="186" font-size="11" font-weight="700" fill="#1d4ed8">Barba</text><text x="374" y="200" font-size="10" fill="#1d4ed8">Luca Bianchi</text>
+  <rect x="364" y="218" width="100" height="40" rx="8" fill="#fef3c7" stroke="#f59e0b" stroke-dasharray="4 3"/><text x="374" y="236" font-size="11" font-weight="700" fill="#92400e">Da approvare</text><text x="374" y="250" font-size="10" fill="#92400e">Paolo Neri</text>
+  <rect x="364" y="318" width="100" height="62" rx="8" fill="#dcfce7" stroke="#10b981"/><text x="374" y="336" font-size="11" font-weight="700" fill="#166534">Piega</text><text x="374" y="352" font-size="10" fill="#166534">Anna Gallo</text><text x="374" y="367" font-size="9" fill="#15803d">15:00 – 15:45</text>
+  <rect x="500" y="218" width="100" height="62" rx="8" fill="#fce7f3" stroke="#ec4899"/><text x="510" y="236" font-size="11" font-weight="700" fill="#9d174d">Acconciatura</text><text x="510" y="252" font-size="10" fill="#9d174d">Marta Conti</text>
+  <rect x="500" y="368" width="100" height="40" rx="8" fill="#fef3c7" stroke="#f59e0b"/><text x="510" y="386" font-size="11" font-weight="700" fill="#92400e">Trattamento</text><text x="510" y="400" font-size="10" fill="#92400e">Elisa Neri</text>
+
+  <!-- telefono -->
+  <g filter="url(#sh)">
+    <rect x="690" y="62" width="236" height="430" rx="36" fill="#1c1917"/>
+  </g>
+  <rect x="700" y="72" width="216" height="410" rx="28" fill="#fff"/>
+  <rect x="780" y="80" width="56" height="12" rx="6" fill="#1c1917"/>
+  <rect x="700" y="100" width="216" height="64" fill="#be185d"/><path d="M700 100h216v0" />
+  <text x="716" y="127" font-size="14" font-weight="700" fill="#fff">Prenota da Salone Rossi</text>
+  <text x="716" y="147" font-size="10" fill="#fbcfe8">Scegli servizio, giorno e orario</text>
+  <text x="716" y="190" font-size="10" font-weight="700" fill="#78716c">1 · SERVIZIO</text>
+  <rect x="716" y="198" width="184" height="34" rx="8" fill="#fdf2f8" stroke="#be185d"/><text x="728" y="219" font-size="11" font-weight="600" fill="#9d174d">Taglio donna · 60 min</text><circle cx="882" cy="215" r="7" fill="#be185d"/><path d="M878.5 215l2.5 2.5 4-5" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="716" y="238" width="184" height="34" rx="8" fill="#fff" stroke="#e7e5e4"/><text x="728" y="259" font-size="11" fill="#57534e">Piega · 45 min</text>
+  <text x="716" y="296" font-size="10" font-weight="700" fill="#78716c">2 · GIORNO</text>
+  <g font-size="9" text-anchor="middle" fill="#57534e">
+    <rect x="716" y="304" width="30" height="34" rx="7" fill="#fff" stroke="#e7e5e4"/><text x="731" y="318" fill="#a8a29e">lun</text><text x="731" y="331" font-weight="700">9</text>
+    <rect x="752" y="304" width="30" height="34" rx="7" fill="#be185d"/><text x="767" y="318" fill="#fbcfe8">mar</text><text x="767" y="331" font-weight="700" fill="#fff">10</text>
+    <rect x="788" y="304" width="30" height="34" rx="7" fill="#fff" stroke="#e7e5e4"/><text x="803" y="318" fill="#a8a29e">mer</text><text x="803" y="331" font-weight="700">11</text>
+    <rect x="824" y="304" width="30" height="34" rx="7" fill="#fff" stroke="#e7e5e4"/><text x="839" y="318" fill="#a8a29e">gio</text><text x="839" y="331" font-weight="700">12</text>
+    <rect x="860" y="304" width="40" height="34" rx="7" fill="#f5f5f4"/><text x="880" y="318" fill="#d6d3d1">sab</text><text x="880" y="331" font-weight="700" fill="#d6d3d1">13</text>
+  </g>
+  <text x="716" y="362" font-size="10" font-weight="700" fill="#78716c">3 · ORARIO</text>
+  <g font-size="10" font-weight="600" text-anchor="middle">
+    <rect x="716" y="370" width="56" height="26" rx="7" fill="#fff" stroke="#e7e5e4"/><text x="744" y="387" fill="#57534e">09:00</text>
+    <rect x="778" y="370" width="56" height="26" rx="7" fill="#be185d"/><text x="806" y="387" fill="#fff">10:30</text>
+    <rect x="840" y="370" width="60" height="26" rx="7" fill="#fff" stroke="#e7e5e4"/><text x="870" y="387" fill="#57534e">15:00</text>
+  </g>
+  <rect x="716" y="424" width="184" height="36" rx="10" fill="#be185d"/><text x="808" y="447" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">Invia richiesta</text>
+
+  <!-- notifica -->
+  <g filter="url(#sh2)">
+    <rect x="436" y="408" width="236" height="62" rx="14" fill="#fff" stroke="#e7e5e4"/>
+  </g>
+  <circle cx="466" cy="439" r="16" fill="#dcfce7"/><path d="M458 439l6 6 11-12" stroke="#16a34a" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="492" y="434" font-size="12" font-weight="700" fill="#1c1917">Prenotazione confermata</text>
+  <text x="492" y="452" font-size="10" fill="#78716c">Martedì 10 alle 10:30 · email inviata</text>
+</svg>
+SVG;
+    }
+
+    /** Icone semplici (24x24, tratto) per le schede dei vantaggi. */
+    public static function icon(string $name): string
+    {
+        $paths = [
+            'grid' => '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+            'shield' => '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
+            'sparkles' => '<path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>',
+            'phone' => '<rect x="7" y="2" width="10" height="20" rx="2.5"/><path d="M11 18h2"/>',
+            'users' => '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><circle cx="17.5" cy="9" r="2.5"/><path d="M17.5 14c2.5 0 4 1.8 4 4.5"/>',
+            'chart' => '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+            'chat' => '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M8.5 11h7M8.5 14h4"/>',
+            'euro' => '<circle cx="12" cy="12" r="9"/><path d="M15.5 9a4 4 0 1 0 0 6M7.5 11h6M7.5 13.5h6"/>',
+            'calendar' => '<rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+            'bell' => '<path d="M6 17V11a6 6 0 1 1 12 0v6l1.5 2h-15z"/><path d="M10 21h4"/>',
+            'mail' => '<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3.5 7l8.5 6 8.5-6"/>',
+        ];
+        $p = $paths[$name] ?? $paths['grid'];
+        return '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' . $p . '</svg>';
+    }
+
+    /** @param array<string,mixed> $cfg */
+    public static function contactEmail(array $cfg): string
+    {
+        return (string)(($cfg['contact_email'] ?? '') !== '' ? $cfg['contact_email'] : 'info@appuntamenti4me.it');
     }
 
     /**
@@ -210,12 +331,22 @@ HTML;
             . '<meta property="og:description" content="' . self::h($desc) . '">' . "\n"
             . '<script type="application/ld+json">' . $ld . '</script>' . "\n";
 
+        $i_grid = self::icon('grid');
+        $i_shield = self::icon('shield');
+        $i_sparkles = self::icon('sparkles');
+        $i_phone = self::icon('phone');
+        $i_users = self::icon('users');
+        $i_chart = self::icon('chart');
+        $i_chat = self::icon('chat');
+        $i_euro = self::icon('euro');
+        $hero = self::heroImage();
         $body = <<<HTML
 <section class="hero">
   <h1>L'agenda degli appuntamenti per il tuo negozio</h1>
   <p>Prenotazioni, clienti, collaboratori e incassi in un unico posto. Funziona da telefono, tablet e computer. Provalo gratis per $days giorni.</p>
   <a class="btn" href="/registrati">Inizia la prova gratuita</a>
   <p style="font-size:14px;margin:12px auto 0;color:#78716c">Nessuna carta di credito richiesta.</p>
+  <div class="shot">$hero</div>
   <div class="chips">$chips</div>
 </section>
 
@@ -223,14 +354,14 @@ HTML;
   <h2>Perché usarla</h2>
   <p class="sub">Meno carta e messaggi sparsi, più tempo per il tuo lavoro.</p>
   <div class="grid">
-    <div class="card"><h3>Tutto in un posto</h3><p>Agenda, clienti, collaboratori, servizi, prodotti e incassi: niente più quaderni, fogli e chat da incrociare.</p></div>
-    <div class="card"><h3>Niente sovrapposizioni</h3><p>Se due appuntamenti si accavallano per lo stesso collaboratore, l'app ti avvisa prima di confermare.</p></div>
-    <div class="card"><h3>Pronta per il tuo mestiere</h3><p>Scegli il tipo di attività e trovi servizi e nomi già adatti (per esempio interventi e ricambi per un'officina). Poi li modifichi come vuoi.</p></div>
-    <div class="card"><h3>Sempre con te</h3><p>Dal browser di telefono, tablet o computer, senza installare niente. Controlli la giornata anche fuori dal negozio.</p></div>
-    <div class="card"><h3>Storico dei clienti</h3><p>Ogni cliente ha la sua scheda con gli appuntamenti passati e le note, per ricordare gusti, lavori e dettagli.</p></div>
-    <div class="card"><h3>Sotto controllo</h3><p>Vedi quanti appuntamenti hai oggi e in arrivo, l'incasso dei servizi completati e i prodotti in esaurimento.</p></div>
-    <div class="card"><h3>Semplice e in italiano</h3><p>Importi in euro, date e orari all'italiana, comandi chiari: si impara in pochi minuti.</p></div>
-    <div class="card"><h3>Prezzo senza sorprese</h3><p>Un solo prezzo con tutte le funzioni, senza limiti di clienti o appuntamenti. Prima provi gratis, poi scegli.</p></div>
+    <div class="card"><div class="ico">{$i_grid}</div><h3>Tutto in un posto</h3><p>Agenda, clienti, collaboratori, servizi, prodotti e incassi: niente più quaderni, fogli e chat da incrociare.</p></div>
+    <div class="card"><div class="ico">{$i_shield}</div><h3>Niente sovrapposizioni</h3><p>Se due appuntamenti si accavallano per lo stesso collaboratore, l'app ti avvisa prima di confermare.</p></div>
+    <div class="card"><div class="ico">{$i_sparkles}</div><h3>Pronta per il tuo mestiere</h3><p>Scegli il tipo di attività e trovi servizi e nomi già adatti (per esempio interventi e ricambi per un'officina). Poi li modifichi come vuoi.</p></div>
+    <div class="card"><div class="ico">{$i_phone}</div><h3>Sempre con te</h3><p>Dal browser di telefono, tablet o computer, senza installare niente. Controlli la giornata anche fuori dal negozio.</p></div>
+    <div class="card"><div class="ico">{$i_users}</div><h3>Storico dei clienti</h3><p>Ogni cliente ha la sua scheda con gli appuntamenti passati e le note, per ricordare gusti, lavori e dettagli.</p></div>
+    <div class="card"><div class="ico">{$i_chart}</div><h3>Sotto controllo</h3><p>Vedi quanti appuntamenti hai oggi e in arrivo, l'incasso dei servizi completati e i prodotti in esaurimento.</p></div>
+    <div class="card"><div class="ico">{$i_chat}</div><h3>Semplice e in italiano</h3><p>Importi in euro, date e orari all'italiana, comandi chiari: si impara in pochi minuti.</p></div>
+    <div class="card"><div class="ico">{$i_euro}</div><h3>Prezzo senza sorprese</h3><p>Un solo prezzo con tutte le funzioni, senza limiti di clienti o appuntamenti. Prima provi gratis, poi scegli.</p></div>
   </div>
 </section>
 
@@ -252,8 +383,44 @@ $costs
 
 <div class="cta"><a class="btn" href="/registrati">Crea il tuo account gratis</a><p class="note">$days giorni di prova, nessuna carta di credito.</p></div>
 HTML;
-        $nav = '<a href="#vantaggi">Vantaggi</a><a href="#costi">Costi</a><a href="#faq">Domande</a><a href="/login">Accedi</a><a class="btn" style="color:#fff;padding:8px 16px;margin-left:16px" href="/registrati">Prova gratis</a>';
+        $nav = '<a href="#vantaggi">Vantaggi</a><a href="#costi">Costi</a><a href="#faq">Domande</a><a href="/contatti">Contatti</a><a href="/login">Accedi</a><a class="btn" style="color:#fff;padding:8px 16px;margin-left:16px" href="/registrati">Prova gratis</a>';
         return self::layout($cfg, $name . ' · Agenda appuntamenti per il tuo negozio', $body, false, false, $nav, $head);
+    }
+
+    /**
+     * Pagina contatti. L'email è sempre mostrata; gli altri riferimenti solo se presenti in config ('contact').
+     * @param array<string,mixed> $cfg
+     */
+    public static function contact(array $cfg): string
+    {
+        $email = self::contactEmail($cfg);
+        $c = is_array($cfg['contact'] ?? null) ? $cfg['contact'] : [];
+        $rows = '<li><span class="ico">' . self::icon('mail') . '</span><span><small>Email</small><a href="mailto:' . self::h($email) . '">' . self::h($email) . '</a></span></li>';
+        $phone = trim((string)($c['phone'] ?? ''));
+        if ($phone !== '') {
+            $tel = preg_replace('/[^0-9+]/', '', $phone);
+            $rows .= '<li><span class="ico">' . self::icon('phone') . '</span><span><small>Telefono</small><a href="tel:' . self::h((string)$tel) . '">' . self::h($phone) . '</a></span></li>';
+        }
+        $wa = preg_replace('/\D/', '', (string)($c['whatsapp'] ?? ''));
+        if ($wa !== '') {
+            $rows .= '<li><span class="ico">' . self::icon('chat') . '</span><span><small>WhatsApp</small><a href="https://wa.me/' . self::h((string)$wa) . '" rel="noopener">Scrivici su WhatsApp</a></span></li>';
+        }
+        $name = trim((string)($c['name'] ?? ''));
+        $address = trim((string)($c['address'] ?? ''));
+        $vat = trim((string)($c['vat'] ?? ''));
+        $who = '';
+        if ($name !== '' || $address !== '' || $vat !== '') {
+            $who = '<div class="card" style="margin-top:16px"><h3>Riferimenti</h3><p>'
+                . ($name !== '' ? '<b>' . self::h($name) . '</b><br>' : '')
+                . ($address !== '' ? self::h($address) . '<br>' : '')
+                . ($vat !== '' ? 'P. IVA ' . self::h($vat) : '')
+                . '</p></div>';
+        }
+        $body = '<section class="hero" style="padding-bottom:10px"><h1>Contatti</h1><p>Hai domande o vuoi una mano a iniziare? Scrivici: rispondiamo appena possibile.</p></section>'
+            . '<div class="card"><ul class="contact-list">' . $rows . '</ul></div>' . $who
+            . '<div class="cta"><a class="btn" href="/registrati">Prova gratis</a> <a class="btn alt" href="/">Torna alla home</a></div>';
+        $head = '<meta name="description" content="' . self::h('Contatta ' . self::name($cfg) . ': ' . $email) . '">' . "\n";
+        return self::layout($cfg, 'Contatti · ' . self::name($cfg), $body, true, false, null, $head);
     }
 
     /**
