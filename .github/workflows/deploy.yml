@@ -1,0 +1,98 @@
+name: Build e pubblicazione (appuntamenti4me.it)
+
+# Ad ogni push su main compila l'interfaccia, prova l'API PHP e pubblica il sito
+# già pronto sul branch "deploy", che cPanel (Git Version Control) scarica.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deploy
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: pdo_sqlite, mbstring
+
+      - name: Dipendenze
+        run: pnpm install --frozen-lockfile
+
+      - name: Test (TypeScript)
+        run: pnpm test
+
+      - name: Test (API PHP)
+        run: php php/tests/run.php
+
+      - name: Compila l'interfaccia
+        run: pnpm build
+
+      - name: Assembla il sito
+        run: scripts/assemble.sh "$RUNNER_TEMP/site"
+
+      - name: Prepara il deploy per cPanel
+        env:
+          DEPLOYPATH: ${{ vars.CPANEL_DEPLOYPATH }}
+        run: |
+          if [ -z "$DEPLOYPATH" ]; then
+            echo "::error::Manca la variabile CPANEL_DEPLOYPATH (Settings → Secrets and variables → Actions → Variables). Esempio: /home/NOMEUTENTE/appuntamenti4me.it"
+            exit 1
+          fi
+          cat > "$RUNNER_TEMP/site/.cpanel.yml" <<YML
+          ---
+          deployment:
+            tasks:
+              - export DEPLOYPATH=${DEPLOYPATH%/}/
+              - /bin/mkdir -p \$DEPLOYPATH
+              - /bin/cp -R .htaccess index.php api.php app.html assets server \$DEPLOYPATH
+          YML
+          cat "$RUNNER_TEMP/site/.cpanel.yml"
+
+      - name: Pubblica sul branch deploy
+        run: |
+          cd "$RUNNER_TEMP/site"
+          git init -q -b deploy
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Deploy ${GITHUB_SHA::7}"
+          git push -q --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" deploy
+
+      # Facoltativo: aggiorna e distribuisce da solo su cPanel (UAPI).
+      # Funziona solo se configuri questi secrets: CPANEL_HOST (es. server.tuohost.it),
+      # CPANEL_USER, CPANEL_TOKEN (token API) e CPANEL_REPO_ROOT (es. /home/utente/repositories/parrucchieri).
+      - name: Aggiorna cPanel (opzionale)
+        env:
+          CPANEL_HOST: ${{ secrets.CPANEL_HOST }}
+          CPANEL_USER: ${{ secrets.CPANEL_USER }}
+          CPANEL_TOKEN: ${{ secrets.CPANEL_TOKEN }}
+          CPANEL_REPO_ROOT: ${{ secrets.CPANEL_REPO_ROOT }}
+        run: |
+          if [ -z "$CPANEL_HOST" ] || [ -z "$CPANEL_TOKEN" ]; then
+            echo "Secrets cPanel non configurati: esegui 'Update from Remote' e 'Deploy HEAD Commit' da cPanel."
+            exit 0
+          fi
+          auth="Authorization: cpanel ${CPANEL_USER}:${CPANEL_TOKEN}"
+          curl -fsS -H "$auth" "https://${CPANEL_HOST}:2083/execute/VersionControl/update" \
+            --data-urlencode "repository_root=${CPANEL_REPO_ROOT}" --data-urlencode "branch=deploy"
+          curl -fsS -H "$auth" "https://${CPANEL_HOST}:2083/execute/VersionControlDeployment/create" \
+            --data-urlencode "repository_root=${CPANEL_REPO_ROOT}"

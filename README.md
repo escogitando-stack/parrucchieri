@@ -9,7 +9,8 @@ Questo fork adatta OpenSalon alla gestione degli appuntamenti nei saloni di parr
 - dati di esempio da parrucchiere (taglio, piega, colore, balayage, barba, acconciatura sposa) e prodotti da salone;
 - agenda a colonne per collaboratore, con blocchi orari (pausa pranzo, ferie) e avviso di sovrapposizione.
 
-Avvio in locale: `pnpm install` e poi `pnpm dev`. Test: `pnpm test`.
+Pubblicazione su cPanel (PHP/MySQL, con login): vedi [docs/DEPLOY.md](docs/DEPLOY.md).
+Avvio in locale della versione originale: `pnpm install` e poi `pnpm dev`. Test: `pnpm test` e `php php/tests/run.php`.
 
 # OpenSalon: The Open-Source Salonist & Fresha Alternative
 

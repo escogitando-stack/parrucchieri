@@ -13,6 +13,11 @@ export async function api<T>(method: string, path: string, body?: unknown): Prom
     opts.body = JSON.stringify(body);
   }
   const r = await fetch(path, opts);
+  if (r.status === 401) {
+    // Sessione scaduta: si torna alla pagina di accesso.
+    window.location.href = "/login";
+    throw new Error("Sessione scaduta");
+  }
   const text = await r.text();
   let data: unknown;
   try {

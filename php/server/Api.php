@@ -1,0 +1,868 @@
+<?php
+declare(strict_types=1);
+
+namespace App;
+
+require_once __DIR__ . '/scheduling.php';
+
+/** Errore HTTP da restituire al client come {"error": "..."} (più eventuali campi extra). */
+final class HttpError extends \RuntimeException
+{
+    /** @param array<string,mixed> $extra */
+    public function __construct(public readonly int $status, string $message, public readonly array $extra = [])
+    {
+        parent::__construct($message);
+    }
+}
+
+/**
+ * API JSON degli appuntamenti. Le rotte e le forme delle risposte sono le stesse
+ * della versione TypeScript, così il client React/Preact funziona senza modifiche.
+ */
+final class Api
+{
+    private const STATUSES = ['booked', 'confirmed', 'in_progress', 'completed', 'cancelled', 'no_show'];
+
+    public function __construct(private Db $db)
+    {
+    }
+
+    /**
+     * @param array<string,mixed> $query
+     * @param array<string,mixed>|null $body
+     * @return array{0:int,1:array<string,mixed>}
+     */
+    public function handle(string $method, string $path, array $query = [], ?array $body = null): array
+    {
+        try {
+            foreach ($this->routes() as [$m, $pattern, $handler]) {
+                if ($m === $method && preg_match($pattern, $path, $matches)) {
+                    array_shift($matches);
+                    return $this->{$handler}($matches, $query, $body ?? []);
+                }
+            }
+            throw new HttpError(404, 'Non trovato');
+        } catch (HttpError $e) {
+            return [$e->status, ['error' => $e->getMessage()] + $e->extra];
+        }
+    }
+
+    /** @return array<int, array{0:string,1:string,2:string}> */
+    private function routes(): array
+    {
+        return [
+            ['GET', '#^/api/stats$#', 'stats'],
+            ['GET', '#^/api/calendar$#', 'calendar'],
+            ['GET', '#^/api/appointments$#', 'listAppointments'],
+            ['POST', '#^/api/appointments$#', 'createAppointment'],
+            ['GET', '#^/api/appointments/(\d+)$#', 'getAppointment'],
+            ['PUT', '#^/api/appointments/(\d+)$#', 'updateAppointment'],
+            ['DELETE', '#^/api/appointments/(\d+)$#', 'deleteAppointment'],
+            ['POST', '#^/api/appointments/(\d+)/notes$#', 'addNote'],
+            ['DELETE', '#^/api/notes/(\d+)$#', 'deleteNote'],
+            ['GET', '#^/api/clients$#', 'listClients'],
+            ['GET', '#^/api/clients/all$#', 'allClients'],
+            ['POST', '#^/api/clients$#', 'createClient'],
+            ['GET', '#^/api/clients/(\d+)$#', 'getClient'],
+            ['PUT', '#^/api/clients/(\d+)$#', 'updateClient'],
+            ['DELETE', '#^/api/clients/(\d+)$#', 'deleteClient'],
+            ['GET', '#^/api/staff$#', 'listStaff'],
+            ['GET', '#^/api/staff/all$#', 'allStaff'],
+            ['POST', '#^/api/staff$#', 'createStaff'],
+            ['PUT', '#^/api/staff/(\d+)$#', 'updateStaff'],
+            ['DELETE', '#^/api/staff/(\d+)$#', 'deleteStaff'],
+            ['GET', '#^/api/services$#', 'listServices'],
+            ['POST', '#^/api/services$#', 'createService'],
+            ['PUT', '#^/api/services/(\d+)$#', 'updateService'],
+            ['DELETE', '#^/api/services/(\d+)$#', 'deleteService'],
+            ['POST', '#^/api/blocked-slots$#', 'createBlockedSlot'],
+            ['DELETE', '#^/api/blocked-slots/(\d+)$#', 'deleteBlockedSlot'],
+            ['GET', '#^/api/products$#', 'listProducts'],
+            ['POST', '#^/api/products$#', 'createProduct'],
+            ['PUT', '#^/api/products/(\d+)$#', 'updateProduct'],
+            ['DELETE', '#^/api/products/(\d+)$#', 'deleteProduct'],
+        ];
+    }
+
+    // ── Validazione input ────────────────────────────────────────────
+
+    private function reqString(array $b, string $k): string
+    {
+        if (!isset($b[$k]) || !is_string($b[$k]) || trim($b[$k]) === '') {
+            throw new HttpError(400, "Campo obbligatorio: $k");
+        }
+        return trim($b[$k]);
+    }
+
+    private function optString(array $b, string $k): ?string
+    {
+        if (!array_key_exists($k, $b) || $b[$k] === null) {
+            return null;
+        }
+        if (!is_string($b[$k])) {
+            throw new HttpError(400, "Il campo $k deve essere un testo");
+        }
+        return $b[$k];
+    }
+
+    private function optInt(array $b, string $k): ?int
+    {
+        if (!array_key_exists($k, $b) || $b[$k] === null) {
+            return null;
+        }
+        if (!is_int($b[$k]) && !(is_float($b[$k]) && floor($b[$k]) === $b[$k])) {
+            throw new HttpError(400, "Il campo $k deve essere un numero intero");
+        }
+        return (int)$b[$k];
+    }
+
+    private function optNumber(array $b, string $k): ?float
+    {
+        if (!array_key_exists($k, $b) || $b[$k] === null) {
+            return null;
+        }
+        if (!is_int($b[$k]) && !is_float($b[$k])) {
+            throw new HttpError(400, "Il campo $k deve essere un numero");
+        }
+        return (float)$b[$k];
+    }
+
+    private function date(string $value, string $field): string
+    {
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) || !checkdate((int)substr($value, 5, 2), (int)substr($value, 8, 2), (int)substr($value, 0, 4))) {
+            throw new HttpError(400, "Data non valida in $field (usa AAAA-MM-GG)");
+        }
+        return $value;
+    }
+
+    private function color(?string $c): ?string
+    {
+        if ($c !== null && !preg_match('/^#[0-9a-fA-F]{3,8}$/', $c)) {
+            throw new HttpError(400, 'Colore non valido');
+        }
+        return $c;
+    }
+
+    private function id(array $m): int
+    {
+        return (int)$m[0];
+    }
+
+    private function paging(array $q): array
+    {
+        $page = max(1, (int)($q['page'] ?? 1));
+        $limit = min(200, max(1, (int)($q['limit'] ?? 50)));
+        return [$page, $limit, ($page - 1) * $limit];
+    }
+
+    private function like(string $s): string
+    {
+        return '%' . $s . '%';
+    }
+
+    /**
+     * Costruisce "col = ?, ..." solo con le colonne ammesse (mai nomi dal client).
+     *
+     * @param array<string,mixed> $values
+     * @return array{0:string[],1:array<int,mixed>}
+     */
+    private function sets(array $values): array
+    {
+        $sets = [];
+        $params = [];
+        foreach ($values as $col => $val) {
+            if ($val !== null || $col === 'staff_id') {
+                $sets[] = "$col = ?";
+                $params[] = $val;
+            }
+        }
+        return [$sets, $params];
+    }
+
+    private function exists(string $table, int $id): bool
+    {
+        return $this->db->row("SELECT id FROM $table WHERE id = ?", [$id]) !== null;
+    }
+
+    // ── Statistiche ──────────────────────────────────────────────────
+
+    private function count(string $sql, array $params = []): int
+    {
+        return (int)($this->db->row($sql, $params)['c'] ?? 0);
+    }
+
+    private function stats(array $m, array $q, array $b): array
+    {
+        $today = date('Y-m-d');
+        $value = $this->db->row("SELECT COALESCE(SUM(total_price), 0) AS t FROM appointments WHERE status = 'completed'");
+        return [200, [
+            'appointments' => $this->count('SELECT COUNT(*) AS c FROM appointments'),
+            'clients' => $this->count('SELECT COUNT(*) AS c FROM clients'),
+            'staff' => $this->count('SELECT COUNT(*) AS c FROM staff WHERE active = 1'),
+            'services' => $this->count('SELECT COUNT(*) AS c FROM services WHERE active = 1'),
+            'products' => $this->count('SELECT COUNT(*) AS c FROM products'),
+            'today_appointments' => $this->count('SELECT COUNT(*) AS c FROM appointments WHERE scheduled_date = ?', [$today]),
+            'upcoming_appointments' => $this->count("SELECT COUNT(*) AS c FROM appointments WHERE status IN ('booked', 'confirmed') AND scheduled_date >= ?", [$today]),
+            'completed_appointments' => $this->count("SELECT COUNT(*) AS c FROM appointments WHERE status = 'completed'"),
+            'revenue' => (float)($value['t'] ?? 0),
+            'low_stock_products' => $this->count('SELECT COUNT(*) AS c FROM products WHERE stock <= low_stock_alert'),
+        ]];
+    }
+
+    // ── Appuntamenti ─────────────────────────────────────────────────
+
+    private const APT_SELECT = "SELECT a.*, cl.name AS client_name, cl.phone AS client_phone,
+            s.name AS staff_name, s.color AS staff_color
+        FROM appointments a
+        LEFT JOIN clients cl ON cl.id = a.client_id
+        LEFT JOIN staff s ON s.id = a.staff_id";
+
+    private function appointmentServices(int $aptId): array
+    {
+        return $this->db->all(
+            'SELECT aps.*, sv.name AS service_name FROM appointment_services aps
+             LEFT JOIN services sv ON sv.id = aps.service_id
+             WHERE aps.appointment_id = ? ORDER BY aps.id',
+            [$aptId]
+        );
+    }
+
+    private function fetchAppointment(int $id): ?array
+    {
+        return $this->db->row(self::APT_SELECT . ' WHERE a.id = ?', [$id]);
+    }
+
+    private function listAppointments(array $m, array $q, array $b): array
+    {
+        [, $limit, $offset] = $this->paging($q);
+        $where = 'WHERE 1=1';
+        $params = [];
+        if (!empty($q['search'])) {
+            $where .= " AND (a.identifier LIKE ? OR cl.name LIKE ?)";
+            $s = $this->like((string)$q['search']);
+            array_push($params, $s, $s);
+        }
+        if (!empty($q['status'])) {
+            $where .= ' AND a.status = ?';
+            $params[] = (string)$q['status'];
+        }
+        if (!empty($q['date'])) {
+            $where .= ' AND a.scheduled_date = ?';
+            $params[] = (string)$q['date'];
+        }
+        if (!empty($q['staff_id'])) {
+            $where .= ' AND a.staff_id = ?';
+            $params[] = (int)$q['staff_id'];
+        }
+        $total = $this->count("SELECT COUNT(*) AS c FROM appointments a LEFT JOIN clients cl ON cl.id = a.client_id $where", $params);
+        $rows = $this->db->all(
+            self::APT_SELECT . " $where ORDER BY a.scheduled_date DESC, a.start_time ASC LIMIT $limit OFFSET $offset",
+            $params
+        );
+        return [200, ['appointments' => $rows, 'total' => $total]];
+    }
+
+    private function calendar(array $m, array $q, array $b): array
+    {
+        if (empty($q['start']) || empty($q['end'])) {
+            throw new HttpError(400, 'Parametri start e end obbligatori');
+        }
+        $start = $this->date((string)$q['start'], 'start');
+        $end = $this->date((string)$q['end'], 'end');
+        $rows = $this->db->all(
+            self::APT_SELECT . " WHERE a.scheduled_date >= ? AND a.scheduled_date <= ? AND a.status <> 'cancelled'
+             ORDER BY a.start_time ASC",
+            [$start, $end]
+        );
+        foreach ($rows as &$row) {
+            $row['appointment_services'] = $this->appointmentServices((int)$row['id']);
+        }
+        unset($row);
+        $blocked = $this->db->all(
+            'SELECT b.*, s.name AS staff_name FROM blocked_slots b
+             LEFT JOIN staff s ON s.id = b.staff_id
+             WHERE b.blocked_date >= ? AND b.blocked_date <= ?
+             ORDER BY b.start_time ASC',
+            [$start, $end]
+        );
+        return [200, ['appointments' => $rows, 'blocked_slots' => $blocked]];
+    }
+
+    private function getAppointment(array $m, array $q, array $b): array
+    {
+        $id = $this->id($m);
+        $apt = $this->fetchAppointment($id);
+        if (!$apt) {
+            throw new HttpError(404, 'Non trovato');
+        }
+        $apt['appointment_services'] = $this->appointmentServices($id);
+        $apt['appointment_notes'] = $this->db->all(
+            'SELECT * FROM appointment_notes WHERE appointment_id = ? ORDER BY created_at DESC, id DESC',
+            [$id]
+        );
+        return [200, ['appointment' => $apt]];
+    }
+
+    /** Cosa occupa già un collaboratore in una data: altri appuntamenti e orari bloccati. */
+    private function busyFor(int $staffId, string $date, ?int $excludeId = null): array
+    {
+        $sql = "SELECT a.start_time, a.end_time, cl.name AS client_name
+                FROM appointments a LEFT JOIN clients cl ON cl.id = a.client_id
+                WHERE a.staff_id = ? AND a.scheduled_date = ? AND a.status <> 'cancelled'";
+        $params = [$staffId, $date];
+        if ($excludeId !== null) {
+            $sql .= ' AND a.id <> ?';
+            $params[] = $excludeId;
+        }
+        $busy = [];
+        foreach ($this->db->all($sql, $params) as $a) {
+            $busy[] = [
+                'kind' => 'appointment',
+                'start_time' => $a['start_time'],
+                'end_time' => $a['end_time'],
+                'label' => $a['client_name'] ?: 'altra prenotazione',
+            ];
+        }
+        $blocks = $this->db->all(
+            'SELECT start_time, end_time, reason FROM blocked_slots WHERE staff_id = ? AND blocked_date = ?',
+            [$staffId, $date]
+        );
+        foreach ($blocks as $bl) {
+            $busy[] = [
+                'kind' => 'blocked',
+                'start_time' => $bl['start_time'],
+                'end_time' => $bl['end_time'],
+                'label' => $bl['reason'] ?: 'bloccato',
+            ];
+        }
+        return $busy;
+    }
+
+    private function staffName(int $staffId): string
+    {
+        return (string)($this->db->row('SELECT name FROM staff WHERE id = ?', [$staffId])['name'] ?? '');
+    }
+
+    private function createAppointment(array $m, array $q, array $b): array
+    {
+        $clientId = $this->optInt($b, 'client_id');
+        if ($clientId === null) {
+            throw new HttpError(400, 'Campo obbligatorio: client_id');
+        }
+        $date = $this->date($this->reqString($b, 'scheduled_date'), 'scheduled_date');
+        $staffId = $this->optInt($b, 'staff_id');
+        $startTime = $this->optString($b, 'start_time') ?? '09:00';
+        $notes = $this->optString($b, 'notes') ?? '';
+        $recurring = $this->optInt($b, 'is_recurring') ?? 0;
+        $interval = $this->optString($b, 'recurrence_interval') ?? '';
+        $allow = ($b['allow_conflict'] ?? false) === true;
+        $serviceIds = [];
+        foreach (($b['service_ids'] ?? []) as $sid) {
+            if (!is_int($sid)) {
+                throw new HttpError(400, 'service_ids deve contenere numeri interi');
+            }
+            $serviceIds[] = $sid;
+        }
+
+        if (!$this->exists('clients', $clientId)) {
+            throw new HttpError(400, 'Cliente non trovato');
+        }
+        if ($staffId !== null && !$this->exists('staff', $staffId)) {
+            throw new HttpError(400, 'Collaboratore non trovato');
+        }
+
+        $totalDuration = 60;
+        $totalPrice = 0.0;
+        $services = [];
+        if ($serviceIds) {
+            $in = implode(',', array_fill(0, count($serviceIds), '?'));
+            $services = $this->db->all("SELECT id, duration, price FROM services WHERE id IN ($in)", $serviceIds);
+            $totalDuration = array_sum(array_map(fn($s) => (int)$s['duration'], $services));
+            $totalPrice = array_sum(array_map(fn($s) => (float)$s['price'], $services));
+        }
+
+        $start = toMinutes($startTime);
+        if ($start === null) {
+            throw new HttpError(400, 'Gli orari devono essere nel formato HH:MM');
+        }
+        if ($totalDuration <= 0) {
+            throw new HttpError(400, "L'appuntamento deve avere una durata positiva");
+        }
+        if ($start + $totalDuration >= 24 * 60) {
+            throw new HttpError(400, "L'appuntamento deve iniziare e finire nello stesso giorno");
+        }
+        $endTime = addMinutes($startTime, $totalDuration);
+
+        if ($staffId !== null && !$allow) {
+            $conflicts = findConflicts($startTime, $endTime, $this->busyFor($staffId, $date));
+            if ($conflicts) {
+                throw new HttpError(409, describeConflicts($this->staffName($staffId), $conflicts), ['conflicts' => $conflicts]);
+            }
+        }
+
+        $prefix = (string)($this->db->row("SELECT meta_value FROM _meta WHERE meta_key = 'appointment_prefix'")['meta_value'] ?? 'APP');
+        $identifier = $prefix . '-' . $this->db->nextCounter();
+
+        $this->db->exec(
+            'INSERT INTO appointments (identifier, client_id, staff_id, scheduled_date, start_time, end_time, total_price, notes, is_recurring, recurrence_interval)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [$identifier, $clientId, $staffId, $date, $startTime, $endTime, $totalPrice, $notes, $recurring, $interval]
+        );
+        $aptId = $this->db->lastId();
+        $byId = [];
+        foreach ($services as $s) {
+            $byId[(int)$s['id']] = $s;
+        }
+        foreach ($serviceIds as $sid) {
+            if (isset($byId[$sid])) {
+                $this->db->exec(
+                    'INSERT INTO appointment_services (appointment_id, service_id, price, duration) VALUES (?, ?, ?, ?)',
+                    [$aptId, $sid, $byId[$sid]['price'], $byId[$sid]['duration']]
+                );
+            }
+        }
+        return [201, ['appointment' => $this->fetchAppointment($aptId)]];
+    }
+
+    private function updateAppointment(array $m, array $q, array $b): array
+    {
+        $id = $this->id($m);
+        $existing = $this->db->row(
+            'SELECT staff_id, scheduled_date, start_time, end_time, status FROM appointments WHERE id = ?',
+            [$id]
+        );
+        if (!$existing) {
+            throw new HttpError(404, 'Non trovato');
+        }
+        $allow = ($b['allow_conflict'] ?? false) === true;
+
+        $patch = [
+            'client_id' => $this->optInt($b, 'client_id'),
+            'status' => $this->optString($b, 'status'),
+            'scheduled_date' => ($d = $this->optString($b, 'scheduled_date')) !== null ? $this->date($d, 'scheduled_date') : null,
+            'start_time' => $this->optString($b, 'start_time'),
+            'end_time' => $this->optString($b, 'end_time'),
+            'total_price' => $this->optNumber($b, 'total_price'),
+            'notes' => $this->optString($b, 'notes'),
+        ];
+        if ($patch['status'] !== null && !in_array($patch['status'], self::STATUSES, true)) {
+            throw new HttpError(400, 'Stato non valido');
+        }
+        if ($patch['client_id'] !== null && !$this->exists('clients', $patch['client_id'])) {
+            throw new HttpError(400, 'Cliente non trovato');
+        }
+        $staffProvided = array_key_exists('staff_id', $b);
+        $newStaff = $staffProvided ? $this->optInt($b, 'staff_id') : null;
+        if ($newStaff !== null && !$this->exists('staff', $newStaff)) {
+            throw new HttpError(400, 'Collaboratore non trovato');
+        }
+
+        // Dove finisce l'appuntamento dopo la modifica.
+        $staffId = $staffProvided ? $newStaff : ($existing['staff_id'] !== null ? (int)$existing['staff_id'] : null);
+        $date = $patch['scheduled_date'] ?? $existing['scheduled_date'];
+        $startTime = $patch['start_time'] ?? $existing['start_time'];
+        $endTime = $patch['end_time'] ?? $existing['end_time'];
+
+        // Spostare un appuntamento ne mantiene la durata.
+        if ($patch['start_time'] !== null && $patch['start_time'] !== $existing['start_time'] && $patch['end_time'] === null) {
+            $was = toMinutes($existing['start_time']);
+            $wasEnd = toMinutes($existing['end_time']);
+            $duration = ($was !== null && $wasEnd !== null) ? max($wasEnd - $was, 0) : 0;
+            $endTime = addMinutes($startTime, $duration);
+            $patch['end_time'] = $endTime;
+        }
+
+        $currentStaff = $existing['staff_id'] !== null ? (int)$existing['staff_id'] : null;
+        $moved = $staffId !== $currentStaff || $date !== $existing['scheduled_date']
+            || $startTime !== $existing['start_time'] || $endTime !== $existing['end_time'];
+        $status = $patch['status'] ?? $existing['status'];
+        $restored = $existing['status'] === 'cancelled' && $status !== 'cancelled';
+
+        // Una sovrapposizione già accettata non deve bloccare note, check-in,
+        // completamento o annullamento.
+        if ($moved || $restored) {
+            $s = toMinutes($startTime);
+            $e = toMinutes($endTime);
+            if ($s === null || $e === null) {
+                throw new HttpError(400, 'Gli orari devono essere nel formato HH:MM');
+            }
+            if ($e <= $s) {
+                throw new HttpError(400, "L'appuntamento deve finire dopo l'inizio, nello stesso giorno");
+            }
+            if ($status !== 'cancelled' && $staffId !== null && !$allow) {
+                $conflicts = findConflicts($startTime, $endTime, $this->busyFor($staffId, $date, $id));
+                if ($conflicts) {
+                    throw new HttpError(409, describeConflicts($this->staffName($staffId), $conflicts), ['conflicts' => $conflicts]);
+                }
+            }
+        }
+
+        [$sets, $params] = $this->sets($patch);
+        if ($staffProvided) {
+            $sets[] = 'staff_id = ?';
+            $params[] = $newStaff;
+        }
+        $sets[] = 'updated_at = ' . $this->db->now();
+        $params[] = $id;
+        $this->db->exec('UPDATE appointments SET ' . implode(', ', $sets) . ' WHERE id = ?', $params);
+        return [200, ['ok' => true]];
+    }
+
+    private function deleteAppointment(array $m, array $q, array $b): array
+    {
+        $this->db->exec('DELETE FROM appointments WHERE id = ?', [$this->id($m)]);
+        return [200, ['ok' => true]];
+    }
+
+    private function addNote(array $m, array $q, array $b): array
+    {
+        $id = $this->id($m);
+        $content = $this->reqString($b, 'content');
+        if (!$this->exists('appointments', $id)) {
+            throw new HttpError(404, 'Non trovato');
+        }
+        $this->db->exec('INSERT INTO appointment_notes (appointment_id, content) VALUES (?, ?)', [$id, $content]);
+        return [201, ['ok' => true]];
+    }
+
+    private function deleteNote(array $m, array $q, array $b): array
+    {
+        $this->db->exec('DELETE FROM appointment_notes WHERE id = ?', [$this->id($m)]);
+        return [200, ['ok' => true]];
+    }
+
+    // ── Clienti ──────────────────────────────────────────────────────
+
+    private function listClients(array $m, array $q, array $b): array
+    {
+        [, $limit, $offset] = $this->paging($q);
+        $where = 'WHERE 1=1';
+        $params = [];
+        if (!empty($q['search'])) {
+            $where .= " AND (c.name LIKE ? OR c.email LIKE ? OR c.phone LIKE ?)";
+            $s = $this->like((string)$q['search']);
+            array_push($params, $s, $s, $s);
+        }
+        $total = $this->count("SELECT COUNT(*) AS c FROM clients c $where", $params);
+        $rows = $this->db->all(
+            "SELECT c.*, (SELECT COUNT(*) FROM appointments WHERE client_id = c.id) AS appointment_count
+             FROM clients c $where ORDER BY c.name ASC LIMIT $limit OFFSET $offset",
+            $params
+        );
+        return [200, ['clients' => $rows, 'total' => $total]];
+    }
+
+    private function allClients(array $m, array $q, array $b): array
+    {
+        return [200, ['clients' => $this->db->all('SELECT id, name FROM clients ORDER BY name ASC')]];
+    }
+
+    private function getClient(array $m, array $q, array $b): array
+    {
+        $id = $this->id($m);
+        $client = $this->db->row('SELECT * FROM clients WHERE id = ?', [$id]);
+        if (!$client) {
+            throw new HttpError(404, 'Non trovato');
+        }
+        $names = $this->db->serviceNamesSql('a');
+        $appointments = $this->db->all(
+            "SELECT a.*, s.name AS staff_name, s.color AS staff_color,
+                    $names AS service_names,
+                    (SELECT an.content FROM appointment_notes an
+                     WHERE an.appointment_id = a.id
+                     ORDER BY an.created_at DESC, an.id DESC LIMIT 1) AS latest_note
+             FROM appointments a LEFT JOIN staff s ON s.id = a.staff_id
+             WHERE a.client_id = ? ORDER BY a.scheduled_date DESC, a.start_time DESC LIMIT 50",
+            [$id]
+        );
+        return [200, ['client' => $client, 'appointments' => $appointments]];
+    }
+
+    private function createClient(array $m, array $q, array $b): array
+    {
+        $this->db->exec(
+            'INSERT INTO clients (name, email, phone, notes) VALUES (?, ?, ?, ?)',
+            [
+                $this->reqString($b, 'name'),
+                $this->optString($b, 'email') ?? '',
+                $this->optString($b, 'phone') ?? '',
+                $this->optString($b, 'notes') ?? '',
+            ]
+        );
+        return [201, ['client' => $this->db->row('SELECT * FROM clients WHERE id = ?', [$this->db->lastId()])]];
+    }
+
+    private function updateClient(array $m, array $q, array $b): array
+    {
+        $id = $this->id($m);
+        $name = $this->optString($b, 'name');
+        if ($name !== null && trim($name) === '') {
+            throw new HttpError(400, 'Il nome non può essere vuoto');
+        }
+        [$sets, $params] = $this->sets([
+            'name' => $name !== null ? trim($name) : null,
+            'email' => $this->optString($b, 'email'),
+            'phone' => $this->optString($b, 'phone'),
+            'notes' => $this->optString($b, 'notes'),
+        ]);
+        if ($sets) {
+            $sets[] = 'updated_at = ' . $this->db->now();
+            $params[] = $id;
+            $this->db->exec('UPDATE clients SET ' . implode(', ', $sets) . ' WHERE id = ?', $params);
+        }
+        return [200, ['ok' => true]];
+    }
+
+    private function deleteClient(array $m, array $q, array $b): array
+    {
+        $this->db->exec('DELETE FROM clients WHERE id = ?', [$this->id($m)]);
+        return [200, ['ok' => true]];
+    }
+
+    // ── Personale ────────────────────────────────────────────────────
+
+    private function listStaff(array $m, array $q, array $b): array
+    {
+        $rows = $this->db->all(
+            "SELECT s.*,
+                    COUNT(a.id) AS appointment_count,
+                    COALESCE(SUM(CASE WHEN a.status = 'completed' THEN 1 ELSE 0 END), 0) AS completed_appointment_count,
+                    COALESCE(SUM(CASE WHEN a.status = 'completed' THEN a.total_price ELSE 0 END), 0) AS completed_service_value
+             FROM staff s LEFT JOIN appointments a ON a.staff_id = s.id
+             GROUP BY s.id ORDER BY s.name ASC"
+        );
+        foreach ($rows as &$r) {
+            $r['appointment_count'] = (int)$r['appointment_count'];
+            $r['completed_appointment_count'] = (int)$r['completed_appointment_count'];
+            $r['completed_service_value'] = (float)$r['completed_service_value'];
+        }
+        unset($r);
+        return [200, ['staff' => $rows]];
+    }
+
+    private function allStaff(array $m, array $q, array $b): array
+    {
+        return [200, ['staff' => $this->db->all('SELECT id, name, color FROM staff WHERE active = 1 ORDER BY name ASC')]];
+    }
+
+    private function createStaff(array $m, array $q, array $b): array
+    {
+        $this->db->exec(
+            'INSERT INTO staff (name, email, phone, title, color) VALUES (?, ?, ?, ?, ?)',
+            [
+                $this->reqString($b, 'name'),
+                $this->optString($b, 'email') ?? '',
+                $this->optString($b, 'phone') ?? '',
+                $this->optString($b, 'title') ?? '',
+                $this->color($this->optString($b, 'color')) ?: '#7c3aed',
+            ]
+        );
+        return [201, ['staff' => $this->db->row('SELECT * FROM staff WHERE id = ?', [$this->db->lastId()])]];
+    }
+
+    private function updateStaff(array $m, array $q, array $b): array
+    {
+        $id = $this->id($m);
+        [$sets, $params] = $this->sets([
+            'name' => $this->optString($b, 'name'),
+            'email' => $this->optString($b, 'email'),
+            'phone' => $this->optString($b, 'phone'),
+            'title' => $this->optString($b, 'title'),
+            'color' => $this->color($this->optString($b, 'color')),
+            'active' => $this->optInt($b, 'active'),
+        ]);
+        if ($sets) {
+            $params[] = $id;
+            $this->db->exec('UPDATE staff SET ' . implode(', ', $sets) . ' WHERE id = ?', $params);
+        }
+        return [200, ['ok' => true]];
+    }
+
+    private function deleteStaff(array $m, array $q, array $b): array
+    {
+        $this->db->exec('DELETE FROM staff WHERE id = ?', [$this->id($m)]);
+        return [200, ['ok' => true]];
+    }
+
+    // ── Servizi ──────────────────────────────────────────────────────
+
+    private function listServices(array $m, array $q, array $b): array
+    {
+        return [200, ['services' => $this->db->all('SELECT * FROM services ORDER BY category ASC, name ASC')]];
+    }
+
+    private function createService(array $m, array $q, array $b): array
+    {
+        $this->db->exec(
+            'INSERT INTO services (name, description, duration, price, color, category) VALUES (?, ?, ?, ?, ?, ?)',
+            [
+                $this->reqString($b, 'name'),
+                $this->optString($b, 'description') ?? '',
+                $this->optInt($b, 'duration') ?: 60,
+                $this->optNumber($b, 'price') ?? 0.0,
+                $this->color($this->optString($b, 'color')) ?: '#6b7280',
+                $this->optString($b, 'category') ?? '',
+            ]
+        );
+        return [201, ['service' => $this->db->row('SELECT * FROM services WHERE id = ?', [$this->db->lastId()])]];
+    }
+
+    private function updateService(array $m, array $q, array $b): array
+    {
+        $id = $this->id($m);
+        $duration = $this->optInt($b, 'duration');
+        if ($duration !== null && $duration <= 0) {
+            throw new HttpError(400, 'La durata deve essere positiva');
+        }
+        $price = $this->optNumber($b, 'price');
+        if ($price !== null && $price < 0) {
+            throw new HttpError(400, 'Il prezzo non può essere negativo');
+        }
+        [$sets, $params] = $this->sets([
+            'name' => $this->optString($b, 'name'),
+            'description' => $this->optString($b, 'description'),
+            'duration' => $duration,
+            'price' => $price,
+            'color' => $this->color($this->optString($b, 'color')),
+            'category' => $this->optString($b, 'category'),
+            'active' => $this->optInt($b, 'active'),
+        ]);
+        if ($sets) {
+            $params[] = $id;
+            $this->db->exec('UPDATE services SET ' . implode(', ', $sets) . ' WHERE id = ?', $params);
+        }
+        return [200, ['ok' => true]];
+    }
+
+    private function deleteService(array $m, array $q, array $b): array
+    {
+        $this->db->exec('DELETE FROM services WHERE id = ?', [$this->id($m)]);
+        return [200, ['ok' => true]];
+    }
+
+    // ── Orari bloccati ───────────────────────────────────────────────
+
+    private function createBlockedSlot(array $m, array $q, array $b): array
+    {
+        $staffId = $this->optInt($b, 'staff_id');
+        if ($staffId === null) {
+            throw new HttpError(400, 'Campo obbligatorio: staff_id');
+        }
+        $date = $this->date($this->reqString($b, 'blocked_date'), 'blocked_date');
+        $start = $this->reqString($b, 'start_time');
+        $end = $this->reqString($b, 'end_time');
+        $reason = $this->optString($b, 'reason') ?? '';
+        $allow = ($b['allow_conflict'] ?? false) === true;
+
+        $s = toMinutes($start);
+        $e = toMinutes($end);
+        if ($s === null || $e === null) {
+            throw new HttpError(400, 'Gli orari devono essere nel formato HH:MM');
+        }
+        if ($e <= $s) {
+            throw new HttpError(400, 'Il blocco orario deve finire dopo l\'inizio, nello stesso giorno');
+        }
+        if (!$this->exists('staff', $staffId)) {
+            throw new HttpError(400, 'Collaboratore non trovato');
+        }
+        if (!$allow) {
+            $conflicts = findConflicts($start, $end, $this->busyFor($staffId, $date));
+            if ($conflicts) {
+                throw new HttpError(409, describeConflicts($this->staffName($staffId), $conflicts, 'block'), ['conflicts' => $conflicts]);
+            }
+        }
+        $this->db->exec(
+            'INSERT INTO blocked_slots (staff_id, blocked_date, start_time, end_time, reason) VALUES (?, ?, ?, ?, ?)',
+            [$staffId, $date, $start, $end, $reason]
+        );
+        return [201, ['ok' => true]];
+    }
+
+    private function deleteBlockedSlot(array $m, array $q, array $b): array
+    {
+        $this->db->exec('DELETE FROM blocked_slots WHERE id = ?', [$this->id($m)]);
+        return [200, ['ok' => true]];
+    }
+
+    // ── Prodotti ─────────────────────────────────────────────────────
+
+    private function listProducts(array $m, array $q, array $b): array
+    {
+        [, $limit, $offset] = $this->paging($q);
+        $where = 'WHERE 1=1';
+        $params = [];
+        if (!empty($q['search'])) {
+            $where .= " AND (p.name LIKE ? OR p.brand LIKE ? OR p.sku LIKE ?)";
+            $s = $this->like((string)$q['search']);
+            array_push($params, $s, $s, $s);
+        }
+        if (!empty($q['category'])) {
+            $where .= ' AND p.category = ?';
+            $params[] = (string)$q['category'];
+        }
+        $total = $this->count("SELECT COUNT(*) AS c FROM products p $where", $params);
+        $rows = $this->db->all("SELECT * FROM products p $where ORDER BY p.name ASC LIMIT $limit OFFSET $offset", $params);
+        return [200, ['products' => $rows, 'total' => $total]];
+    }
+
+    private function nonNegative(?float $v, string $field): ?float
+    {
+        if ($v !== null && $v < 0) {
+            throw new HttpError(400, "Il campo $field non può essere negativo");
+        }
+        return $v;
+    }
+
+    private function nonNegativeInt(?int $v, string $field): ?int
+    {
+        if ($v !== null && $v < 0) {
+            throw new HttpError(400, "Il campo $field non può essere negativo");
+        }
+        return $v;
+    }
+
+    private function createProduct(array $m, array $q, array $b): array
+    {
+        $this->db->exec(
+            'INSERT INTO products (name, brand, category, sku, price, cost, stock, low_stock_alert) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+                $this->reqString($b, 'name'),
+                $this->optString($b, 'brand') ?? '',
+                $this->optString($b, 'category') ?? '',
+                $this->optString($b, 'sku') ?? '',
+                $this->nonNegative($this->optNumber($b, 'price'), 'price') ?? 0.0,
+                $this->nonNegative($this->optNumber($b, 'cost'), 'cost') ?? 0.0,
+                $this->nonNegativeInt($this->optInt($b, 'stock'), 'stock') ?? 0,
+                $this->nonNegativeInt($this->optInt($b, 'low_stock_alert'), 'low_stock_alert') ?? 5,
+            ]
+        );
+        return [201, ['product' => $this->db->row('SELECT * FROM products WHERE id = ?', [$this->db->lastId()])]];
+    }
+
+    private function updateProduct(array $m, array $q, array $b): array
+    {
+        $id = $this->id($m);
+        [$sets, $params] = $this->sets([
+            'name' => $this->optString($b, 'name'),
+            'brand' => $this->optString($b, 'brand'),
+            'category' => $this->optString($b, 'category'),
+            'sku' => $this->optString($b, 'sku'),
+            'price' => $this->nonNegative($this->optNumber($b, 'price'), 'price'),
+            'cost' => $this->nonNegative($this->optNumber($b, 'cost'), 'cost'),
+            'stock' => $this->nonNegativeInt($this->optInt($b, 'stock'), 'stock'),
+            'low_stock_alert' => $this->nonNegativeInt($this->optInt($b, 'low_stock_alert'), 'low_stock_alert'),
+        ]);
+        if ($sets) {
+            $sets[] = 'updated_at = ' . $this->db->now();
+            $params[] = $id;
+            $this->db->exec('UPDATE products SET ' . implode(', ', $sets) . ' WHERE id = ?', $params);
+        }
+        return [200, ['ok' => true]];
+    }
+
+    private function deleteProduct(array $m, array $q, array $b): array
+    {
+        $this->db->exec('DELETE FROM products WHERE id = ?', [$this->id($m)]);
+        return [200, ['ok' => true]];
+    }
+}
