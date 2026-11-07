@@ -166,6 +166,7 @@ Poi apri http://localhost:8080 (password `prova`). I test dell'API: `php php/tes
 - **Primo orario libero**: scelti i servizi, la pagina propone subito il primo giorno e orario disponibile ("Scegli questo").
 - **Riepilogo**: prima dei dati si vede servizi, durata e totale. Su telefono una barra fissa in basso mostra il riepilogo e il pulsante "Prenota/Continua".
 - **Sposta la prenotazione**: le email ai clienti hanno il link `/sposta/<codice>` (e la pagina di annullamento lo propone). Se i servizi sono a conferma immediata resta confermata, altrimenti torna "da approvare" e ti arriva l'email con il pulsante Approva/Rifiuta.
+- **Il cliente cambia i servizi**: nella stessa pagina `/sposta/<codice>` può aggiungere o togliere servizi (solo quelli prenotabili online). Gli orari liberi si ricalcolano sulla nuova durata, prezzo e durata si aggiornano, e tu ricevi l'email di modifica.
 
 ## Email automatiche e promemoria (gruppo 3)
 

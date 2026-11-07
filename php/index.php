@@ -212,7 +212,8 @@ if (preg_match('#^/sposta/([a-f0-9]{32})(?:/(giorni|orari|primo))?$#', $path, $m
         if ($apt === null || $own === null) {
             http_response_code(404);
         }
-        echo Shop::reschedulePage($cfg, $own !== null ? $apt : null, $mm[1]);
+        $curIds = $apt !== null ? array_map(static fn(array $r): int => (int)$r['service_id'], $db->all('SELECT service_id FROM appointment_services WHERE appointment_id = ? ORDER BY id', [(int)$apt['id']])) : [];
+        echo Shop::reschedulePage($cfg, $own !== null ? $apt : null, $mm[1], $own !== null ? Availability::services($db, (int)$own['id']) : [], $curIds);
         exit;
     }
     header('Content-Type: application/json; charset=utf-8');
@@ -225,6 +226,13 @@ if (preg_match('#^/sposta/([a-f0-9]{32})(?:/(giorni|orari|primo))?$#', $path, $m
         $json(404, ['error' => 'Questa prenotazione non può più essere spostata.']);
     }
     $dur = Booking::duration($apt);
+    if ($method === 'GET' && isset($_GET['servizi']) && $_GET['servizi'] !== '') {
+        $np = Availability::pick($db, (int)$own['id'], explode(',', (string)$_GET['servizi']));
+        if ($np === null) {
+            $json(400, ['error' => 'Scegli almeno un servizio tra quelli disponibili.']);
+        }
+        $dur = $np['duration'];
+    }
     $exclude = (int)$apt['id'];
     if ($sub === 'giorni' && $method === 'GET') {
         $json(200, ['days' => Availability::days($db, $own, (string)($_GET['mese'] ?? ''), $dur, null, null, $exclude)]);
@@ -237,7 +245,7 @@ if (preg_match('#^/sposta/([a-f0-9]{32})(?:/(giorni|orari|primo))?$#', $path, $m
     }
     if ($sub === '' && $method === 'POST') {
         $in = json_decode((string)file_get_contents('php://input'), true);
-        $res = is_array($in) ? Booking::reschedule($db, $cfg, $mm[1], (string)($in['date'] ?? ''), (string)($in['time'] ?? '')) : ['ok' => false, 'error' => 'Richiesta non valida.'];
+        $res = is_array($in) ? Booking::reschedule($db, $cfg, $mm[1], (string)($in['date'] ?? ''), (string)($in['time'] ?? ''), null, isset($in['service_ids']) && is_array($in['service_ids']) ? $in['service_ids'] : null) : ['ok' => false, 'error' => 'Richiesta non valida.'];
         if (!$res['ok']) {
             $json(400, ['error' => $res['error'] ?? 'Spostamento non riuscito.']);
         }

@@ -681,6 +681,18 @@ $busyMv = Booking::reschedule($dbB, $cfgB, $mt, $thu, '10:00');
 check('spostamento in orario occupato rifiutato (con un solo collaboratore libero ok)', $busyMv['ok'] === true || str_contains($busyMv['error'], 'occupato'));
 check('spostamento: data non valida e link errato', !Booking::reschedule($dbB, $cfgB, $mt, $sunday, '10:00')['ok'] && !Booking::reschedule($dbB, $cfgB, str_repeat('c', 32), $thu, '10:00')['ok']);
 check('pagina sposta', str_contains(Shop::reschedulePage($cfgB, Booking::byToken($dbB, $mt), $mt), "BASE='/sposta/") && str_contains(Shop::reschedulePage($cfgB, null, 'x'), 'non è corretto'));
+// il cliente cambia i servizi
+$durOf = static fn(string $t): int => Booking::duration(Booking::byToken($dbB, $t));
+$svcOf = static fn(string $t): array => array_map(static fn($r) => (int)$r['service_id'], $dbB->all('SELECT service_id FROM appointment_services WHERE appointment_id = ? ORDER BY service_id', [(int)Booking::byToken($dbB, $t)['id']]));
+$svTwo = $dbB->row('SELECT duration, price FROM services WHERE id = ?', [$two]);
+\App\Mailer::$sent = [];
+$ch = Booking::reschedule($dbB, $cfgB, $mt, $thu, '15:00', null, [$two]);
+check('cambio servizi: righe, durata e prezzo aggiornati', $ch['ok'] && $svcOf($mt) === [$two] && $durOf($mt) === (int)$svTwo['duration'] && abs((float)$dbB->row('SELECT total_price FROM appointments WHERE public_token = ?', [$mt])['total_price'] - (float)$svTwo['price']) < 0.001);
+check('cambio servizi: avvisati cliente e negozio', count(\App\Mailer::$sent) === 2);
+check('cambio servizi: nessun servizio o servizio estraneo rifiutato', !Booking::reschedule($dbB, $cfgB, $mt, $thu, '15:00', null, [])['ok'] && !Booking::reschedule($dbB, $cfgB, $mt, $thu, '15:00', null, [999999])['ok'] && $svcOf($mt) === [$two]);
+$ch2 = Booking::reschedule($dbB, $cfgB, $mt, $thu, '15:00', null, [$one, $two]);
+check('cambio servizi: di nuovo entrambi', $ch2['ok'] && $svcOf($mt) === array_values(array_unique([$one, $two])) || $svcOf($mt) === [min($one, $two), max($one, $two)]);
+check('pagina sposta: elenco servizi', str_contains(Shop::reschedulePage($cfgB, Booking::byToken($dbB, $mt), $mt, Availability::services($dbB, $idB), [$one]), 'id="svcs"') && str_contains(Shop::reschedulePage($cfgB, Booking::byToken($dbB, $mt), $mt, Availability::services($dbB, $idB), [$one]), 'value="' . $one . '" checked'));
 check('pagina annulla propone di spostare', str_contains(Shop::cancelPage($cfgB, Booking::byToken($dbB, $mt), $mt), '/sposta/'));
 // calendario .ics
 $ics = Booking::ics(Auth::account($dbB, $idB), Booking::byToken($dbB, $ar['public_token']), 'Taglio, piega');

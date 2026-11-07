@@ -308,7 +308,7 @@ final class Booking
      * @param array<string,mixed> $cfg
      * @return array{ok:bool,error?:string,status?:string}
      */
-    public static function reschedule(Db $db, array $cfg, string $token, string $date, string $time, ?int $now = null): array
+    public static function reschedule(Db $db, array $cfg, string $token, string $date, string $time, ?int $now = null, ?array $serviceIds = null): array
     {
         $now ??= time();
         $apt = self::byToken($db, $token);
@@ -323,8 +323,21 @@ final class Booking
         if (!Availability::dateAllowed($acct, $date, $now) || toMinutes($time) === null) {
             return ['ok' => false, 'error' => 'Scegli una data e un orario validi.'];
         }
-        $duration = self::duration($apt);
         $ids = array_map(static fn(array $r): int => (int)$r['service_id'], $db->all('SELECT service_id FROM appointment_services WHERE appointment_id = ?', [(int)$apt['id']]));
+        $duration = self::duration($apt);
+        $changed = false;
+        if ($serviceIds !== null) {
+            $np = Availability::pick($db, $accountId, $serviceIds);
+            if ($np === null) {
+                return ['ok' => false, 'error' => 'Scegli almeno un servizio tra quelli disponibili.'];
+            }
+            $sorted = static function (array $a): array { $a = array_map('intval', $a); sort($a); return $a; };
+            $changed = $sorted($np['ids']) !== $sorted($ids);
+            if ($changed) {
+                $ids = $np['ids'];
+                $duration = $np['duration'];
+            }
+        }
         $pick = Availability::pick($db, $accountId, $ids);
         $auto = $pick !== null && $pick['auto'] && $apt['source'] !== 'online_free';
         if (!$db->lock('book_' . $accountId)) {
@@ -348,6 +361,15 @@ final class Booking
                 'UPDATE appointments SET scheduled_date = ?, start_time = ?, end_time = ?, staff_id = ?, status = ?, reminded = 0 WHERE id = ? AND account_id = ?',
                 [$date, $time, addMinutes($time, $duration), $staffId, $status, (int)$apt['id'], $accountId]
             );
+            if ($changed) {
+                $db->exec('DELETE FROM appointment_services WHERE appointment_id = ?', [(int)$apt['id']]);
+                foreach ($db->all('SELECT id, price, duration FROM services WHERE account_id = ? AND id IN (' . implode(',', array_fill(0, count($ids), '?')) . ')', array_merge([$accountId], $ids)) as $sv) {
+                    $db->exec('INSERT INTO appointment_services (appointment_id, service_id, price, duration) VALUES (?, ?, ?, ?)', [(int)$apt['id'], (int)$sv['id'], $sv['price'], $sv['duration']]);
+                }
+                if ($pick !== null) {
+                    $db->exec('UPDATE appointments SET total_price = ? WHERE id = ? AND account_id = ?', [$pick['price'], (int)$apt['id'], $accountId]);
+                }
+            }
         } finally {
             $db->unlock('book_' . $accountId);
         }

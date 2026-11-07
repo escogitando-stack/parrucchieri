@@ -225,7 +225,9 @@ function pad(n){return (n<10?'0':'')+n}
 function ymd(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())}
 function services(){return Array.prototype.map.call(document.querySelectorAll('input[name=svc]:checked'),function(i){return i.value}).join(',')}
 function staffId(){return $('staff')?$('staff').value:'0'}
-function get(path,params){return fetch(BASE+path+'?'+params,{headers:{'Accept':'application/json'}}).then(function(r){return r.json()})}
+function svcIds(){var b=$('svcs');if(!b)return null;var r=[];Array.prototype.forEach.call(b.querySelectorAll('input:checked'),function(x){r.push(+x.value)});return r}
+function sq(){var r=svcIds();return r&&r.length?'&servizi='+r.join(','):''}
+function get(path,params){return fetch(BASE+path+'?'+params+sq(),{headers:{'Accept':'application/json'}}).then(function(r){return r.json()})}
 function itDate(s){var p=s.split('-');var d=new Date(+p[0],+p[1]-1,+p[2]);return ['domenica','lunedì','martedì','mercoledì','giovedì','venerdì','sabato'][d.getDay()]+' '+(+p[2])+' '+MONTHS[+p[1]-1]}
 function show(id,on){$(id).hidden=!on}
 function reset3(){st.time=null;show('s3',false);show('s4',false)}
@@ -372,7 +374,7 @@ JS;
     }
 
     /** Pagina per spostare una prenotazione dal link ricevuto per email. @param array<string,mixed> $cfg @param array<string,mixed>|null $apt */
-    public static function reschedulePage(array $cfg, ?array $apt, string $token): string
+    public static function reschedulePage(array $cfg, ?array $apt, string $token, array $services = [], array $current = []): string
     {
         if ($apt === null) {
             return Pages::layout($cfg, 'Link non valido', '<form class="box"><h1>Link non valido</h1><p class="sub">Questo link non è corretto o è scaduto.</p></form>', true);
@@ -382,8 +384,18 @@ JS;
             return Pages::layout($cfg, 'Sposta prenotazione', '<form class="box"><h1>Sposta prenotazione</h1><p class="sub">' . self::h($when) . '</p><p>Questa prenotazione non è più modificabile.</p></form>', true);
         }
         $head = '<style>' . self::css() . '</style>';
+        $svc = '';
+        if (count($services) > 1 || ($services !== [] && !in_array((int)$services[0]['id'], array_map('intval', $current), true))) {
+            $svc = '<div class="step"><b>Servizi</b><p class="hint">Puoi cambiare i servizi: gli orari liberi si adeguano alla durata.</p><div id="svcs">';
+            foreach ($services as $sv) {
+                $on = in_array((int)$sv['id'], array_map('intval', $current), true);
+                $svc .= '<label style="display:block;margin:6px 0"><input type="checkbox" value="' . (int)$sv['id'] . '"' . ($on ? ' checked' : '') . '> ' . self::h((string)$sv['name'])
+                    . ' <span class="sub">(' . (int)$sv['duration'] . ' min' . ((float)$sv['price'] > 0 ? ', ' . number_format((float)$sv['price'], 2, ',', '.') . ' €' : '') . ')</span></label>';
+            }
+            $svc .= '</div></div>';
+        }
         $body = '<div class="box wide"><h1>Sposta la prenotazione</h1><p class="sub">Ora è: ' . self::h($when) . '</p>'
-            . '<div id="ok" class="ok" hidden></div><div id="flow">'
+            . '<div id="ok" class="ok" hidden></div><div id="flow">' . $svc
             . '<div class="first" id="first" hidden><span>Primo orario libero: <b id="firstwhen"></b></span><button type="button" class="btn small" id="firstbtn">Scegli questo</button></div>'
             . '<div class="cal-head"><button type="button" id="prev" aria-label="Mese precedente">‹</button><span id="mlabel"></span><button type="button" id="next" aria-label="Mese successivo">›</button></div>'
             . '<div class="cal" id="cal"></div><p class="hint" id="nodays" hidden>Nessun orario libero in questo mese.</p>'
@@ -404,7 +416,9 @@ function $(i){return document.getElementById(i)}
 function pad(n){return (n<10?'0':'')+n}
 var now=new Date(),thisMonth=new Date(now.getFullYear(),now.getMonth(),1),st={month:thisMonth,date:null,time:null,days:[]};
 function itDate(s){var p=s.split('-');var d=new Date(+p[0],+p[1]-1,+p[2]);return ['domenica','lunedì','martedì','mercoledì','giovedì','venerdì','sabato'][d.getDay()]+' '+(+p[2])+' '+MONTHS[+p[1]-1]}
-function get(path,params){return fetch(BASE+path+'?'+params,{headers:{'Accept':'application/json'}}).then(function(r){return r.json()})}
+function svcIds(){var b=$('svcs');if(!b)return null;var r=[];Array.prototype.forEach.call(b.querySelectorAll('input:checked'),function(x){r.push(+x.value)});return r}
+function sq(){var r=svcIds();return r&&r.length?'&servizi='+r.join(','):''}
+function get(path,params){return fetch(BASE+path+'?'+params+sq(),{headers:{'Accept':'application/json'}}).then(function(r){return r.json()})}
 function loadMonth(){
   $('mlabel').textContent=MONTHS[st.month.getMonth()]+' '+st.month.getFullYear();$('prev').disabled=st.month<=thisMonth;
   get('/giorni','mese='+st.month.getFullYear()+'-'+pad(st.month.getMonth()+1)).then(function(d){st.days=d.days||[];draw();$('nodays').hidden=st.days.length>0}).catch(function(){st.days=[];draw()});
@@ -431,11 +445,13 @@ function pick(k,pre){
 }
 $('prev').onclick=function(){st.month=new Date(st.month.getFullYear(),st.month.getMonth()-1,1);loadMonth()};
 $('next').onclick=function(){st.month=new Date(st.month.getFullYear(),st.month.getMonth()+1,1);loadMonth()};
-get('/primo','').then(function(d){if(!d.date)return;$('firstwhen').textContent=itDate(d.date)+' alle '+d.time;$('first').hidden=false;
-  $('firstbtn').onclick=function(){var p=d.date.split('-');st.month=new Date(+p[0],+p[1]-1,1);loadMonth();pick(d.date,d.time)}}).catch(function(){});
+function loadFirst(){$('first').hidden=true;get('/primo','').then(function(d){if(!d.date)return;$('firstwhen').textContent=itDate(d.date)+' alle '+d.time;$('first').hidden=false;
+  $('firstbtn').onclick=function(){var p=d.date.split('-');st.month=new Date(+p[0],+p[1]-1,1);loadMonth();pick(d.date,d.time)}}).catch(function(){})}
+if($('svcs')){$('svcs').onchange=function(){var r=svcIds();$('err').hidden=true;if(!r.length){$('err').textContent='Scegli almeno un servizio.';$('err').hidden=false;return}st.date=null;st.time=null;$('s3').hidden=true;$('send').hidden=true;$('chosen').hidden=true;loadMonth();loadFirst()}}
+loadFirst();
 $('send').onclick=function(){
   var err=$('err');err.hidden=true;$('send').disabled=true;
-  fetch(BASE,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:st.date,time:st.time})})
+  fetch(BASE,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:st.date,time:st.time,service_ids:svcIds()})})
   .then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j}})})
   .then(function(x){$('send').disabled=false;
     if(!x.ok){err.textContent=x.j.error||'Spostamento non riuscito.';err.hidden=false;loadMonth();$('s3').hidden=true;$('send').hidden=true;return}
