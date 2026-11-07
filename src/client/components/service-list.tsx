@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { CreateService } from "./create-service";
+import { formatEuro } from "@/lib/format";
 
 export function ServiceList() {
   const { services, deleteService, updateService } = useApp();
@@ -16,9 +17,9 @@ export function ServiceList() {
   return (
     <div className="space-y-4 p-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Services</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Servizi</h1>
         <Button size="sm" onClick={() => setShowCreate(true)}>
-          <Plus className="mr-1 h-3.5 w-3.5" /> Add Service
+          <Plus className="mr-1 h-3.5 w-3.5" /> Aggiungi servizio
         </Button>
       </div>
 
@@ -30,17 +31,17 @@ export function ServiceList() {
             <TableHeader>
               <TableRow>
                 <TableHead className="w-8" />
-                <TableHead>Name</TableHead>
-                <TableHead className="w-28">Category</TableHead>
-                <TableHead className="w-24 text-center">Duration</TableHead>
-                <TableHead className="w-20 text-right">Price</TableHead>
-                <TableHead className="w-20">Status</TableHead>
+                <TableHead>Nome</TableHead>
+                <TableHead className="w-28">Categoria</TableHead>
+                <TableHead className="w-24 text-center">Durata</TableHead>
+                <TableHead className="w-20 text-right">Prezzo</TableHead>
+                <TableHead className="w-20">Stato</TableHead>
                 <TableHead className="w-10" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {services.length === 0 && (
-                <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">No services yet</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">Nessun servizio</TableCell></TableRow>
               )}
               {services.map((svc) => (
                 <TableRow key={svc.id}>
@@ -55,13 +56,13 @@ export function ServiceList() {
                     {svc.category && <Badge variant="outline" className="text-xs">{svc.category}</Badge>}
                   </TableCell>
                   <TableCell className="text-center">{svc.duration} min</TableCell>
-                  <TableCell className="text-right font-medium">${svc.price.toFixed(2)}</TableCell>
+                  <TableCell className="text-right font-medium">{formatEuro(svc.price)}</TableCell>
                   <TableCell>
                     <button
                       className={`text-xs font-medium ${svc.active ? "text-emerald-600" : "text-muted-foreground"}`}
                       onClick={() => updateService(svc.id, { active: svc.active ? 0 : 1 })}
                     >
-                      {svc.active ? "Active" : "Inactive"}
+                      {svc.active ? "Attivo" : "Non attivo"}
                     </button>
                   </TableCell>
                   <TableCell>

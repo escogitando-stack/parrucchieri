@@ -17,7 +17,7 @@ export function CreateStaff({ onClose }: { onClose: () => void }) {
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async () => {
-    if (!name.trim()) { setError("Name is required"); return; }
+    if (!name.trim()) { setError("Il nome è obbligatorio"); return; }
     setSaving(true);
     try {
       await addStaff({ name: name.trim(), email, phone, title, color });
@@ -33,16 +33,16 @@ export function CreateStaff({ onClose }: { onClose: () => void }) {
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Add Staff Member</DialogTitle>
+          <DialogTitle>Aggiungi collaboratore</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <Label>Name *</Label>
-            <Input value={name} onChange={(e) => setName((e.target as HTMLInputElement).value)} placeholder="Full name" />
+            <Label>Nome *</Label>
+            <Input value={name} onChange={(e) => setName((e.target as HTMLInputElement).value)} placeholder="Nome e cognome" />
           </div>
           <div className="space-y-1.5">
-            <Label>Title / Role</Label>
-            <Input value={title} onChange={(e) => setTitle((e.target as HTMLInputElement).value)} placeholder="e.g. Senior Stylist" />
+            <Label>Qualifica / Ruolo</Label>
+            <Input value={title} onChange={(e) => setTitle((e.target as HTMLInputElement).value)} placeholder="es. Parrucchiera senior" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -50,12 +50,12 @@ export function CreateStaff({ onClose }: { onClose: () => void }) {
               <Input type="email" value={email} onChange={(e) => setEmail((e.target as HTMLInputElement).value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>Phone</Label>
+              <Label>Telefono</Label>
               <Input value={phone} onChange={(e) => setPhone((e.target as HTMLInputElement).value)} />
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label>Color</Label>
+            <Label>Colore</Label>
             <div className="flex gap-2">
               {COLORS.map((c) => (
                 <button
@@ -69,8 +69,8 @@ export function CreateStaff({ onClose }: { onClose: () => void }) {
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button disabled={saving} onClick={handleSubmit}>{saving ? "Saving..." : "Add Staff"}</Button>
+          <Button variant="outline" onClick={onClose}>Annulla</Button>
+          <Button disabled={saving} onClick={handleSubmit}>{saving ? "Salvataggio..." : "Aggiungi"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

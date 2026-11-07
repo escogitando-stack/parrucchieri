@@ -19,7 +19,7 @@ export function CreateService({ onClose }: { onClose: () => void }) {
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async () => {
-    if (!name.trim()) { setError("Name is required"); return; }
+    if (!name.trim()) { setError("Il nome è obbligatorio"); return; }
     setSaving(true);
     try {
       await addService({ name: name.trim(), description, duration: parseInt(duration) || 60, price: parseFloat(price) || 0, category, color });
@@ -35,33 +35,33 @@ export function CreateService({ onClose }: { onClose: () => void }) {
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Add Service</DialogTitle>
+          <DialogTitle>Aggiungi servizio</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <Label>Name *</Label>
-            <Input value={name} onChange={(e) => setName((e.target as HTMLInputElement).value)} placeholder="e.g. Haircut" />
+            <Label>Nome *</Label>
+            <Input value={name} onChange={(e) => setName((e.target as HTMLInputElement).value)} placeholder="es. Taglio donna" />
           </div>
           <div className="space-y-1.5">
-            <Label>Description</Label>
-            <Textarea rows={2} value={description} onChange={(e) => setDescription((e.target as HTMLTextAreaElement).value)} placeholder="Brief description" />
+            <Label>Descrizione</Label>
+            <Textarea rows={2} value={description} onChange={(e) => setDescription((e.target as HTMLTextAreaElement).value)} placeholder="Breve descrizione" />
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1.5">
-              <Label>Duration (min)</Label>
+              <Label>Durata (min)</Label>
               <Input type="number" value={duration} onChange={(e) => setDuration((e.target as HTMLInputElement).value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>Price ($)</Label>
+              <Label>Prezzo (€)</Label>
               <Input type="number" step="0.01" value={price} onChange={(e) => setPrice((e.target as HTMLInputElement).value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>Category</Label>
-              <Input value={category} onChange={(e) => setCategory((e.target as HTMLInputElement).value)} placeholder="General" />
+              <Label>Categoria</Label>
+              <Input value={category} onChange={(e) => setCategory((e.target as HTMLInputElement).value)} placeholder="Generale" />
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label>Color</Label>
+            <Label>Colore</Label>
             <div className="flex gap-2">
               {COLORS.map((c) => (
                 <button
@@ -75,8 +75,8 @@ export function CreateService({ onClose }: { onClose: () => void }) {
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button disabled={saving} onClick={handleSubmit}>{saving ? "Saving..." : "Add Service"}</Button>
+          <Button variant="outline" onClick={onClose}>Annulla</Button>
+          <Button disabled={saving} onClick={handleSubmit}>{saving ? "Salvataggio..." : "Aggiungi servizio"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

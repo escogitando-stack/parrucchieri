@@ -21,10 +21,10 @@ export function conflictsFrom(err: unknown): Conflict[] | null {
 
 /** `"10:00 - 11:00 booked for Jamie Rivera"`, or the reason for a blocked slot. */
 export function describeConflict(c: Conflict): string {
-  return `${c.start_time} - ${c.end_time} ${c.kind === "blocked" ? c.label : `booked for ${c.label}`}`;
+  return `${c.start_time} - ${c.end_time} ${c.kind === "blocked" ? c.label : `prenotato per ${c.label}`}`;
 }
 
 /** One sentence, for the places with no room to list the clashes. */
 export function conflictSentence(who: string, conflicts: Conflict[]): string {
-  return `${who || "That staff member"} is not free then: ${conflicts.map(describeConflict).join(", ")}.`;
+  return `${who || "Il collaboratore"} non è disponibile in quell'orario: ${conflicts.map(describeConflict).join(", ")}.`;
 }

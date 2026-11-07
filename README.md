@@ -1,5 +1,16 @@
 <img src="readme-banner.png" alt="OpenSalon preview" width="100%" />
 
+## Versione per parrucchieri (italiano)
+
+Questo fork adatta OpenSalon alla gestione degli appuntamenti nei saloni di parrucchieri:
+
+- interfaccia completamente in italiano (agenda, appuntamenti, clienti, personale, servizi, prodotti);
+- importi in euro e date nel formato italiano (`gg/mm/aaaa`, orari a 24 ore);
+- dati di esempio da parrucchiere (taglio, piega, colore, balayage, barba, acconciatura sposa) e prodotti da salone;
+- agenda a colonne per collaboratore, con blocchi orari (pausa pranzo, ferie) e avviso di sovrapposizione.
+
+Avvio in locale: `pnpm install` e poi `pnpm dev`. Test: `pnpm test`.
+
 # OpenSalon: The Open-Source Salonist & Fresha Alternative
 
 [![Deploy with Clawnify](https://app.clawnify.com/deploy-button.svg)](https://app.clawnify.com/deploy?repo=clawnify/OpenSalon)

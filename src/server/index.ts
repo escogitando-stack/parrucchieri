@@ -375,7 +375,7 @@ const getAppointment = createRoute({
       description: "Appointment detail",
       content: { "application/json": { schema: z.object({ appointment: AppointmentSchema }) } },
     },
-    404: { description: "Not found", content: { "application/json": { schema: ErrorSchema } } },
+    404: { description: "Non trovato", content: { "application/json": { schema: ErrorSchema } } },
   },
 });
 
@@ -390,7 +390,7 @@ app.openapi(getAppointment, async (c) => {
      WHERE a.id = ?`,
     [id],
   );
-  if (!apt) return c.json({ error: "Not found" }, 404);
+  if (!apt) return c.json({ error: "Non trovato" }, 404);
 
   const svcs = await query<Record<string, unknown>>(
     `SELECT aps.*, sv.name as service_name FROM appointment_services aps
@@ -455,10 +455,10 @@ app.openapi(createAppointment, async (c) => {
   }
 
   const start = toMinutes(startTime);
-  if (start === null) return c.json({ error: "Times must be HH:MM" }, 400);
-  if (totalDuration <= 0) return c.json({ error: "The appointment must have a positive duration" }, 400);
+  if (start === null) return c.json({ error: "Gli orari devono essere nel formato HH:MM" }, 400);
+  if (totalDuration <= 0) return c.json({ error: "L'appuntamento deve avere una durata positiva" }, 400);
   if (start + totalDuration >= 24 * 60) {
-    return c.json({ error: "Appointments must start and end on the same day" }, 400);
+    return c.json({ error: "L'appuntamento deve iniziare e finire nello stesso giorno" }, 400);
   }
   const endTime = addMinutes(startTime, totalDuration);
 
@@ -527,7 +527,7 @@ const updateAppointment = createRoute({
   responses: {
     200: { description: "Updated", content: { "application/json": { schema: OkSchema } } },
     400: { description: "Invalid times", content: { "application/json": { schema: ErrorSchema } } },
-    404: { description: "Not found", content: { "application/json": { schema: ErrorSchema } } },
+    404: { description: "Non trovato", content: { "application/json": { schema: ErrorSchema } } },
     409: { description: "Staff member is already busy", content: { "application/json": { schema: ConflictSchema } } },
   },
 });
@@ -539,7 +539,7 @@ app.openapi(updateAppointment, async (c) => {
   const existing = await get<{
     staff_id: number | null; scheduled_date: string; start_time: string; end_time: string; status: string;
   }>("SELECT staff_id, scheduled_date, start_time, end_time, status FROM appointments WHERE id = ?", [id]);
-  if (!existing) return c.json({ error: "Not found" }, 404);
+  if (!existing) return c.json({ error: "Non trovato" }, 404);
 
   // Where the appointment lands once this patch is applied.
   const staffId = body.staff_id !== undefined ? body.staff_id : existing.staff_id;
@@ -567,8 +567,8 @@ app.openapi(updateAppointment, async (c) => {
   if (moved || restored) {
     const start = toMinutes(startTime);
     const end = toMinutes(endTime);
-    if (start === null || end === null) return c.json({ error: "Times must be HH:MM" }, 400);
-    if (end <= start) return c.json({ error: "The appointment must end after it starts on the same day" }, 400);
+    if (start === null || end === null) return c.json({ error: "Gli orari devono essere nel formato HH:MM" }, 400);
+    if (end <= start) return c.json({ error: "L'appuntamento deve finire dopo l'inizio, nello stesso giorno" }, 400);
 
     if (status !== "cancelled" && staffId && !allow_conflict) {
       const conflicts = findConflicts(startTime, endTime, await busyFor(staffId, date, Number(id)));
@@ -702,14 +702,14 @@ const getClient = createRoute({
       description: "Client detail with appointments",
       content: { "application/json": { schema: z.object({ client: ClientSchema, appointments: z.array(AppointmentSchema) }) } },
     },
-    404: { description: "Not found", content: { "application/json": { schema: ErrorSchema } } },
+    404: { description: "Non trovato", content: { "application/json": { schema: ErrorSchema } } },
   },
 });
 
 app.openapi(getClient, async (c) => {
   const { id } = c.req.valid("param");
   const client = await get<Record<string, unknown>>("SELECT * FROM clients WHERE id = ?", [id]);
-  if (!client) return c.json({ error: "Not found" }, 404);
+  if (!client) return c.json({ error: "Non trovato" }, 404);
   const appointments = await query<Record<string, unknown>>(
     `SELECT a.*, s.name as staff_name, s.color as staff_color,
             (SELECT GROUP_CONCAT(name, ', ')
@@ -1028,8 +1028,8 @@ app.openapi(createBlockedSlot, async (c) => {
   const { allow_conflict, ...body } = c.req.valid("json");
   const start = toMinutes(body.start_time);
   const end = toMinutes(body.end_time);
-  if (start === null || end === null) return c.json({ error: "Times must be HH:MM" }, 400);
-  if (end <= start) return c.json({ error: "Blocked time must end after it starts on the same day" }, 400);
+  if (start === null || end === null) return c.json({ error: "Gli orari devono essere nel formato HH:MM" }, 400);
+  if (end <= start) return c.json({ error: "Il blocco orario deve finire dopo l'inizio, nello stesso giorno" }, 400);
 
   if (!allow_conflict) {
     const conflicts = findConflicts(

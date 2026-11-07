@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { today } from "@/lib/dates";
+import { formatEuro } from "@/lib/format";
 
 export function Dashboard() {
   const { stats, navigate, calendarAppointments } = useApp();
@@ -14,11 +15,11 @@ export function Dashboard() {
     .sort((a, b) => a.start_time.localeCompare(b.start_time));
 
   const statCards = [
-    { label: "Today's Appointments", value: stats.today_appointments, icon: CalendarDays, color: "text-violet-600 bg-violet-50", onClick: () => navigate("/calendar") },
-    { label: "Upcoming", value: stats.upcoming_appointments, icon: Clock, color: "text-blue-600 bg-blue-50", onClick: () => navigate("/appointments") },
-    { label: "Clients", value: stats.clients, icon: Users, color: "text-emerald-600 bg-emerald-50", onClick: () => navigate("/clients") },
-    { label: "Completed service value", value: `$${stats.revenue.toFixed(0)}`, icon: DollarSign, color: "text-amber-600 bg-amber-50" },
-    { label: "Products", value: stats.products, icon: Package, color: "text-rose-600 bg-rose-50", onClick: () => navigate("/products") },
+    { label: "Appuntamenti di oggi", value: stats.today_appointments, icon: CalendarDays, color: "text-violet-600 bg-violet-50", onClick: () => navigate("/calendar") },
+    { label: "In arrivo", value: stats.upcoming_appointments, icon: Clock, color: "text-blue-600 bg-blue-50", onClick: () => navigate("/appointments") },
+    { label: "Clienti", value: stats.clients, icon: Users, color: "text-emerald-600 bg-emerald-50", onClick: () => navigate("/clients") },
+    { label: "Incasso servizi completati", value: formatEuro(stats.revenue), icon: DollarSign, color: "text-amber-600 bg-amber-50" },
+    { label: "Prodotti", value: stats.products, icon: Package, color: "text-rose-600 bg-rose-50", onClick: () => navigate("/products") },
   ];
 
   return (
@@ -51,7 +52,7 @@ export function Dashboard() {
               </div>
               <div>
                 <div className="text-xl font-bold">{stats.low_stock_products}</div>
-                <div className="text-xs text-muted-foreground">Low Stock</div>
+                <div className="text-xs text-muted-foreground">Scorta bassa</div>
               </div>
             </CardContent>
           </Card>
@@ -60,20 +61,20 @@ export function Dashboard() {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-3">
-          <CardTitle className="text-lg">Today's Schedule</CardTitle>
-          <Button variant="outline" size="sm" onClick={() => navigate("/calendar")}>View Calendar</Button>
+          <CardTitle className="text-lg">Programma di oggi</CardTitle>
+          <Button variant="outline" size="sm" onClick={() => navigate("/calendar")}>Apri agenda</Button>
         </CardHeader>
         <CardContent>
           {todayAppointments.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">No appointments scheduled for today</p>
+            <p className="py-8 text-center text-sm text-muted-foreground">Nessun appuntamento per oggi</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-20">Time</TableHead>
-                  <TableHead>Client</TableHead>
-                  <TableHead className="w-36">Staff</TableHead>
-                  <TableHead className="w-24 text-right">Price</TableHead>
+                  <TableHead className="w-20">Ora</TableHead>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead className="w-36">Personale</TableHead>
+                  <TableHead className="w-24 text-right">Prezzo</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -89,7 +90,7 @@ export function Dashboard() {
                         {apt.staff_name || "—"}
                       </span>
                     </TableCell>
-                    <TableCell className="text-right">${apt.total_price.toFixed(2)}</TableCell>
+                    <TableCell className="text-right">{formatEuro(apt.total_price)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

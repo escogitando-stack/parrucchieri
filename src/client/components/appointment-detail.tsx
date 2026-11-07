@@ -9,6 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "./status-badge";
 import { RescheduleAppointment } from "./reschedule-appointment";
 import { conflictsFrom, conflictSentence } from "@/lib/conflicts";
+import { formatDateIt, formatEuro } from "@/lib/format";
 
 export function AppointmentDetail() {
   const {
@@ -45,12 +46,12 @@ export function AppointmentDetail() {
     <div className="space-y-6 p-6">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="sm" onClick={() => navigate("/appointments")}>
-          <ArrowLeft className="mr-1 h-4 w-4" /> Back
+          <ArrowLeft className="mr-1 h-4 w-4" /> Indietro
         </Button>
         <h1 className="flex-1 text-2xl font-bold">{apt.identifier}</h1>
         <StatusBadge status={apt.status} />
         <Button variant="destructive" size="sm" onClick={() => deleteAppointment(apt.id)}>
-          <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
+          <Trash2 className="mr-1 h-3.5 w-3.5" /> Elimina
         </Button>
       </div>
 
@@ -58,14 +59,14 @@ export function AppointmentDetail() {
         <div className="space-y-6 lg:col-span-2">
           <Card>
             <CardHeader>
-              <CardTitle>Booking Details</CardTitle>
+              <CardTitle>Dettagli prenotazione</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <Label className="flex items-center gap-1.5 text-xs text-muted-foreground"><Clock className="h-3 w-3" /> Date & Time</Label>
-                  <p className="text-sm font-medium">{apt.scheduled_date} at {apt.start_time} - {apt.end_time}</p>
-                  <Button variant="outline" size="sm" className="px-2" onClick={() => setRescheduling(true)}>Reschedule</Button>
+                  <Label className="flex items-center gap-1.5 text-xs text-muted-foreground"><Clock className="h-3 w-3" /> Data e ora</Label>
+                  <p className="text-sm font-medium">{formatDateIt(apt.scheduled_date)} alle {apt.start_time} - {apt.end_time}</p>
+                  <Button variant="outline" size="sm" className="px-2" onClick={() => setRescheduling(true)}>Sposta</Button>
                 </div>
                 <div className="space-y-1">
                   <Label className="flex items-center gap-1.5 text-xs text-muted-foreground"><User className="h-3 w-3" /> Client</Label>
@@ -78,27 +79,27 @@ export function AppointmentDetail() {
               <Separator />
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Staff</Label>
+                  <Label className="text-xs text-muted-foreground">Personale</Label>
                   <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={apt.staff_id || ""} onChange={(e) => handleStaffChange((e.target as HTMLSelectElement).value)}>
-                    <option value="">Unassigned</option>
+                    <option value="">Non assegnato</option>
                     {staffLookup.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Status</Label>
+                  <Label className="text-xs text-muted-foreground">Stato</Label>
                   <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={apt.status} onChange={(e) => handleStatusChange((e.target as HTMLSelectElement).value)}>
-                    <option value="booked">Booked</option>
-                    <option value="confirmed">Confirmed</option>
-                    <option value="in_progress">In Progress</option>
-                    <option value="completed">Completed</option>
-                    <option value="cancelled">Cancelled</option>
-                    <option value="no_show">No Show</option>
+                    <option value="booked">Prenotato</option>
+                    <option value="confirmed">Confermato</option>
+                    <option value="in_progress">In corso</option>
+                    <option value="completed">Completato</option>
+                    <option value="cancelled">Annullato</option>
+                    <option value="no_show">Non presentato</option>
                   </select>
                 </div>
               </div>
               <div className="space-y-1">
-                <Label className="flex items-center gap-1.5 text-xs text-muted-foreground"><DollarSign className="h-3 w-3" /> Total</Label>
-                <p className="text-lg font-bold">${apt.total_price.toFixed(2)}</p>
+                <Label className="flex items-center gap-1.5 text-xs text-muted-foreground"><DollarSign className="h-3 w-3" /> Totale</Label>
+                <p className="text-lg font-bold">{formatEuro(apt.total_price)}</p>
               </div>
               {apt.notes && (
                 <div className="space-y-1">
@@ -117,15 +118,15 @@ export function AppointmentDetail() {
             </CardHeader>
             <CardContent>
               {(!apt.appointment_services || apt.appointment_services.length === 0) ? (
-                <p className="text-sm text-muted-foreground">No services added</p>
+                <p className="text-sm text-muted-foreground">Nessun servizio aggiunto</p>
               ) : (
                 <div className="space-y-2">
                   {apt.appointment_services.map((svc) => (
                     <div key={svc.id} className="flex items-center justify-between text-sm">
-                      <span>{svc.service_name || `Service #${svc.service_id}`}</span>
+                      <span>{svc.service_name || `Servizio n. ${svc.service_id}`}</span>
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-muted-foreground">{svc.duration}min</span>
-                        <span className="font-medium">${svc.price.toFixed(2)}</span>
+                        <span className="font-medium">{formatEuro(svc.price)}</span>
                       </div>
                     </div>
                   ))}
@@ -136,12 +137,12 @@ export function AppointmentDetail() {
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Activity</CardTitle>
+              <CardTitle className="text-base">Attività</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex gap-2">
                 <Input
-                  placeholder="Add a note..."
+                  placeholder="Aggiungi una nota..."
                   value={noteText}
                   onChange={(e) => setNoteText((e.target as HTMLInputElement).value)}
                   onKeyDown={(e) => e.key === "Enter" && handleAddNote()}
@@ -151,14 +152,14 @@ export function AppointmentDetail() {
                 </Button>
               </div>
               {(!apt.appointment_notes || apt.appointment_notes.length === 0) ? (
-                <p className="text-sm text-muted-foreground">No notes yet</p>
+                <p className="text-sm text-muted-foreground">Nessuna nota</p>
               ) : (
                 <div className="space-y-2">
                   {apt.appointment_notes.map((note) => (
                     <div key={note.id} className="rounded-md border bg-muted/30 p-2.5">
                       <p className="text-sm">{note.content}</p>
                       <div className="mt-1 flex items-center justify-between">
-                        <span className="text-[10px] text-muted-foreground">{new Date(note.created_at).toLocaleString()}</span>
+                        <span className="text-[10px] text-muted-foreground">{new Date(note.created_at).toLocaleString("it-IT")}</span>
                         <Button variant="ghost" size="icon" className="h-5 w-5 text-muted-foreground hover:text-destructive" onClick={() => deleteAppointmentNote(note.id)}>
                           <Trash2 className="h-3 w-3" />
                         </Button>

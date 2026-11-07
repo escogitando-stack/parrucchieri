@@ -26,7 +26,7 @@ export function CreateProduct({ onClose, product }: { onClose: () => void; produ
   const isEditing = product !== undefined;
 
   const handleSubmit = async () => {
-    if (!name.trim()) { setError("Name is required"); return; }
+    if (!name.trim()) { setError("Il nome è obbligatorio"); return; }
     setSaving(true);
     try {
       const data = {
@@ -50,51 +50,51 @@ export function CreateProduct({ onClose, product }: { onClose: () => void; produ
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{isEditing ? "Edit Product" : "Add Product"}</DialogTitle>
+          <DialogTitle>{isEditing ? "Modifica prodotto" : "Aggiungi prodotto"}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label htmlFor="product-name">Name *</Label>
-            <Input id="product-name" value={name} onChange={(e) => setName((e.target as HTMLInputElement).value)} placeholder="Product name" />
+            <Input id="product-name" value={name} onChange={(e) => setName((e.target as HTMLInputElement).value)} placeholder="Nome prodotto" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="product-brand">Brand</Label>
+              <Label htmlFor="product-brand">Marca</Label>
               <Input id="product-brand" value={brand} onChange={(e) => setBrand((e.target as HTMLInputElement).value)} />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="product-category">Category</Label>
-              <Input id="product-category" value={category} onChange={(e) => setCategory((e.target as HTMLInputElement).value)} placeholder="e.g. Hair Care" />
+              <Label htmlFor="product-category">Categoria</Label>
+              <Input id="product-category" value={category} onChange={(e) => setCategory((e.target as HTMLInputElement).value)} placeholder="es. Cura capelli" />
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="product-sku">SKU</Label>
-            <Input id="product-sku" value={sku} onChange={(e) => setSku((e.target as HTMLInputElement).value)} placeholder="Optional" />
+            <Label htmlFor="product-sku">Codice</Label>
+            <Input id="product-sku" value={sku} onChange={(e) => setSku((e.target as HTMLInputElement).value)} placeholder="Facoltativo" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="product-price">Sell Price ($)</Label>
+              <Label htmlFor="product-price">Sell Prezzo (€)</Label>
               <Input id="product-price" type="number" min="0" step="0.01" value={price} onChange={(e) => setPrice((e.target as HTMLInputElement).value)} />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="product-cost">Cost ($)</Label>
+              <Label htmlFor="product-cost">Costo (€)</Label>
               <Input id="product-cost" type="number" min="0" step="0.01" value={cost} onChange={(e) => setCost((e.target as HTMLInputElement).value)} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="product-stock">Stock</Label>
+              <Label htmlFor="product-stock">Giacenza</Label>
               <Input id="product-stock" type="number" min="0" step="1" value={stock} onChange={(e) => setStock((e.target as HTMLInputElement).value)} />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="product-low-stock-alert">Low Stock Alert</Label>
+              <Label htmlFor="product-low-stock-alert">Soglia scorta bassa</Label>
               <Input id="product-low-stock-alert" type="number" min="0" step="1" value={lowStockAlert} onChange={(e) => setLowStockAlert((e.target as HTMLInputElement).value)} />
             </div>
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button disabled={saving} onClick={handleSubmit}>{saving ? "Saving..." : isEditing ? "Save Changes" : "Add Product"}</Button>
+          <Button variant="outline" onClick={onClose}>Annulla</Button>
+          <Button disabled={saving} onClick={handleSubmit}>{saving ? "Salvataggio..." : isEditing ? "Salva modifiche" : "Aggiungi prodotto"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
