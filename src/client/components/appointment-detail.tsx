@@ -1,4 +1,5 @@
 import { useState } from "preact/hooks";
+import { useTerms, cap } from "@/lib/account";
 import { useApp } from "../context";
 import { ArrowLeft, Trash2, Send, Clock, User, DollarSign } from "lucide-preact";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,7 @@ import { conflictsFrom, conflictSentence } from "@/lib/conflicts";
 import { formatDateIt, formatEuro } from "@/lib/format";
 
 export function AppointmentDetail() {
+  const t = useTerms();
   const {
     selectedAppointment: apt, navigate, updateAppointment, deleteAppointment,
     addAppointmentNote, deleteAppointmentNote, staffLookup, setError,
@@ -79,7 +81,7 @@ export function AppointmentDetail() {
               <Separator />
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Personale</Label>
+                  <Label className="text-xs text-muted-foreground">{t.staffs}</Label>
                   <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={apt.staff_id || ""} onChange={(e) => handleStaffChange((e.target as HTMLSelectElement).value)}>
                     <option value="">Non assegnato</option>
                     {staffLookup.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -118,12 +120,12 @@ export function AppointmentDetail() {
             </CardHeader>
             <CardContent>
               {(!apt.appointment_services || apt.appointment_services.length === 0) ? (
-                <p className="text-sm text-muted-foreground">Nessun servizio aggiunto</p>
+                <p className="text-sm text-muted-foreground">Nessun {t.service} aggiunto</p>
               ) : (
                 <div className="space-y-2">
                   {apt.appointment_services.map((svc) => (
                     <div key={svc.id} className="flex items-center justify-between text-sm">
-                      <span>{svc.service_name || `Servizio n. ${svc.service_id}`}</span>
+                      <span>{svc.service_name || `${cap(t.service)} n. ${svc.service_id}`}</span>
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-muted-foreground">{svc.duration}min</span>
                         <span className="font-medium">{formatEuro(svc.price)}</span>

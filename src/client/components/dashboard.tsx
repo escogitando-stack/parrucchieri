@@ -1,4 +1,5 @@
 import { useApp } from "../context";
+import { useTerms } from "@/lib/account";
 import { CalendarDays, Users, Clock, DollarSign, Package, AlertTriangle } from "lucide-preact";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,6 +8,7 @@ import { today } from "@/lib/dates";
 import { formatEuro } from "@/lib/format";
 
 export function Dashboard() {
+  const t = useTerms();
   const { stats, navigate, calendarAppointments } = useApp();
 
   const todayStr = today();
@@ -18,8 +20,8 @@ export function Dashboard() {
     { label: "Appuntamenti di oggi", value: stats.today_appointments, icon: CalendarDays, color: "text-violet-600 bg-violet-50", onClick: () => navigate("/calendar") },
     { label: "In arrivo", value: stats.upcoming_appointments, icon: Clock, color: "text-blue-600 bg-blue-50", onClick: () => navigate("/appointments") },
     { label: "Clienti", value: stats.clients, icon: Users, color: "text-emerald-600 bg-emerald-50", onClick: () => navigate("/clients") },
-    { label: "Incasso servizi completati", value: formatEuro(stats.revenue), icon: DollarSign, color: "text-amber-600 bg-amber-50" },
-    { label: "Prodotti", value: stats.products, icon: Package, color: "text-rose-600 bg-rose-50", onClick: () => navigate("/products") },
+    { label: `Incasso ${t.services.toLowerCase()} completati`, value: formatEuro(stats.revenue), icon: DollarSign, color: "text-amber-600 bg-amber-50" },
+    { label: t.products, value: stats.products, icon: Package, color: "text-rose-600 bg-rose-50", onClick: () => navigate("/products") },
   ];
 
   return (
@@ -73,7 +75,7 @@ export function Dashboard() {
                 <TableRow>
                   <TableHead className="w-20">Ora</TableHead>
                   <TableHead>Cliente</TableHead>
-                  <TableHead className="w-36">Personale</TableHead>
+                  <TableHead className="w-36">{t.staffs}</TableHead>
                   <TableHead className="w-24 text-right">Prezzo</TableHead>
                 </TableRow>
               </TableHeader>

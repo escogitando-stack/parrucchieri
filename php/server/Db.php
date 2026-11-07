@@ -84,24 +84,66 @@ final class Db
         return "(SELECT $group FROM appointment_services aps JOIN services sv ON sv.id = aps.service_id WHERE aps.appointment_id = $aptAlias.id)";
     }
 
-    /** Prossimo numero progressivo degli appuntamenti, senza doppioni. */
-    public function nextCounter(): int
+    /** Prossimo numero progressivo degli appuntamenti di un negozio, senza doppioni. */
+    public function nextCounter(int $accountId): int
     {
         if ($this->driver === 'sqlite') {
             $this->pdo->beginTransaction();
-            $cur = $this->row("SELECT meta_value FROM _meta WHERE meta_key = 'appointment_counter'");
-            $next = (int)($cur['meta_value'] ?? 0) + 1;
-            $this->exec(
-                "INSERT INTO _meta (meta_key, meta_value) VALUES ('appointment_counter', ?)
-                 ON CONFLICT(meta_key) DO UPDATE SET meta_value = excluded.meta_value",
-                [(string)$next]
-            );
+            $this->exec('UPDATE accounts SET appointment_counter = appointment_counter + 1 WHERE id = ?', [$accountId]);
+            $next = (int)($this->row('SELECT appointment_counter AS n FROM accounts WHERE id = ?', [$accountId])['n'] ?? 1);
             $this->pdo->commit();
             return $next;
         }
-        $this->exec("INSERT IGNORE INTO _meta (meta_key, meta_value) VALUES ('appointment_counter', '0')");
-        $this->exec("UPDATE _meta SET meta_value = LAST_INSERT_ID(CAST(meta_value AS UNSIGNED) + 1) WHERE meta_key = 'appointment_counter'");
+        $this->exec('UPDATE accounts SET appointment_counter = LAST_INSERT_ID(appointment_counter + 1) WHERE id = ?', [$accountId]);
         return (int)$this->row('SELECT LAST_INSERT_ID() AS n')['n'];
+    }
+
+    public function metaGet(string $key): ?string
+    {
+        $r = $this->row('SELECT meta_value FROM _meta WHERE meta_key = ?', [$key]);
+        return $r === null ? null : (string)$r['meta_value'];
+    }
+
+    public function metaSet(string $key, string $value): void
+    {
+        if ($this->metaGet($key) === null) {
+            $this->exec('INSERT INTO _meta (meta_key, meta_value) VALUES (?, ?)', [$key, $value]);
+        } else {
+            $this->exec('UPDATE _meta SET meta_value = ? WHERE meta_key = ?', [$value, $key]);
+        }
+    }
+
+    public function begin(): void
+    {
+        $this->pdo->beginTransaction();
+    }
+
+    public function commit(): void
+    {
+        $this->pdo->commit();
+    }
+
+    public function rollBack(): void
+    {
+        if ($this->pdo->inTransaction()) {
+            $this->pdo->rollBack();
+        }
+    }
+
+    public function columnExists(string $table, string $column): bool
+    {
+        if ($this->driver === 'sqlite') {
+            foreach ($this->all("PRAGMA table_info($table)") as $c) {
+                if ($c['name'] === $column) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        return $this->row(
+            'SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+            [$table, $column]
+        ) !== null;
     }
 
     public function tableExists(string $table): bool

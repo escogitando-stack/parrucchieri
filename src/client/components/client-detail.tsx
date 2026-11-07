@@ -1,4 +1,5 @@
 import { useState } from "preact/hooks";
+import { useTerms } from "@/lib/account";
 import { useApp } from "../context";
 import { ArrowLeft, Trash2, Save, Mail, Phone, Plus } from "lucide-preact";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,7 @@ import { CreateAppointment } from "./create-appointment";
 import { formatDateIt, formatEuro } from "@/lib/format";
 
 export function ClientDetail() {
+  const t = useTerms();
   const { selectedClient: client, selectedClientAppointments: appointments, navigate, updateClient, deleteClient } = useApp();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(client?.name || "");
@@ -127,7 +129,7 @@ export function ClientDetail() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Visita</TableHead>
-                  <TableHead>Personale</TableHead>
+                  <TableHead>{t.staffs}</TableHead>
                   <TableHead className="w-24">Stato</TableHead>
                   <TableHead className="w-20 text-right">Prezzo</TableHead>
                 </TableRow>

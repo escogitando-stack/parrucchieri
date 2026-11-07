@@ -3,23 +3,73 @@ declare(strict_types=1);
 
 namespace App;
 
-/** Crea le tabelle alla prima richiesta e inserisce i dati iniziali. */
+/**
+ * Crea le tabelle alla prima richiesta e aggiorna i database delle versioni precedenti.
+ *
+ * Versioni dello schema (in _meta.schema_version):
+ *   1 = app per un solo salone, senza account (installazioni precedenti)
+ *   2 = più negozi: tabella accounts (con prova gratuita e abbonamento) e colonna account_id
+ */
 final class Schema
 {
-    public static function install(Db $db, bool $seedDemo = false): void
+    public const VERSION = 2;
+
+    /** Tabelle i cui dati appartengono a un negozio. */
+    private const OWNED = ['clients', 'staff', 'services', 'appointments', 'blocked_slots', 'products'];
+
+    public static function ensure(Db $db): void
     {
-        if ($db->tableExists('clients')) {
+        if (!$db->tableExists('clients')) {
+            self::install($db);
             return;
         }
+        $version = (int)($db->metaGet('schema_version') ?? 1);
+        if ($version < 2) {
+            self::migrateTo2($db);
+        }
+    }
+
+    /** @return array{0:string,1:string,2:string,3:string,4:string} */
+    private static function types(Db $db): array
+    {
         $sqlite = $db->driver === 'sqlite';
-        $pk = $sqlite ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : 'INT NOT NULL AUTO_INCREMENT PRIMARY KEY';
-        $int = $sqlite ? 'INTEGER' : 'INT';
-        $ts = $sqlite ? 'TEXT DEFAULT CURRENT_TIMESTAMP' : 'DATETIME DEFAULT CURRENT_TIMESTAMP';
-        $tail = $sqlite ? '' : ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
+        return [
+            $sqlite ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : 'INT NOT NULL AUTO_INCREMENT PRIMARY KEY',
+            $sqlite ? 'INTEGER' : 'INT',
+            $sqlite ? 'TEXT DEFAULT CURRENT_TIMESTAMP' : 'DATETIME DEFAULT CURRENT_TIMESTAMP',
+            $sqlite ? '' : ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci',
+            '',
+        ];
+    }
+
+    private static function accountsSql(Db $db): string
+    {
+        [$pk, $int, $ts, $tail] = self::types($db);
+        return "CREATE TABLE accounts (
+                id $pk,
+                email VARCHAR(190) NOT NULL UNIQUE,
+                password_hash VARCHAR(255) NOT NULL,
+                business_name VARCHAR(255) NOT NULL,
+                category VARCHAR(32) NOT NULL DEFAULT 'altro',
+                appointment_counter $int NOT NULL DEFAULT 0,
+                plan_status VARCHAR(16) NOT NULL DEFAULT 'trial',
+                trial_ends_at VARCHAR(19) NOT NULL DEFAULT '',
+                paid_until VARCHAR(19) NOT NULL DEFAULT '',
+                stripe_customer_id VARCHAR(64) NOT NULL DEFAULT '',
+                stripe_subscription_id VARCHAR(64) NOT NULL DEFAULT '',
+                created_at $ts
+            )$tail";
+    }
+
+    public static function install(Db $db): void
+    {
+        [$pk, $int, $ts, $tail] = self::types($db);
 
         $statements = [
+            self::accountsSql($db),
             "CREATE TABLE clients (
                 id $pk,
+                account_id $int NOT NULL DEFAULT 0,
                 name VARCHAR(255) NOT NULL,
                 email VARCHAR(255) NOT NULL DEFAULT '',
                 phone VARCHAR(64) NOT NULL DEFAULT '',
@@ -29,6 +79,7 @@ final class Schema
             )$tail",
             "CREATE TABLE staff (
                 id $pk,
+                account_id $int NOT NULL DEFAULT 0,
                 name VARCHAR(255) NOT NULL,
                 email VARCHAR(255) NOT NULL DEFAULT '',
                 phone VARCHAR(64) NOT NULL DEFAULT '',
@@ -39,6 +90,7 @@ final class Schema
             )$tail",
             "CREATE TABLE services (
                 id $pk,
+                account_id $int NOT NULL DEFAULT 0,
                 name VARCHAR(255) NOT NULL,
                 description TEXT NOT NULL,
                 duration $int NOT NULL DEFAULT 60,
@@ -50,7 +102,8 @@ final class Schema
             )$tail",
             "CREATE TABLE appointments (
                 id $pk,
-                identifier VARCHAR(32) NOT NULL UNIQUE,
+                account_id $int NOT NULL DEFAULT 0,
+                identifier VARCHAR(32) NOT NULL,
                 client_id $int NOT NULL,
                 staff_id $int NULL,
                 status VARCHAR(32) NOT NULL DEFAULT 'booked',
@@ -84,6 +137,7 @@ final class Schema
             )$tail",
             "CREATE TABLE blocked_slots (
                 id $pk,
+                account_id $int NOT NULL DEFAULT 0,
                 staff_id $int NOT NULL,
                 blocked_date VARCHAR(10) NOT NULL,
                 start_time VARCHAR(5) NOT NULL,
@@ -94,6 +148,7 @@ final class Schema
             )$tail",
             "CREATE TABLE products (
                 id $pk,
+                account_id $int NOT NULL DEFAULT 0,
                 name VARCHAR(255) NOT NULL,
                 brand VARCHAR(255) NOT NULL DEFAULT '',
                 category VARCHAR(255) NOT NULL DEFAULT '',
@@ -109,79 +164,88 @@ final class Schema
                 meta_key VARCHAR(64) NOT NULL PRIMARY KEY,
                 meta_value VARCHAR(255) NOT NULL
             )$tail",
+            'CREATE UNIQUE INDEX uq_appointments_account_identifier ON appointments(account_id, identifier)',
             'CREATE INDEX idx_appointments_client ON appointments(client_id)',
             'CREATE INDEX idx_appointments_staff ON appointments(staff_id)',
-            'CREATE INDEX idx_appointments_date ON appointments(scheduled_date)',
+            'CREATE INDEX idx_appointments_date ON appointments(account_id, scheduled_date)',
             'CREATE INDEX idx_appointments_status ON appointments(status)',
             'CREATE INDEX idx_appointment_services_apt ON appointment_services(appointment_id)',
             'CREATE INDEX idx_appointment_notes_apt ON appointment_notes(appointment_id)',
             'CREATE INDEX idx_blocked_slots_staff ON blocked_slots(staff_id)',
-            'CREATE INDEX idx_blocked_slots_date ON blocked_slots(blocked_date)',
-            'CREATE INDEX idx_clients_name ON clients(name)',
+            'CREATE INDEX idx_blocked_slots_date ON blocked_slots(account_id, blocked_date)',
+            'CREATE INDEX idx_clients_account ON clients(account_id, name)',
+            'CREATE INDEX idx_staff_account ON staff(account_id)',
+            'CREATE INDEX idx_services_account ON services(account_id)',
+            'CREATE INDEX idx_products_account ON products(account_id)',
         ];
         foreach ($statements as $sql) {
             $db->exec($sql);
         }
-
-        $db->exec("INSERT INTO _meta (meta_key, meta_value) VALUES ('appointment_counter', '0')");
-        $db->exec("INSERT INTO _meta (meta_key, meta_value) VALUES ('appointment_prefix', 'APP')");
-        self::seed($db, $seedDemo);
+        $db->metaSet('schema_version', (string)self::VERSION);
     }
 
-    private static function seed(Db $db, bool $demo): void
+    /** Dal salone singolo ai negozi multipli. I dati esistenti restano con account_id = 0 fino alla prima registrazione. */
+    private static function migrateTo2(Db $db): void
     {
-        // Servizi tipici di un salone: si modificano dall'app.
-        $services = [
-            ['Taglio donna', 'Shampoo, taglio e piega', 60, 45, '#ec4899', 'Taglio'],
-            ['Taglio uomo', 'Taglio con rifinitura', 30, 20, '#3b82f6', 'Taglio'],
-            ['Piega', 'Shampoo e piega', 45, 25, '#10b981', 'Styling'],
-            ['Colore', 'Colorazione completa', 90, 60, '#f59e0b', 'Colore'],
-            ['Colpi di sole / Balayage', 'Schiariture con tecnica a mano libera', 150, 120, '#8b5cf6', 'Colore'],
-            ['Trattamento ristrutturante', 'Maschera e trattamento per capelli sfibrati', 30, 25, '#14b8a6', 'Trattamento'],
-            ['Barba', 'Rifinitura barba con panno caldo', 20, 12, '#6b7280', 'Taglio'],
-            ['Acconciatura sposa', 'Prova e acconciatura il giorno del matrimonio', 120, 150, '#f43f5e', 'Styling'],
-        ];
-        foreach ($services as [$name, $desc, $dur, $price, $color, $cat]) {
+        if (!$db->tableExists('accounts')) {
+            $db->exec(self::accountsSql($db));
+        }
+        foreach (self::OWNED as $table) {
+            if (!$db->columnExists($table, 'account_id')) {
+                $db->exec("ALTER TABLE $table ADD COLUMN account_id " . ($db->driver === 'sqlite' ? 'INTEGER' : 'INT') . ' NOT NULL DEFAULT 0');
+                $db->exec("CREATE INDEX idx_{$table}_account ON $table(account_id)");
+            }
+        }
+        if ($db->driver !== 'sqlite') {
+            // L'identificativo (APP-1...) deve essere unico per negozio, non in assoluto.
+            foreach ($db->all("SHOW INDEX FROM appointments WHERE Column_name = 'identifier' AND Non_unique = 0") as $idx) {
+                $db->exec('ALTER TABLE appointments DROP INDEX `' . str_replace('`', '', (string)$idx['Key_name']) . '`');
+            }
+            $db->exec('CREATE UNIQUE INDEX uq_appointments_account_identifier ON appointments(account_id, identifier)');
+        }
+        $db->metaSet('schema_version', (string)self::VERSION);
+    }
+
+    /** Servizi di partenza e primo collaboratore, secondo il tipo di attività. */
+    public static function seedAccount(Db $db, int $accountId, string $category): void
+    {
+        $preset = Categories::get($category);
+        foreach ($preset['services'] as [$name, $desc, $dur, $price, $color, $cat]) {
             $db->exec(
-                'INSERT INTO services (name, description, duration, price, color, category) VALUES (?, ?, ?, ?, ?, ?)',
-                [$name, $desc, $dur, $price, $color, $cat]
+                'INSERT INTO services (account_id, name, description, duration, price, color, category) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                [$accountId, $name, $desc, $dur, $price, $color, $cat]
             );
         }
+        $db->exec(
+            'INSERT INTO staff (account_id, name, title, color) VALUES (?, ?, ?, ?)',
+            [$accountId, 'Titolare', $preset['staff_title'], '#3b82f6']
+        );
+    }
 
-        if (!$demo) {
-            $db->exec("INSERT INTO staff (name, title, color) VALUES ('Titolare', 'Parrucchiere', '#ec4899')");
-            return;
+    /** Ci sono dati della vecchia versione (senza proprietario) da assegnare al primo negozio? */
+    public static function hasUnownedData(Db $db): bool
+    {
+        foreach (self::OWNED as $table) {
+            if ($db->row("SELECT id FROM $table WHERE account_id = 0 LIMIT 1") !== null) {
+                return true;
+            }
         }
+        return false;
+    }
 
-        $staff = [
-            ['Giulia', 'giulia@example.com', 'Titolare / Hair stylist', '#ec4899'],
-            ['Marco', 'marco@example.com', 'Barbiere', '#3b82f6'],
-            ['Sara', 'sara@example.com', 'Colorista', '#f59e0b'],
-            ['Elena', 'elena@example.com', 'Apprendista', '#8b5cf6'],
-        ];
-        foreach ($staff as [$name, $email, $title, $color]) {
-            $db->exec('INSERT INTO staff (name, email, title, color) VALUES (?, ?, ?, ?)', [$name, $email, $title, $color]);
+    /** Assegna al negozio i dati rimasti senza proprietario e porta avanti il suo contatore. */
+    public static function adoptUnownedData(Db $db, int $accountId): void
+    {
+        foreach (self::OWNED as $table) {
+            $db->exec("UPDATE $table SET account_id = ? WHERE account_id = 0", [$accountId]);
         }
-        $clients = [
-            ['Chiara Rossi', 'chiara@example.com', '333 1234567'],
-            ['Luca Bianchi', 'luca@example.com', '347 7654321'],
-            ['Francesca Verdi', 'francesca@example.com', '320 1112233'],
-            ['Paolo Neri', 'paolo@example.com', '339 4445566'],
-        ];
-        foreach ($clients as [$name, $email, $phone]) {
-            $db->exec('INSERT INTO clients (name, email, phone, notes) VALUES (?, ?, ?, ?)', [$name, $email, $phone, '']);
+        $legacy = (int)($db->metaGet('appointment_counter') ?? 0);
+        $max = 0;
+        foreach ($db->all('SELECT identifier FROM appointments WHERE account_id = ?', [$accountId]) as $r) {
+            if (preg_match('/-(\d+)$/', (string)$r['identifier'], $m)) {
+                $max = max($max, (int)$m[1]);
+            }
         }
-        $products = [
-            ['Shampoo professionale', 'Salonline', 'Cura capelli', 14.9, 7.0, 25],
-            ['Maschera nutriente', 'Salonline', 'Cura capelli', 18.5, 9.0, 18],
-            ['Lacca extra forte', 'StylePro', 'Styling', 11.9, 5.5, 30],
-            ['Cera modellante uomo', 'StylePro', 'Styling', 12.5, 6.0, 20],
-        ];
-        foreach ($products as [$name, $brand, $cat, $price, $cost, $stock]) {
-            $db->exec(
-                'INSERT INTO products (name, brand, category, price, cost, stock) VALUES (?, ?, ?, ?, ?, ?)',
-                [$name, $brand, $cat, $price, $cost, $stock]
-            );
-        }
+        $db->exec('UPDATE accounts SET appointment_counter = ? WHERE id = ?', [max($legacy, $max), $accountId]);
     }
 }

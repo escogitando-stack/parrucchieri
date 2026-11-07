@@ -1,4 +1,5 @@
 import { useState } from "preact/hooks";
+import { useTerms } from "@/lib/account";
 import { useApp } from "../context";
 import { X, TriangleAlert } from "lucide-preact";
 import { conflictsFrom, describeConflict, type Conflict } from "@/lib/conflicts";
@@ -20,6 +21,7 @@ interface Props {
 }
 
 export function CreateAppointment({ onClose, defaultDate, defaultClientId, defaultStaffId, defaultStartTime }: Props) {
+  const t = useTerms();
   const { addAppointment, clientLookup, staffLookup, services, setError } = useApp();
   const [clientId, setClientId] = useState(defaultClientId ? String(defaultClientId) : "");
   const [staffId, setStaffId] = useState(defaultStaffId ? String(defaultStaffId) : "");
@@ -87,7 +89,7 @@ export function CreateAppointment({ onClose, defaultDate, defaultClientId, defau
               </select>
             </div>
             <div className="space-y-1.5">
-              <Label>Personale</Label>
+              <Label>{t.staffs}</Label>
               <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" value={staffId} onChange={(e) => { setStaffId((e.target as HTMLSelectElement).value); setConflicts(null); }}>
                 <option value="">Non assegnato</option>
                 {staffLookup.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -106,7 +108,7 @@ export function CreateAppointment({ onClose, defaultDate, defaultClientId, defau
           </div>
 
           <div className="space-y-1.5">
-            <Label>Servizi</Label>
+            <Label>{t.services}</Label>
             <div className="flex flex-wrap gap-2">
               {services.filter((s) => s.active).map((svc) => (
                 <button

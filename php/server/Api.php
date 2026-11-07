@@ -23,7 +23,8 @@ final class Api
 {
     private const STATUSES = ['booked', 'confirmed', 'in_progress', 'completed', 'cancelled', 'no_show'];
 
-    public function __construct(private Db $db)
+    /** @param array<string,mixed> $cfg */
+    public function __construct(private Db $db, private int $acct, private array $cfg = [])
     {
     }
 
@@ -51,6 +52,9 @@ final class Api
     private function routes(): array
     {
         return [
+            ['GET', '#^/api/account$#', 'getAccount'],
+            ['PUT', '#^/api/account$#', 'updateAccount'],
+            ['POST', '#^/api/account/password$#', 'changePassword'],
             ['GET', '#^/api/stats$#', 'stats'],
             ['GET', '#^/api/calendar$#', 'calendar'],
             ['GET', '#^/api/appointments$#', 'listAppointments'],
@@ -181,7 +185,61 @@ final class Api
 
     private function exists(string $table, int $id): bool
     {
-        return $this->db->row("SELECT id FROM $table WHERE id = ?", [$id]) !== null;
+        return $this->db->row("SELECT id FROM $table WHERE id = ? AND account_id = ?", [$id, $this->acct]) !== null;
+    }
+
+    // ── Account ──────────────────────────────────────────────────────
+
+    /** @return array<string,mixed> */
+    private function accountPayload(): array
+    {
+        $acct = Auth::account($this->db, $this->acct) ?? throw new HttpError(404, 'Non trovato');
+        $preset = Categories::get((string)$acct['category']);
+        $plan = Auth::plan($acct);
+        return [
+            'email' => $acct['email'],
+            'business_name' => $acct['business_name'],
+            'category' => $acct['category'],
+            'category_label' => $preset['label'],
+            'terms' => $preset['terms'] + ['staff_hint' => $preset['staff_hint']],
+            'categories' => Categories::options(),
+            'plan' => ['state' => $plan['state'], 'days_left' => $plan['days_left'], 'ends_at' => $plan['ends_at']],
+        ];
+    }
+
+    private function getAccount(array $m, array $q, array $b): array
+    {
+        return [200, ['account' => $this->accountPayload()]];
+    }
+
+    private function updateAccount(array $m, array $q, array $b): array
+    {
+        $name = $this->optString($b, 'business_name');
+        $category = $this->optString($b, 'category');
+        if ($name !== null && (trim($name) === '' || mb_strlen(trim($name)) > 120)) {
+            throw new HttpError(400, 'Il nome dell\'attività non è valido');
+        }
+        if ($category !== null && !Categories::valid($category)) {
+            throw new HttpError(400, 'Tipo di attività non valido');
+        }
+        [$sets, $params] = $this->sets([
+            'business_name' => $name !== null ? trim($name) : null,
+            'category' => $category,
+        ]);
+        if ($sets) {
+            $params[] = $this->acct;
+            $this->db->exec('UPDATE accounts SET ' . implode(', ', $sets) . ' WHERE id = ?', $params);
+        }
+        return [200, ['account' => $this->accountPayload()]];
+    }
+
+    private function changePassword(array $m, array $q, array $b): array
+    {
+        $result = Auth::changePassword($this->db, $this->acct, $this->reqString($b, 'current_password'), $this->reqString($b, 'new_password'));
+        if (!$result['ok']) {
+            throw new HttpError(400, $result['error'] ?? 'Password non valida');
+        }
+        return [200, ['ok' => true]];
     }
 
     // ── Statistiche ──────────────────────────────────────────────────
@@ -194,18 +252,19 @@ final class Api
     private function stats(array $m, array $q, array $b): array
     {
         $today = date('Y-m-d');
-        $value = $this->db->row("SELECT COALESCE(SUM(total_price), 0) AS t FROM appointments WHERE status = 'completed'");
+        $A = $this->acct;
+        $value = $this->db->row("SELECT COALESCE(SUM(total_price), 0) AS t FROM appointments WHERE status = 'completed' AND account_id = ?", [$A]);
         return [200, [
-            'appointments' => $this->count('SELECT COUNT(*) AS c FROM appointments'),
-            'clients' => $this->count('SELECT COUNT(*) AS c FROM clients'),
-            'staff' => $this->count('SELECT COUNT(*) AS c FROM staff WHERE active = 1'),
-            'services' => $this->count('SELECT COUNT(*) AS c FROM services WHERE active = 1'),
-            'products' => $this->count('SELECT COUNT(*) AS c FROM products'),
-            'today_appointments' => $this->count('SELECT COUNT(*) AS c FROM appointments WHERE scheduled_date = ?', [$today]),
-            'upcoming_appointments' => $this->count("SELECT COUNT(*) AS c FROM appointments WHERE status IN ('booked', 'confirmed') AND scheduled_date >= ?", [$today]),
-            'completed_appointments' => $this->count("SELECT COUNT(*) AS c FROM appointments WHERE status = 'completed'"),
+            'appointments' => $this->count('SELECT COUNT(*) AS c FROM appointments WHERE account_id = ?', [$A]),
+            'clients' => $this->count('SELECT COUNT(*) AS c FROM clients WHERE account_id = ?', [$A]),
+            'staff' => $this->count('SELECT COUNT(*) AS c FROM staff WHERE active = 1 AND account_id = ?', [$A]),
+            'services' => $this->count('SELECT COUNT(*) AS c FROM services WHERE active = 1 AND account_id = ?', [$A]),
+            'products' => $this->count('SELECT COUNT(*) AS c FROM products WHERE account_id = ?', [$A]),
+            'today_appointments' => $this->count('SELECT COUNT(*) AS c FROM appointments WHERE scheduled_date = ? AND account_id = ?', [$today, $A]),
+            'upcoming_appointments' => $this->count("SELECT COUNT(*) AS c FROM appointments WHERE status IN ('booked', 'confirmed') AND scheduled_date >= ? AND account_id = ?", [$today, $A]),
+            'completed_appointments' => $this->count("SELECT COUNT(*) AS c FROM appointments WHERE status = 'completed' AND account_id = ?", [$A]),
             'revenue' => (float)($value['t'] ?? 0),
-            'low_stock_products' => $this->count('SELECT COUNT(*) AS c FROM products WHERE stock <= low_stock_alert'),
+            'low_stock_products' => $this->count('SELECT COUNT(*) AS c FROM products WHERE stock <= low_stock_alert AND account_id = ?', [$A]),
         ]];
     }
 
@@ -229,14 +288,14 @@ final class Api
 
     private function fetchAppointment(int $id): ?array
     {
-        return $this->db->row(self::APT_SELECT . ' WHERE a.id = ?', [$id]);
+        return $this->db->row(self::APT_SELECT . ' WHERE a.id = ? AND a.account_id = ?', [$id, $this->acct]);
     }
 
     private function listAppointments(array $m, array $q, array $b): array
     {
         [, $limit, $offset] = $this->paging($q);
-        $where = 'WHERE 1=1';
-        $params = [];
+        $where = 'WHERE a.account_id = ?';
+        $params = [$this->acct];
         if (!empty($q['search'])) {
             $where .= " AND (a.identifier LIKE ? OR cl.name LIKE ?)";
             $s = $this->like((string)$q['search']);
@@ -270,9 +329,9 @@ final class Api
         $start = $this->date((string)$q['start'], 'start');
         $end = $this->date((string)$q['end'], 'end');
         $rows = $this->db->all(
-            self::APT_SELECT . " WHERE a.scheduled_date >= ? AND a.scheduled_date <= ? AND a.status <> 'cancelled'
+            self::APT_SELECT . " WHERE a.account_id = ? AND a.scheduled_date >= ? AND a.scheduled_date <= ? AND a.status <> 'cancelled'
              ORDER BY a.start_time ASC",
-            [$start, $end]
+            [$this->acct, $start, $end]
         );
         foreach ($rows as &$row) {
             $row['appointment_services'] = $this->appointmentServices((int)$row['id']);
@@ -281,9 +340,9 @@ final class Api
         $blocked = $this->db->all(
             'SELECT b.*, s.name AS staff_name FROM blocked_slots b
              LEFT JOIN staff s ON s.id = b.staff_id
-             WHERE b.blocked_date >= ? AND b.blocked_date <= ?
+             WHERE b.account_id = ? AND b.blocked_date >= ? AND b.blocked_date <= ?
              ORDER BY b.start_time ASC',
-            [$start, $end]
+            [$this->acct, $start, $end]
         );
         return [200, ['appointments' => $rows, 'blocked_slots' => $blocked]];
     }
@@ -308,8 +367,8 @@ final class Api
     {
         $sql = "SELECT a.start_time, a.end_time, cl.name AS client_name
                 FROM appointments a LEFT JOIN clients cl ON cl.id = a.client_id
-                WHERE a.staff_id = ? AND a.scheduled_date = ? AND a.status <> 'cancelled'";
-        $params = [$staffId, $date];
+                WHERE a.account_id = ? AND a.staff_id = ? AND a.scheduled_date = ? AND a.status <> 'cancelled'";
+        $params = [$this->acct, $staffId, $date];
         if ($excludeId !== null) {
             $sql .= ' AND a.id <> ?';
             $params[] = $excludeId;
@@ -324,8 +383,8 @@ final class Api
             ];
         }
         $blocks = $this->db->all(
-            'SELECT start_time, end_time, reason FROM blocked_slots WHERE staff_id = ? AND blocked_date = ?',
-            [$staffId, $date]
+            'SELECT start_time, end_time, reason FROM blocked_slots WHERE account_id = ? AND staff_id = ? AND blocked_date = ?',
+            [$this->acct, $staffId, $date]
         );
         foreach ($blocks as $bl) {
             $busy[] = [
@@ -340,7 +399,7 @@ final class Api
 
     private function staffName(int $staffId): string
     {
-        return (string)($this->db->row('SELECT name FROM staff WHERE id = ?', [$staffId])['name'] ?? '');
+        return (string)($this->db->row('SELECT name FROM staff WHERE id = ? AND account_id = ?', [$staffId, $this->acct])['name'] ?? '');
     }
 
     private function createAppointment(array $m, array $q, array $b): array
@@ -376,7 +435,7 @@ final class Api
         $services = [];
         if ($serviceIds) {
             $in = implode(',', array_fill(0, count($serviceIds), '?'));
-            $services = $this->db->all("SELECT id, duration, price FROM services WHERE id IN ($in)", $serviceIds);
+            $services = $this->db->all("SELECT id, duration, price FROM services WHERE account_id = ? AND id IN ($in)", array_merge([$this->acct], $serviceIds));
             $totalDuration = array_sum(array_map(fn($s) => (int)$s['duration'], $services));
             $totalPrice = array_sum(array_map(fn($s) => (float)$s['price'], $services));
         }
@@ -400,13 +459,12 @@ final class Api
             }
         }
 
-        $prefix = (string)($this->db->row("SELECT meta_value FROM _meta WHERE meta_key = 'appointment_prefix'")['meta_value'] ?? 'APP');
-        $identifier = $prefix . '-' . $this->db->nextCounter();
+        $identifier = 'APP-' . $this->db->nextCounter($this->acct);
 
         $this->db->exec(
-            'INSERT INTO appointments (identifier, client_id, staff_id, scheduled_date, start_time, end_time, total_price, notes, is_recurring, recurrence_interval)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [$identifier, $clientId, $staffId, $date, $startTime, $endTime, $totalPrice, $notes, $recurring, $interval]
+            'INSERT INTO appointments (account_id, identifier, client_id, staff_id, scheduled_date, start_time, end_time, total_price, notes, is_recurring, recurrence_interval)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [$this->acct, $identifier, $clientId, $staffId, $date, $startTime, $endTime, $totalPrice, $notes, $recurring, $interval]
         );
         $aptId = $this->db->lastId();
         $byId = [];
@@ -428,8 +486,8 @@ final class Api
     {
         $id = $this->id($m);
         $existing = $this->db->row(
-            'SELECT staff_id, scheduled_date, start_time, end_time, status FROM appointments WHERE id = ?',
-            [$id]
+            'SELECT staff_id, scheduled_date, start_time, end_time, status FROM appointments WHERE id = ? AND account_id = ?',
+            [$id, $this->acct]
         );
         if (!$existing) {
             throw new HttpError(404, 'Non trovato');
@@ -504,13 +562,14 @@ final class Api
         }
         $sets[] = 'updated_at = ' . $this->db->now();
         $params[] = $id;
-        $this->db->exec('UPDATE appointments SET ' . implode(', ', $sets) . ' WHERE id = ?', $params);
+        $params[] = $this->acct;
+        $this->db->exec('UPDATE appointments SET ' . implode(', ', $sets) . ' WHERE id = ? AND account_id = ?', $params);
         return [200, ['ok' => true]];
     }
 
     private function deleteAppointment(array $m, array $q, array $b): array
     {
-        $this->db->exec('DELETE FROM appointments WHERE id = ?', [$this->id($m)]);
+        $this->db->exec('DELETE FROM appointments WHERE id = ? AND account_id = ?', [$this->id($m), $this->acct]);
         return [200, ['ok' => true]];
     }
 
@@ -527,7 +586,10 @@ final class Api
 
     private function deleteNote(array $m, array $q, array $b): array
     {
-        $this->db->exec('DELETE FROM appointment_notes WHERE id = ?', [$this->id($m)]);
+        $this->db->exec(
+            'DELETE FROM appointment_notes WHERE id = ? AND appointment_id IN (SELECT id FROM appointments WHERE account_id = ?)',
+            [$this->id($m), $this->acct]
+        );
         return [200, ['ok' => true]];
     }
 
@@ -536,8 +598,8 @@ final class Api
     private function listClients(array $m, array $q, array $b): array
     {
         [, $limit, $offset] = $this->paging($q);
-        $where = 'WHERE 1=1';
-        $params = [];
+        $where = 'WHERE c.account_id = ?';
+        $params = [$this->acct];
         if (!empty($q['search'])) {
             $where .= " AND (c.name LIKE ? OR c.email LIKE ? OR c.phone LIKE ?)";
             $s = $this->like((string)$q['search']);
@@ -554,13 +616,13 @@ final class Api
 
     private function allClients(array $m, array $q, array $b): array
     {
-        return [200, ['clients' => $this->db->all('SELECT id, name FROM clients ORDER BY name ASC')]];
+        return [200, ['clients' => $this->db->all('SELECT id, name FROM clients WHERE account_id = ? ORDER BY name ASC', [$this->acct])]];
     }
 
     private function getClient(array $m, array $q, array $b): array
     {
         $id = $this->id($m);
-        $client = $this->db->row('SELECT * FROM clients WHERE id = ?', [$id]);
+        $client = $this->db->row('SELECT * FROM clients WHERE id = ? AND account_id = ?', [$id, $this->acct]);
         if (!$client) {
             throw new HttpError(404, 'Non trovato');
         }
@@ -572,8 +634,8 @@ final class Api
                      WHERE an.appointment_id = a.id
                      ORDER BY an.created_at DESC, an.id DESC LIMIT 1) AS latest_note
              FROM appointments a LEFT JOIN staff s ON s.id = a.staff_id
-             WHERE a.client_id = ? ORDER BY a.scheduled_date DESC, a.start_time DESC LIMIT 50",
-            [$id]
+             WHERE a.client_id = ? AND a.account_id = ? ORDER BY a.scheduled_date DESC, a.start_time DESC LIMIT 50",
+            [$id, $this->acct]
         );
         return [200, ['client' => $client, 'appointments' => $appointments]];
     }
@@ -581,15 +643,16 @@ final class Api
     private function createClient(array $m, array $q, array $b): array
     {
         $this->db->exec(
-            'INSERT INTO clients (name, email, phone, notes) VALUES (?, ?, ?, ?)',
+            'INSERT INTO clients (account_id, name, email, phone, notes) VALUES (?, ?, ?, ?, ?)',
             [
+                $this->acct,
                 $this->reqString($b, 'name'),
                 $this->optString($b, 'email') ?? '',
                 $this->optString($b, 'phone') ?? '',
                 $this->optString($b, 'notes') ?? '',
             ]
         );
-        return [201, ['client' => $this->db->row('SELECT * FROM clients WHERE id = ?', [$this->db->lastId()])]];
+        return [201, ['client' => $this->db->row('SELECT * FROM clients WHERE id = ? AND account_id = ?', [$this->db->lastId(), $this->acct])]];
     }
 
     private function updateClient(array $m, array $q, array $b): array
@@ -608,14 +671,15 @@ final class Api
         if ($sets) {
             $sets[] = 'updated_at = ' . $this->db->now();
             $params[] = $id;
-            $this->db->exec('UPDATE clients SET ' . implode(', ', $sets) . ' WHERE id = ?', $params);
+            $params[] = $this->acct;
+            $this->db->exec('UPDATE clients SET ' . implode(', ', $sets) . ' WHERE id = ? AND account_id = ?', $params);
         }
         return [200, ['ok' => true]];
     }
 
     private function deleteClient(array $m, array $q, array $b): array
     {
-        $this->db->exec('DELETE FROM clients WHERE id = ?', [$this->id($m)]);
+        $this->db->exec('DELETE FROM clients WHERE id = ? AND account_id = ?', [$this->id($m), $this->acct]);
         return [200, ['ok' => true]];
     }
 
@@ -628,8 +692,10 @@ final class Api
                     COUNT(a.id) AS appointment_count,
                     COALESCE(SUM(CASE WHEN a.status = 'completed' THEN 1 ELSE 0 END), 0) AS completed_appointment_count,
                     COALESCE(SUM(CASE WHEN a.status = 'completed' THEN a.total_price ELSE 0 END), 0) AS completed_service_value
-             FROM staff s LEFT JOIN appointments a ON a.staff_id = s.id
-             GROUP BY s.id ORDER BY s.name ASC"
+             FROM staff s LEFT JOIN appointments a ON a.staff_id = s.id AND a.account_id = s.account_id
+             WHERE s.account_id = ?
+             GROUP BY s.id ORDER BY s.name ASC",
+            [$this->acct]
         );
         foreach ($rows as &$r) {
             $r['appointment_count'] = (int)$r['appointment_count'];
@@ -642,14 +708,15 @@ final class Api
 
     private function allStaff(array $m, array $q, array $b): array
     {
-        return [200, ['staff' => $this->db->all('SELECT id, name, color FROM staff WHERE active = 1 ORDER BY name ASC')]];
+        return [200, ['staff' => $this->db->all('SELECT id, name, color FROM staff WHERE active = 1 AND account_id = ? ORDER BY name ASC', [$this->acct])]];
     }
 
     private function createStaff(array $m, array $q, array $b): array
     {
         $this->db->exec(
-            'INSERT INTO staff (name, email, phone, title, color) VALUES (?, ?, ?, ?, ?)',
+            'INSERT INTO staff (account_id, name, email, phone, title, color) VALUES (?, ?, ?, ?, ?, ?)',
             [
+                $this->acct,
                 $this->reqString($b, 'name'),
                 $this->optString($b, 'email') ?? '',
                 $this->optString($b, 'phone') ?? '',
@@ -657,7 +724,7 @@ final class Api
                 $this->color($this->optString($b, 'color')) ?: '#7c3aed',
             ]
         );
-        return [201, ['staff' => $this->db->row('SELECT * FROM staff WHERE id = ?', [$this->db->lastId()])]];
+        return [201, ['staff' => $this->db->row('SELECT * FROM staff WHERE id = ? AND account_id = ?', [$this->db->lastId(), $this->acct])]];
     }
 
     private function updateStaff(array $m, array $q, array $b): array
@@ -673,14 +740,15 @@ final class Api
         ]);
         if ($sets) {
             $params[] = $id;
-            $this->db->exec('UPDATE staff SET ' . implode(', ', $sets) . ' WHERE id = ?', $params);
+            $params[] = $this->acct;
+            $this->db->exec('UPDATE staff SET ' . implode(', ', $sets) . ' WHERE id = ? AND account_id = ?', $params);
         }
         return [200, ['ok' => true]];
     }
 
     private function deleteStaff(array $m, array $q, array $b): array
     {
-        $this->db->exec('DELETE FROM staff WHERE id = ?', [$this->id($m)]);
+        $this->db->exec('DELETE FROM staff WHERE id = ? AND account_id = ?', [$this->id($m), $this->acct]);
         return [200, ['ok' => true]];
     }
 
@@ -688,14 +756,15 @@ final class Api
 
     private function listServices(array $m, array $q, array $b): array
     {
-        return [200, ['services' => $this->db->all('SELECT * FROM services ORDER BY category ASC, name ASC')]];
+        return [200, ['services' => $this->db->all('SELECT * FROM services WHERE account_id = ? ORDER BY category ASC, name ASC', [$this->acct])]];
     }
 
     private function createService(array $m, array $q, array $b): array
     {
         $this->db->exec(
-            'INSERT INTO services (name, description, duration, price, color, category) VALUES (?, ?, ?, ?, ?, ?)',
+            'INSERT INTO services (account_id, name, description, duration, price, color, category) VALUES (?, ?, ?, ?, ?, ?, ?)',
             [
+                $this->acct,
                 $this->reqString($b, 'name'),
                 $this->optString($b, 'description') ?? '',
                 $this->optInt($b, 'duration') ?: 60,
@@ -704,7 +773,7 @@ final class Api
                 $this->optString($b, 'category') ?? '',
             ]
         );
-        return [201, ['service' => $this->db->row('SELECT * FROM services WHERE id = ?', [$this->db->lastId()])]];
+        return [201, ['service' => $this->db->row('SELECT * FROM services WHERE id = ? AND account_id = ?', [$this->db->lastId(), $this->acct])]];
     }
 
     private function updateService(array $m, array $q, array $b): array
@@ -729,14 +798,15 @@ final class Api
         ]);
         if ($sets) {
             $params[] = $id;
-            $this->db->exec('UPDATE services SET ' . implode(', ', $sets) . ' WHERE id = ?', $params);
+            $params[] = $this->acct;
+            $this->db->exec('UPDATE services SET ' . implode(', ', $sets) . ' WHERE id = ? AND account_id = ?', $params);
         }
         return [200, ['ok' => true]];
     }
 
     private function deleteService(array $m, array $q, array $b): array
     {
-        $this->db->exec('DELETE FROM services WHERE id = ?', [$this->id($m)]);
+        $this->db->exec('DELETE FROM services WHERE id = ? AND account_id = ?', [$this->id($m), $this->acct]);
         return [200, ['ok' => true]];
     }
 
@@ -772,15 +842,15 @@ final class Api
             }
         }
         $this->db->exec(
-            'INSERT INTO blocked_slots (staff_id, blocked_date, start_time, end_time, reason) VALUES (?, ?, ?, ?, ?)',
-            [$staffId, $date, $start, $end, $reason]
+            'INSERT INTO blocked_slots (account_id, staff_id, blocked_date, start_time, end_time, reason) VALUES (?, ?, ?, ?, ?, ?)',
+            [$this->acct, $staffId, $date, $start, $end, $reason]
         );
         return [201, ['ok' => true]];
     }
 
     private function deleteBlockedSlot(array $m, array $q, array $b): array
     {
-        $this->db->exec('DELETE FROM blocked_slots WHERE id = ?', [$this->id($m)]);
+        $this->db->exec('DELETE FROM blocked_slots WHERE id = ? AND account_id = ?', [$this->id($m), $this->acct]);
         return [200, ['ok' => true]];
     }
 
@@ -789,8 +859,8 @@ final class Api
     private function listProducts(array $m, array $q, array $b): array
     {
         [, $limit, $offset] = $this->paging($q);
-        $where = 'WHERE 1=1';
-        $params = [];
+        $where = 'WHERE p.account_id = ?';
+        $params = [$this->acct];
         if (!empty($q['search'])) {
             $where .= " AND (p.name LIKE ? OR p.brand LIKE ? OR p.sku LIKE ?)";
             $s = $this->like((string)$q['search']);
@@ -824,8 +894,9 @@ final class Api
     private function createProduct(array $m, array $q, array $b): array
     {
         $this->db->exec(
-            'INSERT INTO products (name, brand, category, sku, price, cost, stock, low_stock_alert) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO products (account_id, name, brand, category, sku, price, cost, stock, low_stock_alert) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [
+                $this->acct,
                 $this->reqString($b, 'name'),
                 $this->optString($b, 'brand') ?? '',
                 $this->optString($b, 'category') ?? '',
@@ -836,7 +907,7 @@ final class Api
                 $this->nonNegativeInt($this->optInt($b, 'low_stock_alert'), 'low_stock_alert') ?? 5,
             ]
         );
-        return [201, ['product' => $this->db->row('SELECT * FROM products WHERE id = ?', [$this->db->lastId()])]];
+        return [201, ['product' => $this->db->row('SELECT * FROM products WHERE id = ? AND account_id = ?', [$this->db->lastId(), $this->acct])]];
     }
 
     private function updateProduct(array $m, array $q, array $b): array
@@ -855,14 +926,15 @@ final class Api
         if ($sets) {
             $sets[] = 'updated_at = ' . $this->db->now();
             $params[] = $id;
-            $this->db->exec('UPDATE products SET ' . implode(', ', $sets) . ' WHERE id = ?', $params);
+            $params[] = $this->acct;
+            $this->db->exec('UPDATE products SET ' . implode(', ', $sets) . ' WHERE id = ? AND account_id = ?', $params);
         }
         return [200, ['ok' => true]];
     }
 
     private function deleteProduct(array $m, array $q, array $b): array
     {
-        $this->db->exec('DELETE FROM products WHERE id = ?', [$this->id($m)]);
+        $this->db->exec('DELETE FROM products WHERE id = ? AND account_id = ?', [$this->id($m), $this->acct]);
         return [200, ['ok' => true]];
     }
 }

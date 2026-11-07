@@ -3,9 +3,11 @@ declare(strict_types=1);
 
 namespace App;
 
-/** Accesso protetto da password (una sola utenza amministratore). */
+/** Account dei negozi: registrazione, accesso, sessione e stato dell'abbonamento. */
 final class Auth
 {
+    public const MIN_PASSWORD = 8;
+
     public static function isHttps(): bool
     {
         return (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
@@ -20,7 +22,7 @@ final class Auth
         $lifetime = 60 * 60 * 24 * 30;
         ini_set('session.gc_maxlifetime', (string)$lifetime);
         ini_set('session.use_strict_mode', '1');
-        session_name('parrucchieri');
+        session_name('appuntamenti');
         session_set_cookie_params([
             'lifetime' => $lifetime,
             'path' => '/',
@@ -31,31 +33,24 @@ final class Auth
         session_start();
     }
 
-    public static function isLoggedIn(): bool
+    /** Id del negozio con la sessione aperta, oppure null. */
+    public static function accountId(): ?int
     {
         self::start();
-        return ($_SESSION['auth'] ?? false) === true;
+        $id = $_SESSION['account_id'] ?? null;
+        return is_int($id) && $id > 0 ? $id : null;
     }
 
-    /** @param array<string,mixed> $cfg */
-    public static function attempt(array $cfg, string $password): bool
+    public static function isLoggedIn(): bool
     {
-        $hash = trim((string)($cfg['admin_password_hash'] ?? ''));
-        $plain = (string)($cfg['admin_password'] ?? '');
-        $ok = false;
-        if ($hash !== '') {
-            $ok = password_verify($password, $hash);
-        } elseif ($plain !== '') {
-            $ok = hash_equals($plain, $password);
-        }
-        if (!$ok) {
-            sleep(1); // rallenta i tentativi a raffica
-            return false;
-        }
+        return self::accountId() !== null;
+    }
+
+    private static function openSession(int $accountId): void
+    {
         self::start();
         session_regenerate_id(true);
-        $_SESSION['auth'] = true;
-        return true;
+        $_SESSION = ['account_id' => $accountId];
     }
 
     public static function logout(): void
@@ -69,43 +64,108 @@ final class Auth
         session_destroy();
     }
 
-    public static function loginPage(?string $error = null, bool $configured = true): string
+    /** @return array<string,mixed>|null */
+    public static function account(Db $db, int $id): ?array
     {
-        $err = $error ? '<p class="err">' . htmlspecialchars($error, ENT_QUOTES, 'UTF-8') . '</p>' : '';
-        $warn = $configured ? '' : '<p class="err">Password amministratore non configurata: imposta <code>admin_password</code> in <code>server/config.php</code>.</p>';
-        return <<<HTML
-<!DOCTYPE html>
-<html lang="it">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex">
-<title>Accedi · Gestionale Parrucchieri</title>
-<style>
-  *{box-sizing:border-box}
-  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f6f4f3;font:16px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:#1c1917}
-  form{width:min(92vw,360px);background:#fff;border:1px solid #e7e5e4;border-radius:14px;padding:28px;box-shadow:0 6px 24px rgba(0,0,0,.06)}
-  h1{margin:0 0 4px;font-size:20px}
-  p.sub{margin:0 0 20px;color:#78716c;font-size:14px}
-  label{display:block;font-size:13px;font-weight:600;margin-bottom:6px}
-  input{width:100%;height:44px;padding:0 12px;border:1px solid #d6d3d1;border-radius:10px;font-size:16px}
-  input:focus{outline:2px solid #ec4899;outline-offset:1px}
-  button{margin-top:16px;width:100%;height:44px;border:0;border-radius:10px;background:#be185d;color:#fff;font-size:16px;font-weight:600;cursor:pointer}
-  button:hover{background:#9d174d}
-  .err{margin:0 0 14px;padding:10px 12px;border-radius:8px;background:#fef2f2;color:#b91c1c;font-size:14px}
-</style>
-</head>
-<body>
-<form method="post" action="/login">
-  <h1>Gestionale Parrucchieri</h1>
-  <p class="sub">Inserisci la password per accedere all'agenda.</p>
-  $warn$err
-  <label for="password">Password</label>
-  <input id="password" name="password" type="password" autocomplete="current-password" autofocus required>
-  <button type="submit">Accedi</button>
-</form>
-</body>
-</html>
-HTML;
+        return $db->row('SELECT * FROM accounts WHERE id = ?', [$id]);
+    }
+
+    /**
+     * Prova gratuita o abbonamento: 'trial', 'active' oppure 'expired'.
+     *
+     * @param array<string,mixed> $acct
+     * @return array{state:string,days_left:int,ends_at:string}
+     */
+    public static function plan(array $acct, ?int $now = null): array
+    {
+        $now ??= time();
+        $grace = 3 * 86400; // tolleranza se il rinnovo arriva in ritardo
+        $status = (string)($acct['plan_status'] ?? 'trial');
+        $paidUntil = (string)($acct['paid_until'] ?? '');
+        $trialEnd = (string)($acct['trial_ends_at'] ?? '');
+        if ($status === 'active') {
+            $end = $paidUntil !== '' ? (int)strtotime($paidUntil) : PHP_INT_MAX - $grace;
+            if ($now <= $end + $grace) {
+                return ['state' => 'active', 'days_left' => 0, 'ends_at' => $paidUntil];
+            }
+        } elseif ($status === 'trial' && $trialEnd !== '') {
+            $end = (int)strtotime($trialEnd);
+            if ($now <= $end) {
+                return ['state' => 'trial', 'days_left' => (int)ceil(($end - $now) / 86400), 'ends_at' => $trialEnd];
+            }
+        }
+        return ['state' => 'expired', 'days_left' => 0, 'ends_at' => $status === 'active' ? $paidUntil : $trialEnd];
+    }
+
+    /**
+     * Crea il negozio, avvia la prova e apre la sessione.
+     *
+     * @param array<string,mixed> $cfg
+     * @return array{ok:bool,error?:string,id?:int}
+     */
+    public static function register(Db $db, array $cfg, string $business, string $category, string $email, string $password): array
+    {
+        $business = trim($business);
+        $email = strtolower(trim($email));
+        if ($business === '' || mb_strlen($business) > 120) {
+            return ['ok' => false, 'error' => 'Inserisci il nome della tua attività.'];
+        }
+        if (!Categories::valid($category)) {
+            return ['ok' => false, 'error' => 'Scegli il tipo di attività.'];
+        }
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($email) > 190) {
+            return ['ok' => false, 'error' => 'Inserisci un indirizzo email valido.'];
+        }
+        if (strlen($password) < self::MIN_PASSWORD) {
+            return ['ok' => false, 'error' => 'La password deve avere almeno ' . self::MIN_PASSWORD . ' caratteri.'];
+        }
+        if ($db->row('SELECT id FROM accounts WHERE email = ?', [$email]) !== null) {
+            return ['ok' => false, 'error' => 'Esiste già un account con questa email. Prova ad accedere.'];
+        }
+
+        $days = max(1, (int)($cfg['trial_days'] ?? 30));
+        $first = $db->row('SELECT id FROM accounts LIMIT 1') === null;
+        $db->exec(
+            'INSERT INTO accounts (email, password_hash, business_name, category, plan_status, trial_ends_at) VALUES (?, ?, ?, ?, ?, ?)',
+            [$email, password_hash($password, PASSWORD_DEFAULT), $business, $category, 'trial', date('Y-m-d H:i:s', time() + $days * 86400)]
+        );
+        $id = $db->lastId();
+        // Il primo negozio eredita i dati inseriti prima dell'arrivo degli account.
+        if ($first && Schema::hasUnownedData($db)) {
+            Schema::adoptUnownedData($db, $id);
+        } else {
+            Schema::seedAccount($db, $id, $category);
+        }
+        self::openSession($id);
+        return ['ok' => true, 'id' => $id];
+    }
+
+    /** @return array{ok:bool,id?:int} */
+    public static function login(Db $db, string $email, string $password): array
+    {
+        $acct = $db->row('SELECT id, password_hash FROM accounts WHERE email = ?', [strtolower(trim($email))]);
+        // Si verifica sempre un hash, anche se l'email non esiste, per non far capire chi è registrato.
+        $hash = $acct['password_hash'] ?? '$2y$10$QtfLZrm/LZSWtIGfsvpmceT9nDJ6.nhWgsNBqAkSqQfD2TSDeMx9W';
+        if (!password_verify($password, (string)$hash) || $acct === null) {
+            sleep(1); // rallenta i tentativi a raffica
+            return ['ok' => false];
+        }
+        self::openSession((int)$acct['id']);
+        return ['ok' => true, 'id' => (int)$acct['id']];
+    }
+
+    /** @return array{ok:bool,error?:string} */
+    public static function changePassword(Db $db, int $accountId, string $current, string $new): array
+    {
+        $acct = self::account($db, $accountId);
+        if ($acct === null || !password_verify($current, (string)$acct['password_hash'])) {
+            sleep(1);
+            return ['ok' => false, 'error' => 'La password attuale non è corretta.'];
+        }
+        if (strlen($new) < self::MIN_PASSWORD) {
+            return ['ok' => false, 'error' => 'La nuova password deve avere almeno ' . self::MIN_PASSWORD . ' caratteri.'];
+        }
+        $db->exec('UPDATE accounts SET password_hash = ? WHERE id = ?', [password_hash($new, PASSWORD_DEFAULT), $accountId]);
+        return ['ok' => true];
     }
 }

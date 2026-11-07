@@ -2,7 +2,7 @@
 
 ## Versione per parrucchieri (italiano)
 
-Questo fork adatta OpenSalon alla gestione degli appuntamenti nei saloni di parrucchieri:
+Questo fork adatta OpenSalon alla gestione degli appuntamenti per qualsiasi attività (parrucchieri, unghie, estetica, officine, tatuatori...), con più negozi, prova gratuita di 30 giorni e abbonamento:
 
 - interfaccia completamente in italiano (agenda, appuntamenti, clienti, personale, servizi, prodotti);
 - importi in euro e date nel formato italiano (`gg/mm/aaaa`, orari a 24 ore);

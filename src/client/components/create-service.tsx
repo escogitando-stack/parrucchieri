@@ -1,4 +1,5 @@
 import { useState } from "preact/hooks";
+import { useTerms } from "@/lib/account";
 import { useApp } from "../context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#ef4444", "#14b8a6", "#6b7280"];
 
 export function CreateService({ onClose }: { onClose: () => void }) {
+  const t = useTerms();
   const { addService, setError } = useApp();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -35,7 +37,7 @@ export function CreateService({ onClose }: { onClose: () => void }) {
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Aggiungi servizio</DialogTitle>
+          <DialogTitle>Aggiungi {t.service}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
@@ -76,7 +78,7 @@ export function CreateService({ onClose }: { onClose: () => void }) {
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Annulla</Button>
-          <Button disabled={saving} onClick={handleSubmit}>{saving ? "Salvataggio..." : "Aggiungi servizio"}</Button>
+          <Button disabled={saving} onClick={handleSubmit}>{saving ? "Salvataggio..." : `Aggiungi ${t.service}`}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

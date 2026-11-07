@@ -1,4 +1,5 @@
 import { useState } from "preact/hooks";
+import { useTerms } from "@/lib/account";
 import { useApp } from "../context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#ef4444", "#14b8a6", "#f97316"];
 
 export function CreateStaff({ onClose }: { onClose: () => void }) {
+  const t = useTerms();
   const { addStaff, setError } = useApp();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -33,7 +35,7 @@ export function CreateStaff({ onClose }: { onClose: () => void }) {
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Aggiungi collaboratore</DialogTitle>
+          <DialogTitle>Aggiungi {t.staff}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
@@ -42,7 +44,7 @@ export function CreateStaff({ onClose }: { onClose: () => void }) {
           </div>
           <div className="space-y-1.5">
             <Label>Qualifica / Ruolo</Label>
-            <Input value={title} onChange={(e) => setTitle((e.target as HTMLInputElement).value)} placeholder="es. Parrucchiera senior" />
+            <Input value={title} onChange={(e) => setTitle((e.target as HTMLInputElement).value)} placeholder={t.staff_hint} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">

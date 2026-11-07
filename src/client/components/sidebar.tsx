@@ -1,7 +1,8 @@
 import { AppNav, embedded } from "@clawnify/app/client";
 import { useEffect, useState } from "preact/hooks";
 import { useApp } from "../context";
-import { Scissors, Menu, LayoutDashboard, CalendarDays, Clock, Users, UserCog, Sparkles, Package, LogOut } from "lucide-preact";
+import { Menu, LayoutDashboard, CalendarDays, Clock, Users, UserCog, Sparkles, Package, LogOut, Settings } from "lucide-preact";
+import { useAccount, useTerms } from "@/lib/account";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
@@ -17,23 +18,49 @@ const navItems: { view: View; path: string; label: string; icon: typeof LayoutDa
   { view: "staff", path: "/staff", label: "Personale", icon: UserCog },
   { view: "services", path: "/services", label: "Servizi", icon: Sparkles },
   { view: "products", path: "/products", label: "Prodotti", icon: Package },
+  { view: "settings", path: "/settings", label: "Impostazioni", icon: Settings },
 ];
+
+/** Etichette del menu: personale, servizi e prodotti prendono il nome del tipo di attività. */
+function useNavItems() {
+  const t = useTerms();
+  return navItems.map((item) =>
+    item.view === "staff" ? { ...item, label: t.staffs }
+      : item.view === "services" ? { ...item, label: t.services }
+      : item.view === "products" ? { ...item, label: t.products }
+      : item
+  );
+}
+
+function TrialBanner() {
+  const account = useAccount();
+  if (!account || account.plan.state !== "trial") return null;
+  const days = account.plan.days_left;
+  return (
+    <a href="/abbonamento" className="mx-2 mb-2 block rounded-md bg-primary/10 px-3 py-2 text-xs font-medium text-primary hover:bg-primary/15">
+      Prova gratuita: {days} {days === 1 ? "giorno rimasto" : "giorni rimasti"}. Scegli un piano
+    </a>
+  );
+}
 
 function SidebarContent({ currentView, onNavigate }: { currentView: View; onNavigate?: () => void }) {
   const { navigate, stats } = useApp();
+  const items = useNavItems();
+  const account = useAccount();
+  const businessName = account?.business_name ?? "Appuntamenti";
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-sidebar">
       <div className="flex items-center gap-2 px-4 py-5">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-          <Scissors className="h-4 w-4" />
+          <CalendarDays className="h-4 w-4" />
         </div>
-        <span className="text-base font-semibold text-sidebar-foreground">Gestionale Parrucchieri</span>
+        <span className="min-w-0 break-words text-base font-semibold text-sidebar-foreground">{businessName}</span>
       </div>
       <Separator />
       <nav aria-label="Navigazione principale" className="min-h-0 flex-1 space-y-1 overflow-y-auto px-2 py-3">
         <p className="mb-2 px-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">Menu</p>
-        {navItems.map((item) => (
+        {items.map((item) => (
           <button
             key={item.view}
             className={cn(
@@ -72,6 +99,7 @@ function SidebarContent({ currentView, onNavigate }: { currentView: View; onNavi
       </div>
       <Separator />
       <div className="px-2 py-3">
+        <TrialBanner />
         <a
           href="/logout"
           className="flex min-h-11 w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-0"
@@ -87,6 +115,9 @@ function SidebarContent({ currentView, onNavigate }: { currentView: View; onNavi
 export function Sidebar({ currentView }: { currentView: View }) {
   const [open, setOpen] = useState(false);
   const { navigate, stats } = useApp();
+  const items = useNavItems();
+  const account = useAccount();
+  const businessName = account?.business_name ?? "Appuntamenti";
 
   useEffect(() => {
     const desktop = window.matchMedia("(min-width: 768px)");
@@ -101,9 +132,9 @@ export function Sidebar({ currentView }: { currentView: View }) {
   }, []);
 
   if (embedded) {
-    const icons = ["home", "calendar-days", "clock", "users", "users", "sparkles", "package"];
-    return <AppNav title="Parrucchieri" icon="calendar-days" active={currentView}
-      groups={[{ items: navItems.map((item, index) => ({
+    const icons = ["home", "calendar-days", "clock", "users", "users", "sparkles", "package", "settings"];
+    return <AppNav title={businessName} icon="calendar-days" active={currentView}
+      groups={[{ items: items.map((item, index) => ({
         id: item.view, label: item.label, href: item.path, icon: icons[index],
         home: item.view === "dashboard",
         count: item.view === "appointments" ? stats.appointments || undefined
@@ -120,8 +151,8 @@ export function Sidebar({ currentView }: { currentView: View }) {
       </aside>
       <header className="flex shrink-0 items-center justify-between gap-3 border-b bg-sidebar px-4 py-2 md:hidden">
         <span className="flex items-center gap-2 text-sm font-semibold">
-          <Scissors className="h-4 w-4 text-primary" />
-          Gestionale Parrucchieri
+          <CalendarDays className="h-4 w-4 text-primary" />
+          {businessName}
         </span>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>

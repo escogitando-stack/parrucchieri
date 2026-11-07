@@ -1,4 +1,5 @@
 import { useState } from "preact/hooks";
+import { useTerms, cap } from "@/lib/account";
 import { useApp } from "../context";
 import { Plus, Trash2 } from "lucide-preact";
 import { Button } from "@/components/ui/button";
@@ -8,19 +9,20 @@ import { CreateStaff } from "./create-staff";
 import { formatEuro } from "@/lib/format";
 
 export function StaffList() {
+  const t = useTerms();
   const { staffMembers, deleteStaff, updateStaff } = useApp();
   const [showCreate, setShowCreate] = useState(false);
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Personale</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{t.staffs}</h1>
         <Button size="sm" className="min-h-11 sm:min-h-0" onClick={() => setShowCreate(true)}>
-          <Plus className="mr-1 h-3.5 w-3.5" /> Aggiungi collaboratore
+          <Plus className="mr-1 h-3.5 w-3.5" /> Aggiungi {t.staff}
         </Button>
       </div>
       <p className="max-w-2xl text-sm text-muted-foreground">
-        All-time completed visits and booked service value. Service value is not payment received, tips, commission, or take-home pay.
+        Appuntamenti completati e valore dei {t.services.toLowerCase()} prenotati, da sempre. Non indica incassi ricevuti, mance, provvigioni o stipendio.
       </p>
 
       {showCreate && <CreateStaff onClose={() => setShowCreate(false)} />}
@@ -29,7 +31,7 @@ export function StaffList() {
         <CardContent className="p-0">
           <div className="divide-y lg:hidden">
             {staffMembers.length === 0 && (
-              <p className="py-12 text-center text-muted-foreground">Nessun collaboratore</p>
+              <p className="py-12 text-center text-muted-foreground">Nessun {t.staff}</p>
             )}
             {staffMembers.map((s) => (
               <div key={s.id} className="p-4">
@@ -51,7 +53,7 @@ export function StaffList() {
                 <dl className="mt-4 grid grid-cols-3 gap-4 border-t pt-4">
                   <div><dt className="text-sm text-muted-foreground">Prenotazioni</dt><dd className="font-semibold tabular-nums">{s.appointment_count || 0}</dd></div>
                   <div><dt className="text-sm text-muted-foreground">Completati</dt><dd className="font-semibold tabular-nums">{s.completed_appointment_count || 0}</dd></div>
-                  <div><dt className="text-sm text-muted-foreground">Valore servizi</dt><dd className="font-semibold tabular-nums">{formatEuro((s.completed_service_value || 0))}</dd></div>
+                  <div><dt className="text-sm text-muted-foreground">Valore {t.services.toLowerCase()}</dt><dd className="font-semibold tabular-nums">{formatEuro((s.completed_service_value || 0))}</dd></div>
                 </dl>
                 <div className="mt-4 grid grid-cols-2 gap-2">
                   <Button variant="outline" className="min-h-11" onClick={() => updateStaff(s.id, { active: s.active ? 0 : 1 })}>
@@ -69,17 +71,17 @@ export function StaffList() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Collaboratore</TableHead>
+                  <TableHead>{cap(t.staff)}</TableHead>
                   <TableHead>Ruolo</TableHead>
                   <TableHead className="w-24 text-right">Prenotazioni</TableHead>
                   <TableHead className="w-24 text-right">Completati</TableHead>
-                  <TableHead className="w-36 text-right">Valore servizi</TableHead>
+                  <TableHead className="w-36 text-right">Valore {t.services.toLowerCase()}</TableHead>
                   <TableHead className="w-44" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {staffMembers.length === 0 && (
-                  <TableRow><TableCell colSpan={6} className="py-12 text-center text-muted-foreground">Nessun collaboratore</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6} className="py-12 text-center text-muted-foreground">Nessun {t.staff}</TableCell></TableRow>
                 )}
                 {staffMembers.map((s) => (
                   <TableRow key={s.id}>

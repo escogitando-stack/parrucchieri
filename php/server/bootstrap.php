@@ -7,6 +7,9 @@ require_once __DIR__ . '/Db.php';
 require_once __DIR__ . '/Schema.php';
 require_once __DIR__ . '/Api.php';
 require_once __DIR__ . '/Auth.php';
+require_once __DIR__ . '/Categories.php';
+require_once __DIR__ . '/Billing.php';
+require_once __DIR__ . '/Pages.php';
 
 /**
  * @return array<string,mixed>
@@ -28,10 +31,13 @@ function loadConfig(): array
 function connect(array $cfg): Db
 {
     $db = Db::connect($cfg['db'] ?? []);
-    $flag = __DIR__ . '/.installed';
-    if (!is_file($flag)) {
-        Schema::install($db, (bool)($cfg['seed_demo'] ?? false));
-        @file_put_contents($flag, date('c'));
+    try {
+        $version = $db->metaGet('schema_version');
+    } catch (\Throwable) {
+        $version = null; // database ancora vuoto
+    }
+    if ($version === null || (int)$version < Schema::VERSION) {
+        Schema::ensure($db);
     }
     return $db;
 }

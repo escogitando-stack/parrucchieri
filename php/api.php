@@ -17,7 +17,8 @@ function respond(int $status, array $data): never
     exit;
 }
 
-if (!Auth::isLoggedIn()) {
+$accountId = Auth::accountId();
+if ($accountId === null) {
     respond(401, ['error' => 'Non autorizzato: effettua di nuovo l\'accesso']);
 }
 
@@ -43,10 +44,18 @@ if ($method !== 'GET' && $method !== 'HEAD') {
 }
 
 try {
-    $api = new App\Api(App\connect($cfg));
+    $db = App\connect($cfg);
+    $acct = Auth::account($db, $accountId);
+    if ($acct === null) {
+        respond(401, ['error' => 'Non autorizzato: effettua di nuovo l\'accesso']);
+    }
+    if (Auth::plan($acct)['state'] === 'expired') {
+        respond(402, ['error' => 'Prova gratuita terminata: attiva un abbonamento per continuare.', 'code' => 'subscription_required']);
+    }
+    $api = new App\Api($db, $accountId, $cfg);
     [$status, $data] = $api->handle($method, $path, $_GET, $body);
     respond($status, $data);
 } catch (Throwable $e) {
-    error_log('[parrucchieri] ' . $e);
+    error_log('[appuntamenti] ' . $e);
     respond(500, ['error' => 'Errore del server']);
 }

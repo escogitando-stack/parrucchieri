@@ -8,21 +8,40 @@ return [
     'db' => [
         'driver' => 'mysql',
         'host'   => 'localhost',
-        'name'   => 'CPANELUSER_parrucchieri',
-        'user'   => 'CPANELUSER_parrucchieri',
+        'name'   => 'CPANELUSER_appuntamenti',
+        'user'   => 'CPANELUSER_appuntamenti',
         'pass'   => 'PASSWORD_DATABASE',
     ],
 
-    // Password per entrare nell'app (modo semplice): scrivila qui tra apici singoli.
-    // Il file server/config.php non è raggiungibile dal web.
-    'admin_password' => '',
+    'site_name' => 'Appuntamenti4me',
+    'timezone'  => 'Europe/Rome',
 
-    // Alternativa più sicura: lascia vuoto sopra e inserisci un hash generato con
-    //   php -r 'echo password_hash("LA_TUA_PASSWORD", PASSWORD_DEFAULT), "\n";'
-    'admin_password_hash' => '',
+    // Indirizzo del sito (usato nei ritorni dal pagamento). Lascia vuoto per rilevarlo da solo.
+    'base_url' => 'https://appuntamenti4me.it',
 
-    // true = al primo avvio inserisce anche collaboratori, clienti e prodotti di esempio.
-    'seed_demo' => false,
+    // Giorni di prova gratuita dopo la registrazione.
+    'trial_days' => 30,
 
-    'timezone' => 'Europe/Rome',
+    // false = chiude le nuove registrazioni (chi ha già un account entra normalmente).
+    'allow_registration' => true,
+
+    // Prezzi mostrati sul sito: sono solo testi, il prezzo vero si imposta in Stripe.
+    'pricing' => [
+        'monthly_label' => '19 € al mese',
+        'yearly_label'  => '190 € all\'anno',
+    ],
+
+    // Pagine legali (obbligatorie se vendi a clienti in Italia/UE): se compilate compare
+    // la casella "Accetto" nella registrazione e i link nel piè di pagina.
+    'terms_url'   => '',
+    'privacy_url' => '',
+
+    // Pagamenti con Stripe. Senza queste chiavi il sito funziona ma l'acquisto è disattivato.
+    // Vedi docs/DEPLOY.md → "Abbonamenti con Stripe".
+    'stripe' => [
+        'secret_key'     => '',   // sk_live_...
+        'webhook_secret' => '',   // whsec_...
+        'price_monthly'  => '',   // price_... (piano mensile)
+        'price_yearly'   => '',   // price_... (piano annuale, facoltativo)
+    ],
 ];

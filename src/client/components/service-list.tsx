@@ -1,4 +1,5 @@
 import { useState } from "preact/hooks";
+import { useTerms } from "@/lib/account";
 import { useApp } from "../context";
 import { Plus, Trash2 } from "lucide-preact";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import { CreateService } from "./create-service";
 import { formatEuro } from "@/lib/format";
 
 export function ServiceList() {
+  const t = useTerms();
   const { services, deleteService, updateService } = useApp();
   const [showCreate, setShowCreate] = useState(false);
 
@@ -17,9 +19,9 @@ export function ServiceList() {
   return (
     <div className="space-y-4 p-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Servizi</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{t.services}</h1>
         <Button size="sm" onClick={() => setShowCreate(true)}>
-          <Plus className="mr-1 h-3.5 w-3.5" /> Aggiungi servizio
+          <Plus className="mr-1 h-3.5 w-3.5" /> Aggiungi {t.service}
         </Button>
       </div>
 
@@ -41,7 +43,7 @@ export function ServiceList() {
             </TableHeader>
             <TableBody>
               {services.length === 0 && (
-                <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">Nessun servizio</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">Nessun {t.service}</TableCell></TableRow>
               )}
               {services.map((svc) => (
                 <TableRow key={svc.id}>

@@ -1,4 +1,5 @@
 import { useState } from "preact/hooks";
+import { useTerms } from "@/lib/account";
 import { useApp } from "../context";
 import { Plus, Search, Trash2 } from "lucide-preact";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,7 @@ import { CreateAppointment } from "./create-appointment";
 import { formatDateIt, formatEuro } from "@/lib/format";
 
 export function AppointmentList() {
+  const t = useTerms();
   const {
     appointments, appointmentsPag, setAppointmentsPage,
     appointmentsSearch, setAppointmentsSearch,
@@ -104,7 +106,7 @@ export function AppointmentList() {
                 <TableHead className="w-24">Data</TableHead>
                 <TableHead className="w-16">Ora</TableHead>
                 <TableHead>Cliente</TableHead>
-                <TableHead className="w-28">Personale</TableHead>
+                <TableHead className="w-28">{t.staffs}</TableHead>
                 <TableHead className="w-24">Stato</TableHead>
                 <TableHead className="w-20 text-right">Prezzo</TableHead>
                 <TableHead className="w-10" />

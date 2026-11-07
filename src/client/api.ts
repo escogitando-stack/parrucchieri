@@ -18,6 +18,11 @@ export async function api<T>(method: string, path: string, body?: unknown): Prom
     window.location.href = "/login";
     throw new Error("Sessione scaduta");
   }
+  if (r.status === 402) {
+    // Prova gratuita terminata: si va alla pagina dell'abbonamento.
+    window.location.href = "/abbonamento";
+    throw new Error("Abbonamento necessario");
+  }
   const text = await r.text();
   let data: unknown;
   try {

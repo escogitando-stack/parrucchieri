@@ -36,14 +36,43 @@ Poi fai il merge del branch su `main`. Quando l'azione è verde il branch `deplo
 
 1. In cPanel → *Git Version Control* → *Gestisci* → **Update from Remote**, poi **Deploy HEAD Commit**.
 2. In *File Manager*, nella cartella del dominio, copia `server/config.sample.php` in `server/config.php` e compilalo:
-   - dati del database (punto 3),
-   - `admin_password`: la password per entrare, tra apici singoli (modo più semplice).
-   - In alternativa `admin_password_hash`: dal *Terminale* di cPanel esegui
-     `php -r 'echo password_hash("LA_TUA_PASSWORD", PASSWORD_DEFAULT), "\n";'` e incolla il risultato.
-3. Apri **https://appuntamenti4me.it** e accedi con la password scelta.
+   i dati del database (punto 3) e, se vuoi, `base_url`, `pricing` e le pagine legali. Il resto ha già valori adatti.
+3. Apri **https://appuntamenti4me.it**: vedi la pagina di presentazione. Con **Prova gratis** crei il primo account.
 
-Alla prima apertura vengono creati gli otto servizi tipici da parrucchiere e un collaboratore "Titolare":
-modificali dall'app. Con `'seed_demo' => true` si aggiungono anche clienti, collaboratori e prodotti di esempio.
+## Come funziona (più negozi)
+
+- Ogni negozio si registra da solo (nome attività, tipo di attività, email, password) e ha i propri dati,
+  separati da tutti gli altri: clienti, collaboratori, servizi, prodotti e appuntamenti.
+- Il tipo di attività (parrucchiere, barbiere, unghie, estetica, meccanico, tattoo, altro) precompila servizi e nomi
+  (per esempio *Meccanici* e *Interventi* per un'officina). Si può cambiare da **Impostazioni** e ogni servizio è modificabile.
+  Per aggiungere un'attività nuova basta una voce in `php/server/Categories.php`.
+- Dopo la registrazione parte la **prova gratuita** (`trial_days`, 30 di default). Scaduta la prova, l'agenda si blocca
+  e il titolare viene mandato alla pagina `/abbonamento`: i dati non si cancellano.
+- **Aggiornamento da una versione precedente**: al primo accesso il database viene aggiornato da solo. I dati già
+  presenti (clienti, appuntamenti...) passano al **primo account che si registra**; i successivi partono da zero.
+- Per chiudere le nuove iscrizioni imposta `'allow_registration' => false` in `server/config.php`.
+- Se qualcuno dimentica la password, per ora si può cambiare solo dalle Impostazioni (da dentro). Il recupero via email
+  non c'è ancora: da phpMyAdmin si può sostituire `password_hash` della tabella `accounts` con un hash nuovo
+  (`php -r 'echo password_hash("NUOVA", PASSWORD_DEFAULT);'` dal Terminale cPanel).
+
+## Abbonamenti con Stripe
+
+Il sito usa Stripe Checkout (pagamento ospitato da Stripe) e il Portale clienti (cambio carta, fatture, disdetta).
+Senza le chiavi l'acquisto resta disattivato e l'app funziona comunque.
+
+1. Crea un account su stripe.com e, in *Prodotti*, un prodotto con un prezzo **ricorrente mensile** (e uno annuale, se vuoi).
+   Copia gli ID dei prezzi (`price_...`).
+2. In *Sviluppatori → Chiavi API* copia la **chiave segreta** (`sk_live_...`; per provare `sk_test_...`).
+3. In *Sviluppatori → Webhook* aggiungi l'endpoint `https://appuntamenti4me.it/stripe-webhook` con gli eventi
+   `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated` e
+   `customer.subscription.deleted`. Copia il **segreto di firma** (`whsec_...`).
+4. In *Impostazioni → Billing → Portale clienti* attiva il portale (cambio metodo di pagamento, disdetta).
+5. Inserisci le quattro voci nella sezione `stripe` di `server/config.php` e imposta i testi in `pricing`.
+6. Prova prima in modalità test (carta `4242 4242 4242 4242`): registra un negozio di prova, vai su
+   `/abbonamento`, paga e verifica che lo stato diventi *attivo*.
+
+Da fare per vendere in Italia: pubblicare **Termini** e **Privacy** (poi inserire gli indirizzi in `terms_url`
+e `privacy_url`) e controllare con il commercialista fatturazione e IVA.
 
 ## Alternativa più semplice: caricamento automatico via FTP in `public_html`
 

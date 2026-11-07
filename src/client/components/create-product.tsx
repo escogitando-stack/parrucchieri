@@ -1,4 +1,5 @@
 import { useState } from "preact/hooks";
+import { useTerms } from "@/lib/account";
 import { useApp } from "../context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +14,7 @@ function numberOr(value: string, fallback: number): number {
 }
 
 export function CreateProduct({ onClose, product }: { onClose: () => void; product?: Product }) {
+  const t = useTerms();
   const { addProduct, updateProduct, setError } = useApp();
   const [name, setName] = useState(product?.name || "");
   const [brand, setBrand] = useState(product?.brand || "");
@@ -50,12 +52,12 @@ export function CreateProduct({ onClose, product }: { onClose: () => void; produ
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{isEditing ? "Modifica prodotto" : "Aggiungi prodotto"}</DialogTitle>
+          <DialogTitle>{isEditing ? `Modifica ${t.product}` : `Aggiungi ${t.product}`}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label htmlFor="product-name">Name *</Label>
-            <Input id="product-name" value={name} onChange={(e) => setName((e.target as HTMLInputElement).value)} placeholder="Nome prodotto" />
+            <Input id="product-name" value={name} onChange={(e) => setName((e.target as HTMLInputElement).value)} placeholder={`Nome ${t.product}`} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -94,7 +96,7 @@ export function CreateProduct({ onClose, product }: { onClose: () => void; produ
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Annulla</Button>
-          <Button disabled={saving} onClick={handleSubmit}>{saving ? "Salvataggio..." : isEditing ? "Salva modifiche" : "Aggiungi prodotto"}</Button>
+          <Button disabled={saving} onClick={handleSubmit}>{saving ? "Salvataggio..." : isEditing ? "Salva modifiche" : `Aggiungi ${t.product}`}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

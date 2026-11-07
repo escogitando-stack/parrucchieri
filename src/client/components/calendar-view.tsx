@@ -1,4 +1,5 @@
 import { useState } from "preact/hooks";
+import { useTerms } from "@/lib/account";
 import { useApp } from "../context";
 import type { Appointment, BlockedSlot } from "../types";
 import { ChevronLeft, ChevronRight, Plus, X, Ban, TriangleAlert, Download } from "lucide-preact";
@@ -58,6 +59,7 @@ function formatHour(h: number): string {
 }
 
 export function CalendarView() {
+  const t = useTerms();
   const {
     calendarAppointments, calendarBlocked, calendarDate, setCalendarDate,
     staffLookup, navigate, deleteBlockedSlot, addBlockedSlot, setError,
@@ -162,9 +164,9 @@ export function CalendarView() {
         <Card id="calendar-block-time" className="shrink-0">
           <CardContent className="grid grid-cols-2 items-end gap-3 p-4 sm:grid-cols-4 xl:flex xl:flex-wrap">
             <div className="col-span-2 min-w-0 space-y-1 xl:w-48">
-              <Label htmlFor="block-staff" className="text-xs">Personale</Label>
+              <Label htmlFor="block-staff" className="text-xs">{t.staffs}</Label>
               <select id="block-staff" className="h-11 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm" value={blockStaff} onChange={(e) => { setBlockStaff((e.target as HTMLSelectElement).value); clearBlockConflicts(); }}>
-                <option value="">Seleziona collaboratore...</option>
+                <option value="">Seleziona {t.staff}...</option>
                 {staffLookup.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>

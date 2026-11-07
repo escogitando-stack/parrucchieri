@@ -1,4 +1,5 @@
 import { useState } from "preact/hooks";
+import { useTerms, cap } from "@/lib/account";
 import { useApp } from "../context";
 import { Plus, Search, Trash2, AlertTriangle, Pencil } from "lucide-preact";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,7 @@ import type { Product } from "../types";
 import { formatEuro } from "@/lib/format";
 
 export function ProductList() {
+  const t = useTerms();
   const { products, productsPag, setProductsPage, productsSearch, setProductsSearch, deleteProduct } = useApp();
   const [showCreate, setShowCreate] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -19,9 +21,9 @@ export function ProductList() {
   return (
     <div className="space-y-4 p-4 sm:p-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Prodotti</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{t.products}</h1>
         <Button size="sm" className="min-h-11 sm:min-h-0" onClick={() => setShowCreate(true)}>
-          <Plus className="mr-1 h-3.5 w-3.5" /> Aggiungi prodotto
+          <Plus className="mr-1 h-3.5 w-3.5" /> Aggiungi {t.product}
         </Button>
       </div>
 
@@ -30,14 +32,14 @@ export function ProductList() {
 
       <div className="relative">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input className="h-11 pl-9 sm:h-9" placeholder="Cerca prodotti..." value={productsSearch} onInput={(e) => setProductsSearch((e.target as HTMLInputElement).value)} />
+        <Input className="h-11 pl-9 sm:h-9" placeholder={`Cerca ${t.products.toLowerCase()}...`} value={productsSearch} onInput={(e) => setProductsSearch((e.target as HTMLInputElement).value)} />
       </div>
 
       <Card>
         <CardContent className="p-0">
           <div className="divide-y lg:hidden">
             {products.length === 0 && (
-              <p className="py-8 text-center text-sm text-muted-foreground">Nessun prodotto trovato</p>
+              <p className="py-8 text-center text-sm text-muted-foreground">Nessun {t.product} trovato</p>
             )}
             {products.map((p) => (
               <div key={p.id} className="p-4">
@@ -72,7 +74,7 @@ export function ProductList() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Prodotto</TableHead>
+                <TableHead>{cap(t.product)}</TableHead>
                 <TableHead className="w-24">Marca</TableHead>
                 <TableHead className="w-24">Categoria</TableHead>
                 <TableHead className="w-20 text-right">Prezzo</TableHead>
@@ -83,7 +85,7 @@ export function ProductList() {
             </TableHeader>
             <TableBody>
               {products.length === 0 && (
-                <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">Nessun prodotto trovato</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">Nessun {t.product} trovato</TableCell></TableRow>
               )}
               {products.map((p) => (
                 <TableRow key={p.id}>
