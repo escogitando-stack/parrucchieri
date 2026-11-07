@@ -64,10 +64,10 @@ final class Availability
     }
 
     /** Appuntamenti (anche in attesa di conferma) e blocchi del collaboratore. @return array<int,array{kind:string,start_time:string,end_time:string,label:string}> */
-    public static function busy(Db $db, int $accountId, int $staffId, string $date): array
+    public static function busy(Db $db, int $accountId, int $staffId, string $date, ?int $excludeId = null): array
     {
         $busy = [];
-        foreach ($db->all("SELECT start_time, end_time FROM appointments WHERE account_id = ? AND staff_id = ? AND scheduled_date = ? AND status <> 'cancelled'", [$accountId, $staffId, $date]) as $a) {
+        foreach ($db->all("SELECT start_time, end_time FROM appointments WHERE account_id = ? AND staff_id = ? AND scheduled_date = ? AND status <> 'cancelled' AND id <> ?", [$accountId, $staffId, $date, $excludeId ?? 0]) as $a) {
             $busy[] = ['kind' => 'appointment', 'start_time' => (string)$a['start_time'], 'end_time' => (string)$a['end_time'], 'label' => 'occupato'];
         }
         foreach ($db->all('SELECT start_time, end_time FROM blocked_slots WHERE account_id = ? AND staff_id = ? AND blocked_date = ?', [$accountId, $staffId, $date]) as $b) {
@@ -93,7 +93,7 @@ final class Availability
      * @param array<string,mixed> $acct
      * @return array<int,string> "HH:MM"
      */
-    public static function slotsForStaff(Db $db, array $acct, int $staffId, string $date, int $duration, ?int $now = null): array
+    public static function slotsForStaff(Db $db, array $acct, int $staffId, string $date, int $duration, ?int $now = null, ?int $excludeId = null): array
     {
         $now ??= time();
         if (!self::dateAllowed($acct, $date, $now) || $duration <= 0) {
@@ -102,7 +102,7 @@ final class Availability
         $accountId = (int)$acct['id'];
         $step = max(5, (int)($acct['slot_minutes'] ?? 30));
         $earliest = $now + max(0, (int)($acct['booking_notice_hours'] ?? 0)) * 3600;
-        $busy = self::busy($db, $accountId, $staffId, $date);
+        $busy = self::busy($db, $accountId, $staffId, $date, $excludeId);
         $out = [];
         foreach (self::ranges($db, $accountId, $staffId, $date) as [$from, $to]) {
             for ($t = $from; $t + $duration <= $to; $t += $step) {
@@ -124,7 +124,7 @@ final class Availability
      * @param array<string,mixed> $acct
      * @return array<string,int> orario → id del collaboratore
      */
-    public static function slots(Db $db, array $acct, string $date, int $duration, ?int $staffId, ?int $now = null): array
+    public static function slots(Db $db, array $acct, string $date, int $duration, ?int $staffId, ?int $now = null, ?int $excludeId = null): array
     {
         $accountId = (int)$acct['id'];
         $ids = $staffId !== null ? [$staffId] : array_map(static fn($s): int => (int)$s['id'], self::staff($db, $accountId));
@@ -133,7 +133,7 @@ final class Availability
             if ($staffId !== null && $db->row('SELECT id FROM staff WHERE id = ? AND account_id = ? AND active = 1', [$id, $accountId]) === null) {
                 return [];
             }
-            foreach (self::slotsForStaff($db, $acct, $id, $date, $duration, $now) as $time) {
+            foreach (self::slotsForStaff($db, $acct, $id, $date, $duration, $now, $excludeId) as $time) {
                 $out[$time] ??= $id;
             }
         }
@@ -147,7 +147,7 @@ final class Availability
      * @param array<string,mixed> $acct
      * @return array<int,string> date "YYYY-MM-DD"
      */
-    public static function days(Db $db, array $acct, string $month, int $duration, ?int $staffId, ?int $now = null): array
+    public static function days(Db $db, array $acct, string $month, int $duration, ?int $staffId, ?int $now = null, ?int $excludeId = null): array
     {
         if (!preg_match('/^(\d{4})-(\d{2})$/', $month, $m) || (int)$m[2] < 1 || (int)$m[2] > 12) {
             return [];
@@ -156,10 +156,30 @@ final class Availability
         $out = [];
         for ($d = 1; $d <= $n; $d++) {
             $date = sprintf('%s-%02d', $month, $d);
-            if (self::dateAllowed($acct, $date, $now) && self::slots($db, $acct, $date, $duration, $staffId, $now) !== []) {
+            if (self::dateAllowed($acct, $date, $now) && self::slots($db, $acct, $date, $duration, $staffId, $now, $excludeId) !== []) {
                 $out[] = $date;
             }
         }
         return $out;
+    }
+
+    /**
+     * Primo giorno e orario liberi a partire da oggi (entro l'orizzonte di prenotazione).
+     *
+     * @param array<string,mixed> $acct
+     * @return array{date:string,time:string}|null
+     */
+    public static function first(Db $db, array $acct, int $duration, ?int $staffId, ?int $now = null, ?int $excludeId = null): ?array
+    {
+        $now ??= time();
+        $horizon = max(1, (int)($acct['booking_horizon_days'] ?? 60));
+        for ($i = 0; $i <= $horizon; $i++) {
+            $date = date('Y-m-d', $now + $i * 86400);
+            $slots = self::slots($db, $acct, $date, $duration, $staffId, $now, $excludeId);
+            if ($slots !== []) {
+                return ['date' => $date, 'time' => (string)array_key_first($slots)];
+            }
+        }
+        return null;
     }
 }

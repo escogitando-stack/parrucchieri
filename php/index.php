@@ -159,6 +159,49 @@ if (preg_match('#^/gestisci/([a-f0-9]{32})/([a-f0-9]{32})$#', $path, $mm)) {
     exit;
 }
 
+// Il cliente sposta la prenotazione dal link ricevuto per email.
+if (preg_match('#^/sposta/([a-f0-9]{32})(?:/(giorni|orari|primo))?$#', $path, $mm)) {
+    $apt = Booking::byToken($db, $mm[1]);
+    $own = $apt !== null ? Auth::account($db, (int)$apt['account_id']) : null;
+    $sub = $mm[2] ?? '';
+    if ($sub === '' && $method === 'GET') {
+        if ($apt === null || $own === null) {
+            http_response_code(404);
+        }
+        echo Shop::reschedulePage($cfg, $own !== null ? $apt : null, $mm[1]);
+        exit;
+    }
+    header('Content-Type: application/json; charset=utf-8');
+    $json = static function (int $status, mixed $data): never {
+        http_response_code($status);
+        echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    };
+    if ($apt === null || $own === null || !Booking::changeable($apt) || !Booking::open($cfg, $own)) {
+        $json(404, ['error' => 'Questa prenotazione non può più essere spostata.']);
+    }
+    $dur = Booking::duration($apt);
+    $exclude = (int)$apt['id'];
+    if ($sub === 'giorni' && $method === 'GET') {
+        $json(200, ['days' => Availability::days($db, $own, (string)($_GET['mese'] ?? ''), $dur, null, null, $exclude)]);
+    }
+    if ($sub === 'orari' && $method === 'GET') {
+        $json(200, ['slots' => array_keys(Availability::slots($db, $own, (string)($_GET['data'] ?? ''), $dur, null, null, $exclude))]);
+    }
+    if ($sub === 'primo' && $method === 'GET') {
+        $json(200, Availability::first($db, $own, $dur, null, null, $exclude) ?? new stdClass());
+    }
+    if ($sub === '' && $method === 'POST') {
+        $in = json_decode((string)file_get_contents('php://input'), true);
+        $res = is_array($in) ? Booking::reschedule($db, $cfg, $mm[1], (string)($in['date'] ?? ''), (string)($in['time'] ?? '')) : ['ok' => false, 'error' => 'Richiesta non valida.'];
+        if (!$res['ok']) {
+            $json(400, ['error' => $res['error'] ?? 'Spostamento non riuscito.']);
+        }
+        $json(200, ['ok' => true, 'message' => $res['status'] === 'confirmed' ? 'Prenotazione spostata e confermata. Ti abbiamo scritto il riepilogo.' : 'Richiesta di spostamento inviata: il negozio la confermerà appena possibile.']);
+    }
+    $json(405, ['error' => 'Metodo non consentito']);
+}
+
 // Calendario (.ics) della prenotazione, dal link nell'email del cliente.
 if (preg_match('#^/calendario/([a-f0-9]{32})\.ics$#', $path, $mm)) {
     $apt = Booking::byToken($db, $mm[1]);
@@ -174,7 +217,7 @@ if (preg_match('#^/calendario/([a-f0-9]{32})\.ics$#', $path, $mm)) {
 }
 
 // Pagina pubblica del negozio: /nome, con logo, orari e prenotazione online.
-if (preg_match('#^/([a-z0-9][a-z0-9-]{1,78}[a-z0-9])(?:/(logo|giorni|orari|prenota|privacy))?$#', $path, $mm)) {
+if (preg_match('#^/([a-z0-9][a-z0-9-]{1,78}[a-z0-9])(?:/(logo|giorni|orari|prenota|privacy|primo))?$#', $path, $mm)) {
     $shopAcct = Booking::accountBySlug($db, $mm[1]);
     if ($shopAcct !== null) {
         $sub = $mm[2] ?? '';
@@ -213,6 +256,10 @@ if (preg_match('#^/([a-z0-9][a-z0-9-]{1,78}[a-z0-9])(?:/(logo|giorni|orari|preno
         $pick = $sub === 'prenota' ? null : Availability::pick($db, (int)$shopAcct['id'], explode(',', (string)($_GET['servizi'] ?? '')));
         if ($sub === 'giorni' && $method === 'GET') {
             $json(200, ['days' => $pick !== null && Booking::open($cfg, $shopAcct) ? Availability::days($db, $shopAcct, (string)($_GET['mese'] ?? ''), $pick['duration'], $staffParam) : []]);
+        }
+        if ($sub === 'primo' && $method === 'GET') {
+            $f = $pick !== null && Booking::open($cfg, $shopAcct) ? Availability::first($db, $shopAcct, $pick['duration'], $staffParam) : null;
+            $json(200, $f ?? new stdClass());
         }
         if ($sub === 'orari' && $method === 'GET') {
             $slots = [];

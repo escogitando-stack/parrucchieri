@@ -160,3 +160,9 @@ Poi apri http://localhost:8080 (password `prova`). I test dell'API: `php php/tes
 - **Privacy**: il modulo ha il consenso obbligatorio e il link a `/nome/privacy`, un'informativa generata dal nome e dai contatti del negozio. È un modello: fai verificare il testo prima di usarlo con clienti reali.
 - **Calendario**: il link `/calendario/<codice>.ics` nelle email aggiunge l'appuntamento a Google/Apple Calendar.
 - Aggiorna il database (migrazione automatica alla prima visita): nuove colonne e tabella `password_resets`.
+
+## Pagina cliente (gruppo 2)
+
+- **Primo orario libero**: scelti i servizi, la pagina propone subito il primo giorno e orario disponibile ("Scegli questo").
+- **Riepilogo**: prima dei dati si vede servizi, durata e totale. Su telefono una barra fissa in basso mostra il riepilogo e il pulsante "Prenota/Continua".
+- **Sposta la prenotazione**: le email ai clienti hanno il link `/sposta/<codice>` (e la pagina di annullamento lo propone). Se i servizi sono a conferma immediata resta confermata, altrimenti torna "da approvare" e ti arriva l'email con il pulsante Approva/Rifiuta.

@@ -104,7 +104,8 @@ final class Shop
             $script = '';
         } else {
             $book = self::bookingCard($services, $staff, $slug);
-            $script = '<script>' . str_replace('__BASE__', '/' . $slug, self::js()) . '</script>';
+            $bar = '<div class="bar" id="bar"><span id="barsum">Prenota online</span><button type="button" class="btn" id="barbtn">Prenota</button></div>';
+            $script = $bar . '<script>' . str_replace('__BASE__', '/' . $slug, self::js()) . '</script>';
         }
 
         $brand = '<a class="brand" href="/' . self::h($slug) . '">' . self::h($name) . '</a>';
@@ -119,7 +120,7 @@ final class Shop
         $svc = '';
         foreach ($services as $s) {
             $price = (float)$s['price'] > 0 ? ' · ' . number_format((float)$s['price'], 2, ',', '.') . ' €' : '';
-            $svc .= '<label class="svc"><input type="checkbox" name="svc" value="' . (int)$s['id'] . '"><span><b>' . self::h((string)$s['name']) . '</b><small>' . (int)$s['duration'] . ' min' . $price . ((int)($s['auto_confirm'] ?? 0) === 1 ? ' · conferma immediata' : '') . '</small></span></label>';
+            $svc .= '<label class="svc"><input type="checkbox" name="svc" value="' . (int)$s['id'] . '" data-n="' . self::h((string)$s['name']) . '" data-d="' . (int)$s['duration'] . '" data-p="' . (float)$s['price'] . '"><span><b>' . self::h((string)$s['name']) . '</b><small>' . (int)$s['duration'] . ' min' . $price . ((int)($s['auto_confirm'] ?? 0) === 1 ? ' · conferma immediata' : '') . '</small></span></label>';
         }
         $staffSel = '';
         if (count($staff) > 1) {
@@ -137,6 +138,7 @@ final class Shop
   <div id="flow">
     <div class="step"><b>1 · Servizi</b><div class="svcs">$svc</div>$staffSel</div>
     <div class="step" id="s2" hidden>
+      <div class="first" id="first" hidden><span>Primo orario libero: <b id="firstwhen"></b></span><button type="button" class="btn small" id="firstbtn">Scegli questo</button></div>
       <b>2 · Giorno</b>
       <div class="cal-head"><button type="button" id="prev" aria-label="Mese precedente">‹</button><span id="mlabel"></span><button type="button" id="next" aria-label="Mese successivo">›</button></div>
       <div class="cal" id="cal"></div>
@@ -151,6 +153,7 @@ final class Shop
     <form class="step" id="s4" hidden autocomplete="on">
       <b id="s4t">4 · I tuoi dati</b>
       <p class="chosen" id="chosen"></p>
+      <p class="sum" id="sum"></p>
       <label for="name">Nome e cognome</label><input id="name" autocomplete="name" required maxlength="120">
       <p class="hint">Basta un recapito: telefono oppure email.</p>
       <label for="phone">Telefono</label><input id="phone" type="tel" autocomplete="tel" maxlength="30">
@@ -200,6 +203,12 @@ label.svc input{margin:0}label.svc span{display:flex;flex-direction:column}label
 .chosen{background:#f5f5f4;border-radius:8px;padding:8px 12px;margin:0 0 4px;font-size:14px}
 #s4 .btn{width:100%;margin-top:16px}
 a{color:#be185d}
+.first{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:14px}
+.btn.small{padding:7px 12px;font-size:13px}
+div.box{background:#fff;border:1px solid #e7e5e4;border-radius:14px;padding:26px;margin:24px 0}div.box h1{margin:0 0 4px;font-size:22px}div.box p.sub{margin:0 0 14px;font-size:14px;color:#78716c}div.legal p{line-height:1.5}
+.sum{margin:0 0 6px;font-size:14px;color:#44403c}
+.bar{display:none}
+@media(max-width:820px){.bar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:20;gap:10px;align-items:center;justify-content:space-between;background:#fff;border-top:1px solid #e7e5e4;padding:10px 14px;box-shadow:0 -4px 14px rgba(0,0,0,.08)}.bar span{font-size:14px;font-weight:600}.bar .btn{white-space:nowrap}.shop{padding-bottom:70px}}
 .consent{display:flex;gap:8px;align-items:flex-start;font-size:13px;color:#57534e;margin-top:12px;font-weight:400}.consent input{margin-top:3px;flex:none}
 CSS;
     }
@@ -221,7 +230,7 @@ function itDate(s){var p=s.split('-');var d=new Date(+p[0],+p[1]-1,+p[2]);return
 function show(id,on){$(id).hidden=!on}
 function reset3(){st.time=null;show('s3',false);show('s4',false)}
 function loadMonth(){
-  var s=services();if(!s){show('s2',false);reset3();return}
+  var s=services();bar();if(!s){show('s2',false);reset3();return}
   show('s2',true);
   $('mlabel').textContent=MONTHS[st.month.getMonth()]+' '+st.month.getFullYear();
   $('prev').disabled=st.month<=thisMonth;
@@ -239,20 +248,39 @@ function drawCal(){
     else{var s=document.createElement('span');s.className='d';s.textContent=d;c.appendChild(s)}
   }
 }
-function pickDate(k){
+function pickDate(k,pre){
   st.free=false;show('free',false);st.date=k;st.time=null;drawCal();show('s4',false);
   get('/orari','data='+k+'&servizi='+services()+'&staff='+staffId()).then(function(d){
     var box=$('slots');box.textContent='';var list=d.slots||[];
     if(!list.length){box.textContent='Nessun orario libero in questo giorno.'}
-    list.forEach(function(t){var b=document.createElement('button');b.type='button';b.textContent=t;b.onclick=function(){st.time=t;Array.prototype.forEach.call(box.children,function(x){x.className=''});b.className='sel';showForm()};box.appendChild(b)});
-    show('s3',true);
+    list.forEach(function(t){var b=document.createElement('button');b.type='button';b.textContent=t;b.onclick=function(){st.time=t;Array.prototype.forEach.call(box.children,function(x){x.className=''});b.className='sel';showForm()};box.appendChild(b);if(pre===t){b.onclick()}});
+    show('s3',true);bar();
   });
 }
+function summary(){var n=[],dur=0,pr=0;Array.prototype.forEach.call(document.querySelectorAll('input[name=svc]:checked'),function(i){n.push(i.getAttribute('data-n'));dur+=+i.getAttribute('data-d');pr+=+i.getAttribute('data-p')});return{names:n,dur:dur,price:pr}}
+function money(v){return v>0?(' · '+v.toFixed(2).replace('.',',')+' €'):''}
+function sumText(){var x=summary();return x.names.length?x.names.join(', ')+' · '+x.dur+' min'+money(x.price):''}
+function bar(){
+  var b=$('bar');if(!b)return;var t=sumText();$('barsum').textContent=t||'Prenota online';
+  $('barbtn').textContent=t?'Continua':'Prenota';b.style.display=(!$('s4').hidden||!$('ok').hidden)?'none':'';
+}
+function bartarget(){var ids=['s4','s3','s2'];for(var i=0;i<ids.length;i++){if(!$(ids[i]).hidden)return $(ids[i])}return $('book')}
+$('barbtn').onclick=function(){bartarget().scrollIntoView({behavior:'smooth',block:'start'})};
+function loadFirst(){
+  var s=services();show('first',false);if(!s)return;
+  get('/primo','servizi='+s+'&staff='+staffId()).then(function(d){
+    if(!d.date||services()!==s)return;
+    $('firstwhen').textContent=itDate(d.date)+' alle '+d.time;
+    $('firstbtn').onclick=function(){var p=d.date.split('-');st.month=new Date(+p[0],+p[1]-1,1);st.free=false;show('free',false);loadMonth();pickDate(d.date,d.time)};
+    show('first',true);
+  }).catch(function(){});
+}
 function showForm(){
+  $('sum').textContent=sumText();
   $('chosen').textContent=(st.free?'Richiesta per ':'')+itDate(st.date)+' alle '+st.time+(st.free?' (da confermare)':'');
   $('s4t').textContent=(st.free?'3':'4')+' · I tuoi dati';
   $('send').textContent=st.free?'Invia la richiesta':'Invia richiesta';
-  show('s4',true);
+  show('s4',true);bar();
 }
 function freeChanged(){
   var d=$('fdate').value,t=$('ftime').value;
@@ -263,8 +291,8 @@ $('freeLink').onclick=function(e){e.preventDefault();st.free=true;show('free',tr
 $('fdate').onchange=freeChanged;$('ftime').onchange=freeChanged;
 $('prev').onclick=function(){st.month=new Date(st.month.getFullYear(),st.month.getMonth()-1,1);loadMonth()};
 $('next').onclick=function(){st.month=new Date(st.month.getFullYear(),st.month.getMonth()+1,1);loadMonth()};
-Array.prototype.forEach.call(document.querySelectorAll('input[name=svc]'),function(i){i.onchange=function(){st.date=null;reset3();loadMonth()}});
-if($('staff')){$('staff').onchange=function(){st.date=null;reset3();loadMonth()}}
+Array.prototype.forEach.call(document.querySelectorAll('input[name=svc]'),function(i){i.onchange=function(){st.date=null;reset3();loadMonth();loadFirst()}});
+if($('staff')){$('staff').onchange=function(){st.date=null;reset3();loadMonth();loadFirst()}}
 $('s4').onsubmit=function(e){
   e.preventDefault();var err=$('err');err.hidden=true;$('send').disabled=true;
   fetch(BASE+'/prenota',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
@@ -274,9 +302,10 @@ $('s4').onsubmit=function(e){
   .then(function(x){
     $('send').disabled=false;
     if(!x.ok){err.textContent=x.j.error||'Invio non riuscito, riprova.';err.hidden=false;if(!st.free){loadMonth();reset3()}return}
-    show('flow',false);var ok=$('ok');ok.textContent=x.j.message||'Richiesta inviata!';ok.hidden=false;ok.scrollIntoView({behavior:'smooth',block:'center'});
+    show('flow',false);var ok=$('ok');ok.textContent=x.j.message||'Richiesta inviata!';ok.hidden=false;bar();ok.scrollIntoView({behavior:'smooth',block:'center'});
   }).catch(function(){$('send').disabled=false;err.textContent='Connessione non riuscita, riprova.';err.hidden=false});
 };
+bar();
 })();
 JS;
     }
@@ -292,7 +321,7 @@ JS;
         $body = '<form class="box" method="post" action="/annulla/' . self::h($token) . '"><h1>Annulla prenotazione</h1>'
             . ($notice !== null ? '<p class="ok">' . self::h($notice) . '</p>' : '')
             . '<p class="sub">' . self::h($when) . '</p>'
-            . ($active ? '<p>Vuoi annullare questa prenotazione?</p><button class="btn" type="submit">Sì, annulla</button>' : '<p>Questa prenotazione non è più attiva.</p>')
+            . ($active ? '<p>Vuoi annullare questa prenotazione?</p><button class="btn" type="submit">Sì, annulla</button><p class="sub" style="margin-top:12px">Preferisci cambiare giorno? <a href="/sposta/' . self::h($token) . '">Sposta la prenotazione</a></p>' : '<p>Questa prenotazione non è più attiva.</p>')
             . '</form>';
         return Pages::layout($cfg, 'Annulla prenotazione', $body, true);
     }
@@ -313,7 +342,7 @@ JS;
             . '<p><b>I tuoi diritti</b>: accesso, rettifica, cancellazione, limitazione, opposizione e portabilità, scrivendo al contatto indicato sopra. Puoi anche proporre reclamo al Garante per la protezione dei dati personali.</p>'
             . '<p class="sub">Testo generato automaticamente come modello: il titolare è tenuto a verificarlo e adattarlo alla propria attività.</p>'
             . '<p><a href="/' . self::h((string)$acct['slug']) . '">← Torna alla prenotazione</a></p></div>';
-        return Pages::layout($cfg, 'Privacy - ' . (string)$acct['business_name'], $body, true);
+        return Pages::layout($cfg, 'Privacy - ' . (string)$acct['business_name'], $body, true, false, '', '<style>' . self::css() . '</style>');
     }
 
     /**
@@ -340,5 +369,81 @@ JS;
                 : '<p>Stato: ' . self::h($states[(string)$apt['status']] ?? (string)$apt['status']) . '</p>')
             . '<p class="sub"><a href="/appointments">Apri il pannello</a></p></form>';
         return Pages::layout($cfg, 'Richiesta di prenotazione', $body, true);
+    }
+
+    /** Pagina per spostare una prenotazione dal link ricevuto per email. @param array<string,mixed> $cfg @param array<string,mixed>|null $apt */
+    public static function reschedulePage(array $cfg, ?array $apt, string $token): string
+    {
+        if ($apt === null) {
+            return Pages::layout($cfg, 'Link non valido', '<form class="box"><h1>Link non valido</h1><p class="sub">Questo link non è corretto o è scaduto.</p></form>', true);
+        }
+        $when = Notify::dateIt((string)$apt['scheduled_date']) . ' alle ' . $apt['start_time'];
+        if (!Booking::changeable($apt)) {
+            return Pages::layout($cfg, 'Sposta prenotazione', '<form class="box"><h1>Sposta prenotazione</h1><p class="sub">' . self::h($when) . '</p><p>Questa prenotazione non è più modificabile.</p></form>', true);
+        }
+        $head = '<style>' . self::css() . '</style>';
+        $body = '<div class="box wide"><h1>Sposta la prenotazione</h1><p class="sub">Ora è: ' . self::h($when) . '</p>'
+            . '<div id="ok" class="ok" hidden></div><div id="flow">'
+            . '<div class="first" id="first" hidden><span>Primo orario libero: <b id="firstwhen"></b></span><button type="button" class="btn small" id="firstbtn">Scegli questo</button></div>'
+            . '<div class="cal-head"><button type="button" id="prev" aria-label="Mese precedente">‹</button><span id="mlabel"></span><button type="button" id="next" aria-label="Mese successivo">›</button></div>'
+            . '<div class="cal" id="cal"></div><p class="hint" id="nodays" hidden>Nessun orario libero in questo mese.</p>'
+            . '<div class="step" id="s3" hidden><b>Orario</b><div class="slots" id="slots"></div></div>'
+            . '<p class="chosen" id="chosen" hidden></p><p class="err" id="err" hidden></p>'
+            . '<button class="btn" id="send" type="button" hidden>Conferma lo spostamento</button></div>'
+            . '<p class="sub" style="margin-top:14px"><a href="/annulla/' . self::h($token) . '">Annulla invece la prenotazione</a></p></div>'
+            . '<script>' . str_replace('__BASE__', '/sposta/' . $token, self::moveJs()) . '</script>';
+        return Pages::layout($cfg, 'Sposta prenotazione', $body, true, false, '', $head);
+    }
+
+    private static function moveJs(): string
+    {
+        return <<<'JS'
+(function(){
+var BASE='__BASE__',MONTHS=['gennaio','febbraio','marzo','aprile','maggio','giugno','luglio','agosto','settembre','ottobre','novembre','dicembre'];
+function $(i){return document.getElementById(i)}
+function pad(n){return (n<10?'0':'')+n}
+var now=new Date(),thisMonth=new Date(now.getFullYear(),now.getMonth(),1),st={month:thisMonth,date:null,time:null,days:[]};
+function itDate(s){var p=s.split('-');var d=new Date(+p[0],+p[1]-1,+p[2]);return ['domenica','lunedì','martedì','mercoledì','giovedì','venerdì','sabato'][d.getDay()]+' '+(+p[2])+' '+MONTHS[+p[1]-1]}
+function get(path,params){return fetch(BASE+path+'?'+params,{headers:{'Accept':'application/json'}}).then(function(r){return r.json()})}
+function loadMonth(){
+  $('mlabel').textContent=MONTHS[st.month.getMonth()]+' '+st.month.getFullYear();$('prev').disabled=st.month<=thisMonth;
+  get('/giorni','mese='+st.month.getFullYear()+'-'+pad(st.month.getMonth()+1)).then(function(d){st.days=d.days||[];draw();$('nodays').hidden=st.days.length>0}).catch(function(){st.days=[];draw()});
+}
+function draw(){
+  var c=$('cal');c.textContent='';
+  ['L','M','M','G','V','S','D'].forEach(function(x){var e=document.createElement('div');e.className='dow';e.textContent=x;c.appendChild(e)});
+  var first=new Date(st.month.getFullYear(),st.month.getMonth(),1),lead=(first.getDay()+6)%7,n=new Date(st.month.getFullYear(),st.month.getMonth()+1,0).getDate();
+  for(var i=0;i<lead;i++){c.appendChild(document.createElement('span'))}
+  for(var d=1;d<=n;d++){
+    var key=st.month.getFullYear()+'-'+pad(st.month.getMonth()+1)+'-'+pad(d);
+    if(st.days.indexOf(key)>=0){var b=document.createElement('button');b.type='button';b.textContent=d;b.className='free'+(st.date===key?' sel':'');b.onclick=(function(k){return function(){pick(k)}})(key);c.appendChild(b)}
+    else{var s=document.createElement('span');s.className='d';s.textContent=d;c.appendChild(s)}
+  }
+}
+function pick(k,pre){
+  st.date=k;st.time=null;draw();$('send').hidden=true;$('chosen').hidden=true;
+  get('/orari','data='+k).then(function(d){
+    var box=$('slots');box.textContent='';var list=d.slots||[];
+    if(!list.length){box.textContent='Nessun orario libero in questo giorno.'}
+    list.forEach(function(t){var b=document.createElement('button');b.type='button';b.textContent=t;b.onclick=function(){st.time=t;Array.prototype.forEach.call(box.children,function(x){x.className=''});b.className='sel';$('chosen').textContent='Nuovo orario: '+itDate(st.date)+' alle '+t;$('chosen').hidden=false;$('send').hidden=false};box.appendChild(b);if(pre===t){b.onclick()}});
+    $('s3').hidden=false;
+  });
+}
+$('prev').onclick=function(){st.month=new Date(st.month.getFullYear(),st.month.getMonth()-1,1);loadMonth()};
+$('next').onclick=function(){st.month=new Date(st.month.getFullYear(),st.month.getMonth()+1,1);loadMonth()};
+get('/primo','').then(function(d){if(!d.date)return;$('firstwhen').textContent=itDate(d.date)+' alle '+d.time;$('first').hidden=false;
+  $('firstbtn').onclick=function(){var p=d.date.split('-');st.month=new Date(+p[0],+p[1]-1,1);loadMonth();pick(d.date,d.time)}}).catch(function(){});
+$('send').onclick=function(){
+  var err=$('err');err.hidden=true;$('send').disabled=true;
+  fetch(BASE,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:st.date,time:st.time})})
+  .then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j}})})
+  .then(function(x){$('send').disabled=false;
+    if(!x.ok){err.textContent=x.j.error||'Spostamento non riuscito.';err.hidden=false;loadMonth();$('s3').hidden=true;$('send').hidden=true;return}
+    $('flow').hidden=true;var ok=$('ok');ok.textContent=x.j.message;ok.hidden=false;
+  }).catch(function(){$('send').disabled=false;err.textContent='Connessione non riuscita, riprova.';err.hidden=false});
+};
+loadMonth();
+})();
+JS;
     }
 }

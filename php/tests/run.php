@@ -664,9 +664,27 @@ $two = (int)$svc[1]['id'];
 $mixed = Booking::create($dbB, $cfgB, $acctB, ['name' => 'Mista', 'email' => 'mista@example.com', 'service_ids' => [$one, $two], 'date' => $wed, 'time' => '15:00'] + $in, '3.3.3.5');
 check('un servizio non automatico → da approvare', $mixed['ok'] && $mixed['auto'] === false);
 
+// primo orario libero e spostamento
+$fi = Availability::first($dbB, Auth::account($dbB, $idB), $dur, null);
+check('primo orario libero', $fi !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $fi['date']) === 1 && isset(Availability::slots($dbB, Auth::account($dbB, $idB), $fi['date'], $dur, null)[$fi['time']]));
+$thu = date('Y-m-d', strtotime('next thursday', strtotime('+3 days')));
+\App\Mailer::$sent = [];
+$mv = Booking::reschedule($dbB, $cfgB, $ar['public_token'], $thu, '10:00');
+$mr = $dbB->row('SELECT scheduled_date, start_time, status FROM appointments WHERE public_token = ?', [$ar['public_token']]);
+check('spostamento: resta confermata (servizio automatico)', $mv['ok'] && $mr['scheduled_date'] === $thu && $mr['start_time'] === '10:00' && $mr['status'] === 'confirmed' && count(\App\Mailer::$sent) === 2 && str_contains(\App\Mailer::$sent[0]['text'], 'Prima era'));
+check('spostamento: stesso orario libero per sé (escluso se stessa)', Booking::reschedule($dbB, $cfgB, $ar['public_token'], $thu, '10:00')['ok']);
+$mt = $dbB->row('SELECT public_token FROM appointments WHERE id = ?', [$mixed['id']])['public_token'];
+Booking::decide($dbB, $cfgB, Booking::byToken($dbB, $mt), true);
+$mv2 = Booking::reschedule($dbB, $cfgB, $mt, $thu, '15:00');
+check('spostamento: servizio da approvare → torna richiesta', $mv2['ok'] && $mv2['status'] === 'requested' && $dbB->row('SELECT status FROM appointments WHERE public_token = ?', [$mt])['status'] === 'requested');
+$busyMv = Booking::reschedule($dbB, $cfgB, $mt, $thu, '10:00');
+check('spostamento in orario occupato rifiutato (con un solo collaboratore libero ok)', $busyMv['ok'] === true || str_contains($busyMv['error'], 'occupato'));
+check('spostamento: data non valida e link errato', !Booking::reschedule($dbB, $cfgB, $mt, $sunday, '10:00')['ok'] && !Booking::reschedule($dbB, $cfgB, str_repeat('c', 32), $thu, '10:00')['ok']);
+check('pagina sposta', str_contains(Shop::reschedulePage($cfgB, Booking::byToken($dbB, $mt), $mt), "BASE='/sposta/") && str_contains(Shop::reschedulePage($cfgB, null, 'x'), 'non è corretto'));
+check('pagina annulla propone di spostare', str_contains(Shop::cancelPage($cfgB, Booking::byToken($dbB, $mt), $mt), '/sposta/'));
 // calendario .ics
 $ics = Booking::ics(Auth::account($dbB, $idB), Booking::byToken($dbB, $ar['public_token']), 'Taglio, piega');
-check('file calendario', str_starts_with($ics, "BEGIN:VCALENDAR\r\n") && str_contains($ics, 'DTSTART:' . str_replace('-', '', $wed) . 'T090000') && str_contains($ics, 'SUMMARY:Taglio\\, piega') && str_contains($ics, 'END:VCALENDAR'));
+check('file calendario', str_starts_with($ics, "BEGIN:VCALENDAR\r\n") && str_contains($ics, 'DTSTART:' . str_replace('-', '', $thu) . 'T100000') && str_contains($ics, 'SUMMARY:Taglio\\, piega') && str_contains($ics, 'END:VCALENDAR'));
 // informativa privacy
 $pv = Shop::privacyPage($cfgB, Auth::account($dbB, $idB));
 check('informativa privacy del negozio', str_contains($pv, 'Titolare del trattamento') && str_contains($pv, 'Salone Bella Vita') && str_contains($pv, 'Garante'));

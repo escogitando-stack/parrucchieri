@@ -196,7 +196,7 @@ final class Booking
     public static function cancelByToken(Db $db, array $cfg, string $token): bool
     {
         $apt = self::byToken($db, $token);
-        if ($apt === null || !in_array($apt['status'], ['requested', 'booked', 'confirmed'], true) || $apt['scheduled_date'] < date('Y-m-d')) {
+        if ($apt === null || !self::changeable($apt)) {
             return false;
         }
         $db->exec("UPDATE appointments SET status = 'cancelled' WHERE id = ?", [(int)$apt['id']]);
@@ -287,5 +287,72 @@ final class Booking
         $lines[] = 'END:VEVENT';
         $lines[] = 'END:VCALENDAR';
         return implode("\r\n", $lines) . "\r\n";
+    }
+
+    /** Durata dell'appuntamento in minuti. @param array<string,mixed> $apt */
+    public static function duration(array $apt): int
+    {
+        return max(5, (toMinutes((string)$apt['end_time']) ?? 0) - (toMinutes((string)$apt['start_time']) ?? 0));
+    }
+
+    /** L'appuntamento si può ancora spostare o annullare dal cliente? @param array<string,mixed> $apt */
+    public static function changeable(array $apt, ?int $now = null): bool
+    {
+        return in_array($apt['status'], ['requested', 'booked', 'confirmed'], true) && $apt['scheduled_date'] >= date('Y-m-d', $now ?? time());
+    }
+
+    /**
+     * Il cliente sposta la prenotazione (dal link ricevuto per email).
+     * Resta confermata se tutti i suoi servizi sono a conferma immediata, altrimenti torna "da approvare".
+     *
+     * @param array<string,mixed> $cfg
+     * @return array{ok:bool,error?:string,status?:string}
+     */
+    public static function reschedule(Db $db, array $cfg, string $token, string $date, string $time, ?int $now = null): array
+    {
+        $now ??= time();
+        $apt = self::byToken($db, $token);
+        if ($apt === null || !self::changeable($apt, $now)) {
+            return ['ok' => false, 'error' => 'Questa prenotazione non può più essere spostata.'];
+        }
+        $accountId = (int)$apt['account_id'];
+        $acct = Auth::account($db, $accountId);
+        if ($acct === null || !self::open($cfg, $acct)) {
+            return ['ok' => false, 'error' => 'Le prenotazioni online non sono disponibili al momento.'];
+        }
+        if (!Availability::dateAllowed($acct, $date, $now) || toMinutes($time) === null) {
+            return ['ok' => false, 'error' => 'Scegli una data e un orario validi.'];
+        }
+        $duration = self::duration($apt);
+        $ids = array_map(static fn(array $r): int => (int)$r['service_id'], $db->all('SELECT service_id FROM appointment_services WHERE appointment_id = ?', [(int)$apt['id']]));
+        $pick = Availability::pick($db, $accountId, $ids);
+        $auto = $pick !== null && $pick['auto'] && $apt['source'] !== 'online_free';
+        if (!$db->lock('book_' . $accountId)) {
+            return ['ok' => false, 'error' => 'Il sistema è occupato, riprova tra un istante.'];
+        }
+        try {
+            $slots = Availability::slots($db, $acct, $date, $duration, null, $now, (int)$apt['id']);
+            if (!isset($slots[$time])) {
+                return ['ok' => false, 'error' => 'Questo orario è appena stato occupato: scegline un altro.'];
+            }
+            $staffId = $slots[$time];
+            if ($apt['staff_id'] !== null) {
+                // Se può, resta con la stessa persona.
+                $same = Availability::slotsForStaff($db, $acct, (int)$apt['staff_id'], $date, $duration, $now, (int)$apt['id']);
+                if (in_array($time, $same, true)) {
+                    $staffId = (int)$apt['staff_id'];
+                }
+            }
+            $status = $auto ? 'confirmed' : 'requested';
+            $db->exec(
+                'UPDATE appointments SET scheduled_date = ?, start_time = ?, end_time = ?, staff_id = ?, status = ?, reminded = 0 WHERE id = ? AND account_id = ?',
+                [$date, $time, addMinutes($time, $duration), $staffId, $status, (int)$apt['id'], $accountId]
+            );
+        } finally {
+            $db->unlock('book_' . $accountId);
+        }
+        $fresh = self::byToken($db, $token) ?? $apt;
+        Notify::rescheduled($cfg, $acct, $fresh, ['name' => $fresh['client_name'], 'email' => $fresh['client_email'], 'phone' => $db->row('SELECT phone FROM clients WHERE id = ?', [(int)$fresh['client_id']])['phone'] ?? ''], self::serviceNames($db, (int)$apt['id']), $status === 'confirmed', Notify::dateIt((string)$apt['scheduled_date']) . ' alle ' . $apt['start_time']);
+        return ['ok' => true, 'status' => $status];
     }
 }

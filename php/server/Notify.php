@@ -130,7 +130,7 @@ final class Notify
         $replyTo = self::ownerEmail($acct);
         if (!empty($client['email'])) {
             $text = 'Ciao ' . $client['name'] . ", abbiamo ricevuto la tua richiesta di prenotazione.\n\n" . self::summary($acct, $apt, $services)
-                . "\nLa richiesta deve essere confermata dal negozio: ti scriveremo appena possibile.\nSe non puoi più venire, puoi annullarla qui sotto.";
+                . "\nLa richiesta deve essere confermata dal negozio: ti scriveremo appena possibile.\nPer cambiare giorno o orario: " . self::baseUrl($cfg) . '/sposta/' . $apt['public_token'] . "\nSe non puoi più venire, puoi annullarla qui sotto.";
             self::mail($cfg, (string)$client['email'], 'Richiesta di prenotazione ricevuta', $text, 'Annulla la richiesta', $cancel, $replyTo, (string)$acct['business_name']);
         }
         $text = "Nuova richiesta di prenotazione da approvare.\n\n" . self::summary($acct, $apt, $services) . self::contactLines($client, $apt)
@@ -151,6 +151,30 @@ final class Notify
         }
         $text = "Nuova prenotazione confermata automaticamente.\n\n" . self::summary($acct, $apt, $services) . self::contactLines($client, $apt);
         self::mail($cfg, $replyTo, 'Nuova prenotazione: ' . $client['name'], $text, 'Apri il calendario', self::baseUrl($cfg) . '/calendar', !empty($client['email']) ? (string)$client['email'] : '');
+    }
+
+    /** Il cliente ha spostato la prenotazione. @param array<string,mixed> $cfg @param array<string,mixed> $acct @param array<string,mixed> $apt @param array<string,mixed> $client */
+    public static function rescheduled(array $cfg, array $acct, array $apt, array $client, string $services, bool $confirmed, string $oldWhen): void
+    {
+        $replyTo = self::ownerEmail($acct);
+        $token = (string)$apt['public_token'];
+        if (!empty($client['email'])) {
+            $text = 'Ciao ' . $client['name'] . ', ' . ($confirmed ? 'la tua prenotazione è stata spostata ed è confermata' : 'abbiamo ricevuto la richiesta di spostamento: il negozio la deve confermare') . ".\n\n" . self::summary($acct, $apt, $services)
+                . "\n(Prima era: $oldWhen)"
+                . ($confirmed ? "\n\nAggiungila al calendario: " . self::icsUrl($cfg, $token) : '')
+                . "\nPer cambiare ancora: " . self::baseUrl($cfg) . '/sposta/' . $token;
+            self::mail($cfg, (string)$client['email'], $confirmed ? 'Prenotazione spostata' : 'Richiesta di spostamento ricevuta', $text, 'Annulla la prenotazione', self::baseUrl($cfg) . '/annulla/' . $token, $replyTo, (string)$acct['business_name']);
+        }
+        $text = $client['name'] . ' ha spostato la prenotazione' . ($confirmed ? ' (confermata automaticamente)' : ': ora è da approvare') . ".\n\n" . self::summary($acct, $apt, $services) . "(Prima era: $oldWhen)\n" . self::contactLines($client, $apt);
+        self::mail(
+            $cfg,
+            $replyTo,
+            'Prenotazione spostata: ' . $client['name'],
+            $text,
+            $confirmed ? 'Apri il calendario' : 'Approva o rifiuta',
+            $confirmed ? self::baseUrl($cfg) . '/calendar' : self::manageUrl($cfg, $token),
+            !empty($client['email']) ? (string)$client['email'] : ''
+        );
     }
 
     /** Esito deciso dal titolare. @param array<string,mixed> $apt @param array<string,mixed> $client */
