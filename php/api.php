@@ -49,8 +49,12 @@ try {
     if ($acct === null) {
         respond(401, ['error' => 'Non autorizzato: effettua di nuovo l\'accesso']);
     }
-    if (Auth::plan($acct)['state'] === 'expired') {
-        respond(402, ['error' => 'Prova gratuita terminata: attiva un abbonamento per continuare.', 'code' => 'subscription_required']);
+    if (!Auth::canUse($cfg, $acct)) {
+        $suspended = Auth::plan($acct)['state'] === 'suspended';
+        respond(402, [
+            'error' => $suspended ? 'Account sospeso.' : 'Prova gratuita terminata: attiva un abbonamento per continuare.',
+            'code' => $suspended ? 'suspended' : 'subscription_required',
+        ]);
     }
     $api = new App\Api($db, $accountId, $cfg);
     [$status, $data] = $api->handle($method, $path, $_GET, $body);

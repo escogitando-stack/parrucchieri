@@ -22,8 +22,15 @@ return [
     // Giorni di prova gratuita dopo la registrazione.
     'trial_days' => 30,
 
+    // Email degli amministratori: accedono al pannello /admin per gestire i negozi registrati.
+    // Devono essere email di account già registrati. Gli amministratori non pagano l'abbonamento.
+    'admin_emails' => [],   // es. ['tuaemail@esempio.it']
+
     // false = chiude le nuove registrazioni (chi ha già un account entra normalmente).
     'allow_registration' => true,
+
+    // Email per l'assistenza, mostrata nelle domande frequenti (facoltativa).
+    'contact_email' => '',
 
     // Prezzi mostrati sul sito: sono solo testi, il prezzo vero si imposta in Stripe.
     'pricing' => [

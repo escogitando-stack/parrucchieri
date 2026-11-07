@@ -55,6 +55,30 @@ Poi fai il merge del branch su `main`. Quando l'azione è verde il branch `deplo
   non c'è ancora: da phpMyAdmin si può sostituire `password_hash` della tabella `accounts` con un hash nuovo
   (`php -r 'echo password_hash("NUOVA", PASSWORD_DEFAULT);'` dal Terminale cPanel).
 
+## Pannello amministratore (`/admin`)
+
+Serve a gestire i negozi che si registrano. Lo vedono solo gli account la cui email è in `server/config.php`:
+
+```php
+'admin_emails' => ['tuaemail@esempio.it'],
+```
+
+L'email deve essere quella di un account già registrato. Poi, dal menu laterale dell'app, compare **Amministrazione**
+(oppure apri `https://appuntamenti4me.it/admin`). Chi non è amministratore riceve "Non trovato".
+
+Nella pagina vedi quanti negozi ci sono (in prova, abbonati, scaduti, sospesi, nuovi degli ultimi 7 giorni) e, per ognuno,
+tipo di attività, stato del piano, data di iscrizione, ultimo accesso e quanti clienti e appuntamenti ha inserito.
+Con la ricerca li trovi per nome o email, e puoi filtrarli per stato. Dal menu **Azioni** di ogni riga puoi:
+
+- **+7 / +30 giorni**: prolunga la prova (per chi paga sposta il rinnovo).
+- **Attiva fino al**: attiva a mano il negozio fino a una data (per esempio chi paga con bonifico).
+- **Sospendi / Riattiva**: blocca o ripristina l'accesso senza cancellare nulla; chi è sospeso vede un messaggio.
+- **Nuova password**: genera una password provvisoria da comunicare al cliente (si cambia poi dalle Impostazioni).
+  È anche il modo per aiutare chi l'ha dimenticata.
+- **Elimina account e dati**: cancella definitivamente il negozio e tutti i suoi dati. Non è possibile eliminare o sospendere il proprio account.
+
+Gli amministratori usano l'agenda anche a prova scaduta (non pagano il proprio accesso).
+
 ## Abbonamenti con Stripe
 
 Il sito usa Stripe Checkout (pagamento ospitato da Stripe) e il Portale clienti (cambio carta, fatture, disdetta).

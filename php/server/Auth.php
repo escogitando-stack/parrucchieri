@@ -71,7 +71,7 @@ final class Auth
     }
 
     /**
-     * Prova gratuita o abbonamento: 'trial', 'active' oppure 'expired'.
+     * Prova gratuita o abbonamento: 'trial', 'active', 'expired' oppure 'suspended' (bloccato dall'amministratore).
      *
      * @param array<string,mixed> $acct
      * @return array{state:string,days_left:int,ends_at:string}
@@ -79,6 +79,9 @@ final class Auth
     public static function plan(array $acct, ?int $now = null): array
     {
         $now ??= time();
+        if (!empty($acct['suspended'])) {
+            return ['state' => 'suspended', 'days_left' => 0, 'ends_at' => ''];
+        }
         $grace = 3 * 86400; // tolleranza se il rinnovo arriva in ritardo
         $status = (string)($acct['plan_status'] ?? 'trial');
         $paidUntil = (string)($acct['paid_until'] ?? '');
@@ -95,6 +98,22 @@ final class Auth
             }
         }
         return ['state' => 'expired', 'days_left' => 0, 'ends_at' => $status === 'active' ? $paidUntil : $trialEnd];
+    }
+
+    /** @param array<string,mixed> $cfg @param array<string,mixed> $acct */
+    public static function isAdmin(array $cfg, array $acct): bool
+    {
+        $admins = array_map(static fn($e) => strtolower(trim((string)$e)), (array)($cfg['admin_emails'] ?? []));
+        return in_array(strtolower((string)($acct['email'] ?? '')), $admins, true);
+    }
+
+    /** Può usare l'agenda? Gli amministratori sì, sempre (non pagano il proprio accesso). */
+    public static function canUse(array $cfg, array $acct): bool
+    {
+        if (self::isAdmin($cfg, $acct) && empty($acct['suspended'])) {
+            return true;
+        }
+        return in_array(self::plan($acct)['state'], ['trial', 'active'], true);
     }
 
     /**
@@ -137,6 +156,7 @@ final class Auth
             Schema::seedAccount($db, $id, $category);
         }
         self::openSession($id);
+        $db->exec('UPDATE accounts SET last_login_at = ? WHERE id = ?', [date('Y-m-d H:i:s'), $id]);
         return ['ok' => true, 'id' => $id];
     }
 
@@ -151,6 +171,7 @@ final class Auth
             return ['ok' => false];
         }
         self::openSession((int)$acct['id']);
+        $db->exec('UPDATE accounts SET last_login_at = ? WHERE id = ?', [date('Y-m-d H:i:s'), (int)$acct['id']]);
         return ['ok' => true, 'id' => (int)$acct['id']];
     }
 

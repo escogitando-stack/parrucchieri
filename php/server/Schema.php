@@ -9,10 +9,11 @@ namespace App;
  * Versioni dello schema (in _meta.schema_version):
  *   1 = app per un solo salone, senza account (installazioni precedenti)
  *   2 = più negozi: tabella accounts (con prova gratuita e abbonamento) e colonna account_id
+ *   3 = pannello amministratore: sospensione e ultimo accesso degli account
  */
 final class Schema
 {
-    public const VERSION = 2;
+    public const VERSION = 3;
 
     /** Tabelle i cui dati appartengono a un negozio. */
     private const OWNED = ['clients', 'staff', 'services', 'appointments', 'blocked_slots', 'products'];
@@ -26,6 +27,9 @@ final class Schema
         $version = (int)($db->metaGet('schema_version') ?? 1);
         if ($version < 2) {
             self::migrateTo2($db);
+        }
+        if ($version < 3) {
+            self::migrateTo3($db);
         }
     }
 
@@ -57,6 +61,8 @@ final class Schema
                 paid_until VARCHAR(19) NOT NULL DEFAULT '',
                 stripe_customer_id VARCHAR(64) NOT NULL DEFAULT '',
                 stripe_subscription_id VARCHAR(64) NOT NULL DEFAULT '',
+                suspended $int NOT NULL DEFAULT 0,
+                last_login_at VARCHAR(19) NOT NULL DEFAULT '',
                 created_at $ts
             )$tail";
     }
@@ -202,6 +208,19 @@ final class Schema
                 $db->exec('ALTER TABLE appointments DROP INDEX `' . str_replace('`', '', (string)$idx['Key_name']) . '`');
             }
             $db->exec('CREATE UNIQUE INDEX uq_appointments_account_identifier ON appointments(account_id, identifier)');
+        }
+        $db->metaSet('schema_version', '2');
+    }
+
+    /** Sospensione degli account e ultimo accesso (usati dal pannello amministratore). */
+    private static function migrateTo3(Db $db): void
+    {
+        $int = $db->driver === 'sqlite' ? 'INTEGER' : 'INT';
+        if (!$db->columnExists('accounts', 'suspended')) {
+            $db->exec("ALTER TABLE accounts ADD COLUMN suspended $int NOT NULL DEFAULT 0");
+        }
+        if (!$db->columnExists('accounts', 'last_login_at')) {
+            $db->exec("ALTER TABLE accounts ADD COLUMN last_login_at VARCHAR(19) NOT NULL DEFAULT ''");
         }
         $db->metaSet('schema_version', (string)self::VERSION);
     }

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 use App\Auth;
+use App\Admin;
 use App\Billing;
 use App\Pages;
 
@@ -130,6 +131,77 @@ if ($acct === null) {
 }
 $plan = Auth::plan($acct);
 
+// Pannello amministratore (solo per le email elencate in config.php → admin_emails).
+if ($path === '/admin') {
+    if (!Auth::isAdmin($cfg, $acct)) {
+        http_response_code(404);
+        exit('Non trovato');
+    }
+    $notice = null;
+    $error = null;
+    if ($method === 'POST') {
+        if (!Admin::checkCsrf((string)($_POST['csrf'] ?? ''))) {
+            http_response_code(403);
+            exit('Richiesta non valida: ricarica la pagina e riprova.');
+        }
+        $target = (int)($_POST['id'] ?? 0);
+        $row = Auth::account($db, $target);
+        $name = Pages::h((string)($row['business_name'] ?? ''));
+        $action = (string)($_POST['azione'] ?? '');
+        if ($row === null) {
+            $error = 'Negozio non trovato.';
+        } elseif ($action === 'extend' && Admin::extend($db, $target, (int)($_POST['days'] ?? 0))) {
+            $notice = "Prova prolungata per <b>$name</b>.";
+        } elseif ($action === 'activate' && Admin::activate($db, $target, (string)($_POST['until'] ?? ''))) {
+            $notice = "<b>$name</b> attivato fino al " . Pages::h(date('d/m/Y', (int)strtotime((string)$_POST['until']))) . '.';
+        } elseif ($action === 'suspend') {
+            $suspend = empty($row['suspended']);
+            if ($target === $accountId) {
+                $error = 'Non puoi sospendere il tuo stesso account.';
+            } else {
+                Admin::setSuspended($db, $target, $suspend);
+                $notice = "<b>$name</b> " . ($suspend ? 'sospeso.' : 'riattivato.');
+            }
+        } elseif ($action === 'reset') {
+            $pwd = Admin::resetPassword($db, $target);
+            $notice = "Nuova password per <b>$name</b> (" . Pages::h((string)$row['email']) . '): <code class="pw">' . Pages::h((string)$pwd) . '</code> Comunicala al cliente: potrà cambiarla dalle Impostazioni.';
+        } elseif ($action === 'delete') {
+            if ($target === $accountId) {
+                $error = 'Non puoi eliminare il tuo stesso account.';
+            } else {
+                Admin::delete($db, $target);
+                $notice = "Account <b>$name</b> eliminato insieme a tutti i suoi dati.";
+            }
+        } else {
+            $error = 'Operazione non riuscita: controlla i valori inseriti.';
+        }
+    }
+    $all = Admin::rows($db);
+    $stats = Admin::stats($all);
+    $q = trim((string)($_GET['q'] ?? ''));
+    $state = (string)($_GET['stato'] ?? '');
+    $filtered = array_values(array_filter($all, static function (array $r) use ($q, $state): bool {
+        if ($state !== '' && $r['plan']['state'] !== $state) {
+            return false;
+        }
+        return $q === '' || stripos((string)$r['business_name'], $q) !== false || stripos((string)$r['email'], $q) !== false;
+    }));
+    $perPage = 25;
+    $pages = max(1, (int)ceil(count($filtered) / $perPage));
+    $page = min($pages, max(1, (int)($_GET['pagina'] ?? 1)));
+    echo Pages::admin(
+        $cfg,
+        array_slice($filtered, ($page - 1) * $perPage, $perPage),
+        $stats,
+        ['q' => $q, 'state' => $state, 'page' => $page, 'pages' => $pages, 'shown' => count($filtered)],
+        Admin::csrfToken(),
+        $accountId,
+        $notice,
+        $error
+    );
+    exit;
+}
+
 // Abbonamento: visibile anche a prova scaduta.
 if ($path === '/abbonamento' || $path === '/abbonamento/acquista' || $path === '/abbonamento/gestisci') {
     $error = null;
@@ -163,7 +235,7 @@ if ($path === '/abbonamento' || $path === '/abbonamento/acquista' || $path === '
     exit;
 }
 
-if ($plan['state'] === 'expired') {
+if (!Auth::canUse($cfg, $acct)) {
     redirect('/abbonamento');
 }
 

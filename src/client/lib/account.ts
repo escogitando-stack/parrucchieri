@@ -19,7 +19,8 @@ export interface AccountInfo {
   category_label: string;
   terms: Terms;
   categories: Record<string, string>;
-  plan: { state: "trial" | "active" | "expired"; days_left: number; ends_at: string };
+  plan: { state: "trial" | "active" | "expired" | "suspended"; days_left: number; ends_at: string };
+  is_admin: boolean;
 }
 
 const DEFAULT_TERMS: Terms = {

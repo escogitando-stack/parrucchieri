@@ -14,6 +14,7 @@ use App\Schema;
 use App\Auth;
 use App\Billing;
 use App\Pages;
+use App\Admin;
 
 date_default_timezone_set('Europe/Rome');
 
@@ -428,6 +429,13 @@ fwrite(STDOUT, "Pagine pubbliche\n");
 $pub = ['site_name' => 'Appuntamenti4me', 'trial_days' => 30, 'pricing' => ['monthly_label' => '19 € al mese'], 'terms_url' => 'https://example.com/termini'];
 $land = Pages::landing($pub);
 check('vetrina: prova e categorie', str_contains($land, '30 giorni') && str_contains($land, 'Officina meccanica') && str_contains($land, 'Studio tatuaggi') && str_contains($land, '19 € al mese'));
+check('vetrina: vantaggi, costi, come funziona e FAQ', str_contains($land, 'id="vantaggi"') && str_contains($land, 'id="costi"') && str_contains($land, 'id="faq"') && str_contains($land, 'id="come-funziona"'));
+check('vetrina: prezzi dal file di configurazione', str_contains($land, '19 € al mese') && str_contains(Pages::landing($pub + ['x' => 1]), 'Mensile'));
+check('vetrina: senza prezzi niente cifre inventate', !str_contains(Pages::landing(['trial_days' => 30]), '€ al mese') && str_contains(Pages::landing(['trial_days' => 30]), 'Prova gratuita'));
+check('FAQ: dati dinamici e limiti dichiarati', str_contains(Pages::landing($pub), 'Quanto costa?') && str_contains(Pages::landing($pub), 'non sono ancora disponibili') && str_contains(Pages::landing($pub), 'faq@example.com') === false);
+check('FAQ: email di assistenza se impostata', str_contains(Pages::landing($pub + ['contact_email' => 'aiuto@example.com']), 'aiuto@example.com'));
+check('vetrina: dati strutturati validi', (function () use ($land) { preg_match('#<script type="application/ld\+json">(.*?)</script>#s', $land, $m); $j = json_decode($m[1] ?? '', true); return is_array($j) && $j['@type'] === 'FAQPage' && count($j['mainEntity']) >= 10; })());
+check('vetrina: il testo dell\'utente non rompe lo script', (function () use ($pub) { $h = Pages::landing($pub + ['pricing' => ['monthly_label' => '</script><b>x']]); return substr_count($h, '</script>') === 1 && !str_contains($h, '<b>x'); })());
 $reg = Pages::register($pub, 'Errore <b>x</b>', ['business' => '"><script>', 'email' => 'a@b.it', 'category' => 'tattoo']);
 check('registrazione: moduli e termini', str_contains($reg, 'name="category"') && str_contains($reg, 'name="terms"') && str_contains($reg, 'name="website"'));
 check('registrazione escapa l\'HTML', !str_contains($reg, '<script>') && !str_contains($reg, '<b>x</b>'));
@@ -460,10 +468,10 @@ foreach ([
     $old->exec($sql);
 }
 Schema::ensure($old);
-check('migrazione: versione e tabella account', $old->metaGet('schema_version') === '2' && $old->tableExists('accounts') && $old->columnExists('clients', 'account_id'));
+check('migrazione: versione e tabella account', $old->metaGet('schema_version') === '3' && $old->tableExists('accounts') && $old->columnExists('clients', 'account_id'));
 check('migrazione: dati esistenti senza proprietario', Schema::hasUnownedData($old));
 Schema::ensure($old);
-check('migrazione ripetibile', $old->metaGet('schema_version') === '2');
+check('migrazione ripetibile', $old->metaGet('schema_version') === '3');
 $first = Auth::register($old, ['trial_days' => 30], 'Salone Giulia', 'parrucchiere', 'giulia@example.com', 'password123');
 check('primo negozio eredita i dati', $first['ok'] && !Schema::hasUnownedData($old)
     && $old->row('SELECT COUNT(*) AS c FROM clients WHERE account_id = ?', [$first['id']])['c'] === 1
@@ -478,6 +486,88 @@ check('secondo negozio parte pulito con i suoi servizi', $second['ok']
     && $old->row('SELECT COUNT(*) AS c FROM services WHERE account_id = ?', [$second['id']])['c'] === 7);
 Auth::logout();
 
+
+// ── Pannello amministratore ──────────────────────────────────────────
+fwrite(STDOUT, "Pannello amministratore\n");
+$db = newDb();
+$cfgA = ['admin_emails' => [' Boss@Example.com ']];
+$boss = addAccount($db, 'boss@example.com');
+$s1 = addAccount($db, 's1@example.com', 'tattoo');
+$s2 = addAccount($db, 's2@example.com', 'meccanico');
+$bossAcct = Auth::account($db, $boss);
+check('admin riconosciuto dall\'email (maiuscole e spazi ignorati)', Auth::isAdmin($cfgA, $bossAcct) && !Auth::isAdmin($cfgA, Auth::account($db, $s1)) && !Auth::isAdmin([], $bossAcct));
+$apiS1 = new Api($db, $s1);
+$cl = call($apiS1, 'POST', '/api/clients', [], ['name' => 'Mario'])[1]['client']['id'];
+call($apiS1, 'POST', '/api/appointments', [], ['client_id' => $cl, 'scheduled_date' => '2030-01-01']);
+$rows = Admin::rows($db);
+$byEmail = [];
+foreach ($rows as $r) { $byEmail[$r['email']] = $r; }
+check('elenco: tre negozi con utilizzo', count($rows) === 3 && $byEmail['s1@example.com']['clients'] === 1 && $byEmail['s1@example.com']['appointments'] === 1 && $byEmail['s2@example.com']['clients'] === 0);
+check('elenco: categoria e piano', $byEmail['s1@example.com']['category_label'] === 'Studio tatuaggi / piercing' && $byEmail['s1@example.com']['plan']['state'] === 'trial');
+check('statistiche', Admin::stats($rows)['total'] === 3 && Admin::stats($rows)['trial'] === 3 && Admin::stats($rows)['new7'] === 3);
+
+// prolungare la prova
+$before = strtotime(Auth::account($db, $s1)['trial_ends_at']);
+check('prolunga la prova di 30 giorni', Admin::extend($db, $s1, 30) && strtotime(Auth::account($db, $s1)['trial_ends_at']) === $before + 30 * 86400);
+$db->exec("UPDATE accounts SET trial_ends_at = '2000-01-01 00:00:00' WHERE id = ?", [$s2]);
+check('prova scaduta', Auth::plan(Auth::account($db, $s2))['state'] === 'expired');
+check('prolungare una prova scaduta riparte da oggi', Admin::extend($db, $s2, 7) && Auth::plan(Auth::account($db, $s2))['state'] === 'trial'
+    && Auth::plan(Auth::account($db, $s2))['days_left'] === 7);
+check('giorni non validi rifiutati', !Admin::extend($db, $s1, 0) && !Admin::extend($db, $s1, 99999) && !Admin::extend($db, 9999, 5));
+
+// attivazione manuale
+$future = date('Y-m-d', time() + 90 * 86400);
+check('attivazione manuale fino a una data', Admin::activate($db, $s1, $future) && Auth::plan(Auth::account($db, $s1))['state'] === 'active');
+check('attivazione: data passata o formato errato rifiutati', !Admin::activate($db, $s1, '2001-01-01') && !Admin::activate($db, $s1, 'domani') && !Admin::activate($db, 9999, $future));
+$endBefore = strtotime(Auth::account($db, $s1)['paid_until']);
+Admin::extend($db, $s1, 10);
+check('per chi paga si sposta il rinnovo', strtotime(Auth::account($db, $s1)['paid_until']) === $endBefore + 10 * 86400);
+
+// sospensione
+check('sospensione blocca l\'uso', Admin::setSuspended($db, $s1, true) && Auth::plan(Auth::account($db, $s1))['state'] === 'suspended' && !Auth::canUse([], Auth::account($db, $s1)));
+check('riattivazione ripristina lo stato precedente', Admin::setSuspended($db, $s1, false) && Auth::plan(Auth::account($db, $s1))['state'] === 'active' && Auth::canUse([], Auth::account($db, $s1)));
+check('Stripe non toglie la sospensione', (function () use ($db, $s1) {
+    Admin::setSuspended($db, $s1, true);
+    Billing::handleEvent($db, ['type' => 'checkout.session.completed', 'data' => ['object' => ['mode' => 'subscription', 'client_reference_id' => (string)$s1, 'customer' => 'c', 'subscription' => 's']]]);
+    $ok = Auth::plan(Auth::account($db, $s1))['state'] === 'suspended';
+    Admin::setSuspended($db, $s1, false);
+    return $ok;
+})());
+$db->exec("UPDATE accounts SET trial_ends_at = '2000-01-01 00:00:00', plan_status = 'trial' WHERE id = ?", [$boss]);
+check('l\'amministratore usa l\'agenda anche a prova scaduta', Auth::canUse($cfgA, Auth::account($db, $boss)) && !Auth::canUse([], Auth::account($db, $boss)));
+Admin::setSuspended($db, $boss, true);
+check('...ma non da sospeso', !Auth::canUse($cfgA, Auth::account($db, $boss)));
+Admin::setSuspended($db, $boss, false);
+
+// password
+$old = Auth::account($db, $s2)['password_hash'];
+$pwd = Admin::resetPassword($db, $s2);
+check('nuova password provvisoria', is_string($pwd) && strlen($pwd) === 12 && Auth::login($db, 's2@example.com', $pwd)['ok'] && Auth::account($db, $s2)['password_hash'] !== $old);
+Auth::logout();
+check('la vecchia password non vale più', !Auth::login($db, 's2@example.com', 'segretissima')['ok']);
+check('reset su account inesistente', Admin::resetPassword($db, 9999) === null);
+check('ultimo accesso registrato', Auth::account($db, $s2)['last_login_at'] !== '');
+
+// eliminazione
+$cl2 = call(new Api($db, $s2), 'POST', '/api/clients', [], ['name' => 'Luigi'])[1]['client']['id'];
+call(new Api($db, $s2), 'POST', '/api/appointments', [], ['client_id' => $cl2, 'scheduled_date' => '2030-01-01']);
+check('eliminazione account', Admin::delete($db, $s2) && Auth::account($db, $s2) === null);
+$left = fn(string $t, int $id) => (int)$db->row("SELECT COUNT(*) AS c FROM $t WHERE account_id = ?", [$id])['c'];
+check('eliminati tutti i suoi dati', $left('clients', $s2) + $left('staff', $s2) + $left('services', $s2) + $left('appointments', $s2) === 0
+    && (int)$db->row('SELECT COUNT(*) AS c FROM appointment_services')['c'] === 0);
+check('i dati degli altri restano', $left('clients', $s1) === 1 && $left('services', $s1) >= 5 && $left('appointments', $s1) === 1);
+check('eliminare un account inesistente', !Admin::delete($db, 9999));
+
+// sicurezza del modulo
+Auth::start();
+$tok = Admin::csrfToken();
+check('token CSRF stabile e verificabile', $tok === Admin::csrfToken() && Admin::checkCsrf($tok) && !Admin::checkCsrf('altro') && !Admin::checkCsrf(''));
+$rows = Admin::rows($db);
+$page = Pages::admin([], $rows, Admin::stats($rows), ['q' => '"><script>', 'state' => '', 'page' => 1, 'pages' => 1, 'shown' => 2], $tok, $boss, null, null);
+check('pagina admin: elenco, azioni, token', str_contains($page, 's1@example.com') && str_contains($page, 'value="' . $tok . '"') && str_contains($page, 'name="azione"') && str_contains($page, 'Elimina account e dati'));
+check('pagina admin: nessuna eliminazione del proprio account', substr_count($page, 'value="delete"') === count($rows) - 1);
+check('pagina admin escapa i filtri', !str_contains($page, '"><script>'));
+Auth::logout();
 
 fwrite(STDOUT, "\n$passed ok, $failed falliti\n");
 exit($failed === 0 ? 0 : 1);

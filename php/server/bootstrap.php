@@ -10,6 +10,7 @@ require_once __DIR__ . '/Auth.php';
 require_once __DIR__ . '/Categories.php';
 require_once __DIR__ . '/Billing.php';
 require_once __DIR__ . '/Pages.php';
+require_once __DIR__ . '/Admin.php';
 
 /**
  * @return array<string,mixed>

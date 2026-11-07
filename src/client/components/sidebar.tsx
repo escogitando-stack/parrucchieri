@@ -1,7 +1,7 @@
 import { AppNav, embedded } from "@clawnify/app/client";
 import { useEffect, useState } from "preact/hooks";
 import { useApp } from "../context";
-import { Menu, LayoutDashboard, CalendarDays, Clock, Users, UserCog, Sparkles, Package, LogOut, Settings } from "lucide-preact";
+import { Menu, LayoutDashboard, CalendarDays, Clock, Users, UserCog, Sparkles, Package, LogOut, Settings, ShieldCheck } from "lucide-preact";
 import { useAccount, useTerms } from "@/lib/account";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -29,6 +29,20 @@ function useNavItems() {
       : item.view === "services" ? { ...item, label: t.services }
       : item.view === "products" ? { ...item, label: t.products }
       : item
+  );
+}
+
+function AdminLink() {
+  const account = useAccount();
+  if (!account?.is_admin) return null;
+  return (
+    <a
+      href="/admin"
+      className="flex min-h-11 w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-0"
+    >
+      <ShieldCheck className="h-4 w-4" />
+      Amministrazione
+    </a>
   );
 }
 
@@ -100,6 +114,7 @@ function SidebarContent({ currentView, onNavigate }: { currentView: View; onNavi
       <Separator />
       <div className="px-2 py-3">
         <TrialBanner />
+        <AdminLink />
         <a
           href="/logout"
           className="flex min-h-11 w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-0"

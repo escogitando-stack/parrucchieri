@@ -204,6 +204,7 @@ final class Api
             'terms' => $preset['terms'] + ['staff_hint' => $preset['staff_hint']],
             'categories' => Categories::options(),
             'plan' => ['state' => $plan['state'], 'days_left' => $plan['days_left'], 'ends_at' => $plan['ends_at']],
+            'is_admin' => Auth::isAdmin($this->cfg, $acct),
         ];
     }
 
