@@ -25,9 +25,14 @@ export function AppointmentList() {
     <div className="space-y-4 p-4 sm:p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Appuntamenti</h1>
-        <Button size="sm" className="min-h-11 sm:min-h-0" onClick={() => setShowCreate(true)}>
-          <Plus className="mr-1 h-3.5 w-3.5" /> Nuova prenotazione
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button asChild variant="outline" size="sm" className="min-h-11 sm:min-h-0">
+            <a href="/export/appuntamenti.csv" download>Esporta CSV</a>
+          </Button>
+          <Button size="sm" className="min-h-11 sm:min-h-0" onClick={() => setShowCreate(true)}>
+            <Plus className="mr-1 h-3.5 w-3.5" /> Nuova prenotazione
+          </Button>
+        </div>
       </div>
 
       {showCreate && <CreateAppointment onClose={() => setShowCreate(false)} />}

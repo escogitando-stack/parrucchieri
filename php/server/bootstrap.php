@@ -18,6 +18,8 @@ require_once __DIR__ . '/Billing.php';
 require_once __DIR__ . '/Pages.php';
 require_once __DIR__ . '/Admin.php';
 require_once __DIR__ . '/Automation.php';
+require_once __DIR__ . '/Qr.php';
+require_once __DIR__ . '/Export.php';
 
 /**
  * @return array<string,mixed>

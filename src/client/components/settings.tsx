@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ShopSettings } from "./settings-shop";
 import { WorkingHours } from "./settings-hours";
+import { Closures, Notifications } from "./settings-closures";
 
 const selectClass = "h-11 w-full rounded-md border border-input bg-background px-3 text-sm sm:h-10";
 
@@ -105,6 +106,8 @@ export function Settings() {
 
       <ShopSettings />
       <WorkingHours />
+      <Closures />
+      <Notifications />
 
       <Card>
         <CardContent className="space-y-3 p-4 sm:p-6">

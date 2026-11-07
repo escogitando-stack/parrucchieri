@@ -58,6 +58,10 @@ final class Api
             ['GET', '#^/api/stats$#', 'stats'],
             ['POST', '#^/api/appointments/(\d+)/approve$#', 'approveAppointment'],
             ['POST', '#^/api/appointments/(\d+)/reject$#', 'rejectAppointment'],
+            ['GET', '#^/api/requests$#', 'listRequests'],
+            ['GET', '#^/api/closures$#', 'listClosures'],
+            ['POST', '#^/api/closures$#', 'createClosure'],
+            ['DELETE', '#^/api/closures$#', 'deleteClosure'],
             ['GET', '#^/api/working-hours$#', 'listWorkingHours'],
             ['PUT', '#^/api/working-hours/(\d+)$#', 'setWorkingHours'],
             ['GET', '#^/api/calendar$#', 'calendar'],
@@ -348,6 +352,7 @@ final class Api
     private function stats(array $m, array $q, array $b): array
     {
         $today = date('Y-m-d');
+        $since = date('Y-m-d', strtotime('-30 days'));
         $A = $this->acct;
         $value = $this->db->row("SELECT COALESCE(SUM(total_price), 0) AS t FROM appointments WHERE status = 'completed' AND account_id = ?", [$A]);
         return [200, [
@@ -360,6 +365,10 @@ final class Api
             'upcoming_appointments' => $this->count("SELECT COUNT(*) AS c FROM appointments WHERE status IN ('booked', 'confirmed') AND scheduled_date >= ? AND account_id = ?", [$today, $A]),
             'completed_appointments' => $this->count("SELECT COUNT(*) AS c FROM appointments WHERE status = 'completed' AND account_id = ?", [$A]),
             'revenue' => (float)($value['t'] ?? 0),
+            'completed_30d' => $this->count("SELECT COUNT(*) AS c FROM appointments WHERE status = 'completed' AND scheduled_date >= ? AND scheduled_date <= ? AND account_id = ?", [$since, $today, $A]),
+            'cancelled_30d' => $this->count("SELECT COUNT(*) AS c FROM appointments WHERE status = 'cancelled' AND scheduled_date >= ? AND scheduled_date <= ? AND account_id = ?", [$since, $today, $A]),
+            'no_show_30d' => $this->count("SELECT COUNT(*) AS c FROM appointments WHERE status = 'no_show' AND scheduled_date >= ? AND scheduled_date <= ? AND account_id = ?", [$since, $today, $A]),
+            'online_30d' => $this->count("SELECT COUNT(*) AS c FROM appointments WHERE source LIKE 'online%' AND status <> 'cancelled' AND scheduled_date >= ? AND scheduled_date <= ? AND account_id = ?", [$since, $today, $A]),
             'pending_requests' => $this->count("SELECT COUNT(*) AS c FROM appointments WHERE status = 'requested' AND account_id = ?", [$A]),
             'low_stock_products' => $this->count('SELECT COUNT(*) AS c FROM products WHERE stock <= low_stock_alert AND account_id = ?', [$A]),
         ]];
@@ -1059,6 +1068,90 @@ final class Api
     private function deleteBlockedSlot(array $m, array $q, array $b): array
     {
         $this->db->exec('DELETE FROM blocked_slots WHERE id = ? AND account_id = ?', [$this->id($m), $this->acct]);
+        return [200, ['ok' => true]];
+    }
+
+    // ── Richieste da approvare e chiusure ───────────────────────────
+
+    /** Richieste online in attesa, con i dati per rispondere subito dalla dashboard. */
+    private function listRequests(array $m, array $q, array $b): array
+    {
+        $rows = $this->db->all(
+            self::APT_SELECT . " WHERE a.account_id = ? AND a.status = 'requested' AND a.scheduled_date >= ? ORDER BY a.scheduled_date, a.start_time LIMIT 20",
+            [$this->acct, date('Y-m-d')]
+        );
+        foreach ($rows as $i => $r) {
+            $rows[$i]['services'] = Booking::serviceNames($this->db, (int)$r['id']);
+            $rows[$i]['whatsapp'] = $this->whatsappLinks($r);
+        }
+        return [200, ['requests' => $rows]];
+    }
+
+    private const CLOSURE = '[Chiusura] ';
+
+    /** Periodi di chiusura (ferie, festività) a partire da oggi, uniti per giorni consecutivi. */
+    private function listClosures(array $m, array $q, array $b): array
+    {
+        $rows = $this->db->all(
+            "SELECT DISTINCT blocked_date, reason FROM blocked_slots WHERE account_id = ? AND start_time = '00:00' AND end_time = '23:59' AND reason LIKE ? AND blocked_date >= ? ORDER BY blocked_date",
+            [$this->acct, self::CLOSURE . '%', date('Y-m-d')]
+        );
+        $out = [];
+        foreach ($rows as $r) {
+            $reason = substr((string)$r['reason'], strlen(self::CLOSURE));
+            $n = count($out) - 1;
+            if ($n >= 0 && $out[$n]['reason'] === $reason && date('Y-m-d', strtotime($out[$n]['to'] . ' +1 day')) === $r['blocked_date']) {
+                $out[$n]['to'] = $r['blocked_date'];
+            } else {
+                $out[] = ['from' => $r['blocked_date'], 'to' => $r['blocked_date'], 'reason' => $reason];
+            }
+        }
+        return [200, ['closures' => $out]];
+    }
+
+    /** Chiude l'attività per uno o più giorni: nessuno potrà prenotare online in quel periodo. */
+    private function createClosure(array $m, array $q, array $b): array
+    {
+        $from = $this->date($this->reqString($b, 'from'), 'from');
+        $to = $this->date($this->optString($b, 'to') ?: $from, 'to');
+        $reason = mb_substr(trim($this->optString($b, 'reason') ?? ''), 0, 100);
+        if ($to < $from) {
+            throw new HttpError(400, 'La data di fine deve essere uguale o dopo quella di inizio');
+        }
+        if ($from < date('Y-m-d')) {
+            throw new HttpError(400, 'Puoi chiudere solo da oggi in poi');
+        }
+        if ((strtotime($to) - strtotime($from)) / 86400 > 365) {
+            throw new HttpError(400, 'Il periodo di chiusura non può superare un anno');
+        }
+        $staff = $this->db->all('SELECT id FROM staff WHERE account_id = ? AND active = 1', [$this->acct]);
+        if ($staff === []) {
+            throw new HttpError(400, 'Aggiungi prima almeno un collaboratore');
+        }
+        $affected = $this->count("SELECT COUNT(*) AS c FROM appointments WHERE account_id = ? AND scheduled_date >= ? AND scheduled_date <= ? AND status IN ('requested', 'booked', 'confirmed')", [$this->acct, $from, $to]);
+        for ($t = strtotime($from . ' 12:00:00'); date('Y-m-d', $t) <= $to; $t += 86400) {
+            $day = date('Y-m-d', $t);
+            if ($this->db->row("SELECT id FROM blocked_slots WHERE account_id = ? AND blocked_date = ? AND start_time = '00:00' AND end_time = '23:59' AND reason = ? LIMIT 1", [$this->acct, $day, self::CLOSURE . $reason]) !== null) {
+                continue;
+            }
+            foreach ($staff as $st) {
+                $this->db->exec(
+                    "INSERT INTO blocked_slots (account_id, staff_id, blocked_date, start_time, end_time, reason) VALUES (?, ?, ?, '00:00', '23:59', ?)",
+                    [$this->acct, (int)$st['id'], $day, self::CLOSURE . $reason]
+                );
+            }
+        }
+        return [201, ['ok' => true, 'affected_appointments' => $affected]];
+    }
+
+    private function deleteClosure(array $m, array $q, array $b): array
+    {
+        $from = $this->date((string)($q['from'] ?? ''), 'from');
+        $to = $this->date((string)($q['to'] ?? $from), 'to');
+        $this->db->exec(
+            "DELETE FROM blocked_slots WHERE account_id = ? AND start_time = '00:00' AND end_time = '23:59' AND reason = ? AND blocked_date >= ? AND blocked_date <= ?",
+            [$this->acct, self::CLOSURE . (string)($q['reason'] ?? ''), $from, $to]
+        );
         return [200, ['ok' => true]];
     }
 

@@ -34,6 +34,7 @@ export interface AccountInfo {
   shop_description: string;
   shop_hours: string;
   has_logo: boolean;
+  daily_summary: boolean;
 }
 
 const DEFAULT_TERMS: Terms = {

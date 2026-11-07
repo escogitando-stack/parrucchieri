@@ -6,10 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { today } from "@/lib/dates";
 import { formatEuro } from "@/lib/format";
+import { PendingRequests } from "./dashboard-requests";
+import { SetupChecklist, ShareCard } from "./dashboard-share";
 
 export function Dashboard() {
   const t = useTerms();
-  const { stats, navigate, calendarAppointments, setAppointmentsStatusFilter } = useApp();
+  const { stats, navigate, calendarAppointments } = useApp();
 
   const todayStr = today();
   const todayAppointments = calendarAppointments
@@ -28,16 +30,7 @@ export function Dashboard() {
     <div className="space-y-6 p-6">
       <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
 
-      {stats.pending_requests > 0 && (
-        <Card className="border-amber-300 bg-amber-50">
-          <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
-            <p className="font-medium text-amber-900">
-              {stats.pending_requests === 1 ? "Hai 1 richiesta di prenotazione da approvare" : `Hai ${stats.pending_requests} richieste di prenotazione da approvare`}
-            </p>
-            <Button size="sm" className="min-h-11 sm:min-h-0" onClick={() => { setAppointmentsStatusFilter("requested"); navigate("/appointments"); }}>Vedi richieste</Button>
-          </CardContent>
-        </Card>
-      )}
+      <PendingRequests />
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         {statCards.map((stat) => (
@@ -71,6 +64,10 @@ export function Dashboard() {
           </Card>
         )}
       </div>
+
+      <p className="text-sm text-muted-foreground">
+        Ultimi 30 giorni: {stats.completed_30d ?? 0} completati · {stats.cancelled_30d ?? 0} annullati · {stats.no_show_30d ?? 0} non presentati · {stats.online_30d ?? 0} da prenotazioni online
+      </p>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-3">
@@ -111,6 +108,9 @@ export function Dashboard() {
           )}
         </CardContent>
       </Card>
+
+      <SetupChecklist />
+      <ShareCard />
     </div>
   );
 }

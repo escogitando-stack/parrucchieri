@@ -122,6 +122,10 @@ export interface Stats {
   revenue: number;
   low_stock_products: number;
   pending_requests: number;
+  completed_30d?: number;
+  cancelled_30d?: number;
+  no_show_30d?: number;
+  online_30d?: number;
 }
 
 export interface PaginatedState {

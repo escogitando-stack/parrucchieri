@@ -184,3 +184,10 @@ Cosa invia, una volta sola per evento:
 - **Configurazione**: dopo 2 giorni, se mancano telefono, indirizzo, logo o descrizione, un'email con cosa completare.
 
 **SMTP**: in `config.php` → `mail` puoi usare una casella del tuo dominio (`driver`, `host`, `port`, `secure`, `user`, `pass`, vedi `config.sample.php`). Le email arrivano più spesso in posta in arrivo e non nello spam. Se l'invio non riesce l'errore finisce nel log del server.
+
+## Strumenti del titolare (gruppo 4)
+
+- **Dashboard**: le richieste da approvare compaiono in cima con i pulsanti *Conferma / Rifiuta* (se il cliente non ha email, appare il link WhatsApp già scritto). Sotto trovi "Completa la tua pagina" (checklist) e "Fai prenotare i tuoi clienti" con link da copiare, condivisione WhatsApp e **codice QR** (`/nome/qr.svg`) con cartello da stampare. Le statistiche degli ultimi 30 giorni contano completati, annullati, non presentati e prenotazioni online.
+- **Ferie e chiusure** (Impostazioni): uno o più giorni in cui la pagina non offre orari. Gli appuntamenti già presi restano, con un avviso. Vale per i collaboratori attivi al momento della chiusura.
+- **Esporta CSV**: pulsante in *Appuntamenti*; il file si apre con Excel o Fogli Google (da 90 giorni fa a un anno avanti).
+- **Riepilogo serale**: si può disattivare dalle Impostazioni.

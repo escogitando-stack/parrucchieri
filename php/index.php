@@ -217,7 +217,7 @@ if (preg_match('#^/calendario/([a-f0-9]{32})\.ics$#', $path, $mm)) {
 }
 
 // Pagina pubblica del negozio: /nome, con logo, orari e prenotazione online.
-if (preg_match('#^/([a-z0-9][a-z0-9-]{1,78}[a-z0-9])(?:/(logo|giorni|orari|prenota|privacy|primo))?$#', $path, $mm)) {
+if (preg_match('#^/([a-z0-9][a-z0-9-]{1,78}[a-z0-9])(?:/(logo|giorni|orari|prenota|privacy|primo|qr\.svg))?$#', $path, $mm)) {
     $shopAcct = Booking::accountBySlug($db, $mm[1]);
     if ($shopAcct !== null) {
         $sub = $mm[2] ?? '';
@@ -229,6 +229,17 @@ if (preg_match('#^/([a-z0-9][a-z0-9-]{1,78}[a-z0-9])(?:/(logo|giorni|orari|preno
         }
         if ($sub === '') {
             echo Shop::page($cfg, $shopAcct, Availability::services($db, (int)$shopAcct['id']), Availability::staff($db, (int)$shopAcct['id']), Booking::open($cfg, $shopAcct));
+            exit;
+        }
+        if ($sub === 'qr.svg') {
+            $svg = App\Qr::svg(App\Notify::shopUrl($cfg, $shopAcct), 480);
+            if ($svg === null) {
+                http_response_code(404);
+                exit;
+            }
+            header('Content-Type: image/svg+xml');
+            header('Cache-Control: public, max-age=3600');
+            echo $svg;
             exit;
         }
         if ($sub === 'privacy') {
@@ -470,6 +481,16 @@ if ($plan['state'] === 'pending' && !Auth::isAdmin($cfg, $acct)) {
 
 if (!Auth::canUse($cfg, $acct)) {
     redirect('/abbonamento');
+}
+
+// Esportazione degli appuntamenti in CSV (dal pannello: Appuntamenti → Esporta).
+if ($path === '/export/appuntamenti.csv') {
+    $from = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['dal'] ?? '')) ? (string)$_GET['dal'] : date('Y-m-d', strtotime('-90 days'));
+    $to = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['al'] ?? '')) ? (string)$_GET['al'] : date('Y-m-d', strtotime('+365 days'));
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="appuntamenti-' . date('Y-m-d') . '.csv"');
+    echo App\Export::appointmentsCsv($db, $accountId, $from, $to);
+    exit;
 }
 
 $app = __DIR__ . '/app.html';

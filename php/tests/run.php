@@ -728,6 +728,37 @@ $late = Automation::run($dbO, $cfgT, time() + 3 * 86400);
 check('configurazione: dopo 2 giorni con cosa manca', $late['onboarding'] === 1 && str_contains(end(\App\Mailer::$sent)['text'], 'il logo') && str_contains(end(\App\Mailer::$sent)['text'], '/nuovo-salone'));
 check('configurazione: una volta sola', Automation::run($dbO, $cfgT, time() + 4 * 86400)['onboarding'] === 0);
 
+// ── Strumenti del titolare: richieste, chiusure, export, QR, statistiche ──
+fwrite(STDOUT, "Strumenti del titolare\n");
+[$s, $d] = $apiB->handle('GET', '/api/requests');
+check('elenco richieste da approvare', $s === 200 && count($d['requests']) >= 1 && isset($d['requests'][0]['services'], $d['requests'][0]['whatsapp']) && $d['requests'][0]['status'] === 'requested');
+$fut = date('Y-m-d', strtotime('+20 days'));
+$fut2 = date('Y-m-d', strtotime('+22 days'));
+[$s, $d] = $apiB->handle('POST', '/api/closures', [], ['from' => $fut, 'to' => $fut2, 'reason' => 'Ferie estive']);
+check('chiusura creata', $s === 201 && $d['ok'] === true);
+$cl = $apiB->handle('GET', '/api/closures')[1]['closures'];
+check('chiusure unite per periodo', count($cl) === 1 && $cl[0]['from'] === $fut && $cl[0]['to'] === $fut2 && $cl[0]['reason'] === 'Ferie estive');
+$accNow = Auth::account($dbB, $idB);
+check('nei giorni di chiusura non ci sono orari', Availability::slots($dbB, $accNow, $fut, 30, null) === []);
+$apiB->handle('POST', '/api/closures', [], ['from' => $fut, 'to' => $fut2, 'reason' => 'Ferie estive']);
+check('chiusura ripetuta senza doppioni', (int)$dbB->row('SELECT COUNT(*) AS c FROM blocked_slots WHERE account_id = ? AND blocked_date = ?', [$idB, $fut])['c'] === (int)$dbB->row('SELECT COUNT(*) AS c FROM staff WHERE account_id = ? AND active = 1', [$idB])['c']);
+check('chiusura non valida', $apiB->handle('POST', '/api/closures', [], ['from' => $fut2, 'to' => $fut])[0] === 400 && $apiB->handle('POST', '/api/closures', [], ['from' => date('Y-m-d', strtotime('-3 days'))])[0] === 400 && $apiB->handle('POST', '/api/closures', [], ['from' => 'xx'])[0] === 400);
+check('un altro negozio non vede le chiusure', (new \App\Api($dbB, $idC, $cfgB))->handle('GET', '/api/closures')[1]['closures'] === []);
+$apiB->handle('DELETE', '/api/closures', ['from' => $fut, 'to' => $fut2, 'reason' => 'Ferie estive']);
+check('chiusura rimossa', $apiB->handle('GET', '/api/closures')[1]['closures'] === [] && Availability::slots($dbB, $accNow, date('Y-m-d', strtotime('next monday', strtotime('+25 days'))), 30, null) !== []);
+// statistiche
+[$s, $d] = $apiB->handle('GET', '/api/stats');
+check('statistiche 30 giorni', $s === 200 && isset($d['completed_30d'], $d['cancelled_30d'], $d['no_show_30d'], $d['online_30d']));
+// export CSV
+$dbB->exec("UPDATE clients SET name = '=CMD()' WHERE account_id = ? AND email = 'auto@example.com'", [$idB]);
+$csv = \App\Export::appointmentsCsv($dbB, $idB, date('Y-m-d', strtotime('-1 day')), date('Y-m-d', strtotime('+400 days')));
+check('esportazione CSV', str_starts_with($csv, "\xEF\xBB\xBF\"Codice\";\"Data\"") && str_contains($csv, 'Confermato') && str_contains($csv, "\"'=CMD()\"") && substr_count($csv, "\r\n") >= 3);
+check('CSV: solo i dati del proprio negozio', !str_contains(\App\Export::appointmentsCsv($dbB, $idC, '2000-01-01', '2100-01-01'), 'Confermato'));
+// codice QR
+$qm = \App\Qr::matrix('https://appuntamenti4me.it/salone-bella-vita');
+check('QR: matrice quadrata', is_array($qm) && count($qm) === 33 && count($qm[0]) === 33 && $qm[0][0] === true && \App\Qr::matrix(str_repeat('a', 300)) === null);
+check('QR: immagine SVG', str_starts_with((string)\App\Qr::svg('https://x.it/a'), '<svg') && \App\Qr::svg('') === null);
+
 // ── Piani gestiti dall'amministratore ──
 fwrite(STDOUT, "Piani\n");
 use App\Plans;
