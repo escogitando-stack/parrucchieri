@@ -42,7 +42,16 @@ return [
     // Invio email (richieste di prenotazione, conferme, approvazioni). Di norma basta mail() del server.
     'mail' => [
         'from' => 'no-reply@appuntamenti4me.it',  // deve essere un indirizzo del tuo dominio
+        // Per una consegna più sicura (meno email nello spam) usa una casella SMTP del tuo dominio:
+        // 'driver' => 'smtp', 'host' => 'mail.appuntamenti4me.it', 'port' => 587, 'secure' => 'tls',
+        // 'user' => 'no-reply@appuntamenti4me.it', 'pass' => 'password della casella',
     ],
+
+    // Promemoria, riepilogo serale ed email di fine prova partono da cron.php (vedi docs/DEPLOY.md).
+    // 'cron_key' serve solo se il cron può aprire un indirizzo invece di eseguire php.
+    'cron_key' => '',
+    'reminder_hour' => 17,   // i promemoria del giorno dopo partono da quest'ora
+    'summary_hour' => 20,    // il riepilogo serale al titolare parte da quest'ora
 
     // false = chiude le nuove registrazioni (chi ha già un account entra normalmente).
     'allow_registration' => true,

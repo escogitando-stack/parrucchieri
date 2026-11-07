@@ -166,3 +166,21 @@ Poi apri http://localhost:8080 (password `prova`). I test dell'API: `php php/tes
 - **Primo orario libero**: scelti i servizi, la pagina propone subito il primo giorno e orario disponibile ("Scegli questo").
 - **Riepilogo**: prima dei dati si vede servizi, durata e totale. Su telefono una barra fissa in basso mostra il riepilogo e il pulsante "Prenota/Continua".
 - **Sposta la prenotazione**: le email ai clienti hanno il link `/sposta/<codice>` (e la pagina di annullamento lo propone). Se i servizi sono a conferma immediata resta confermata, altrimenti torna "da approvare" e ti arriva l'email con il pulsante Approva/Rifiuta.
+
+## Email automatiche e promemoria (gruppo 3)
+
+Serve **un cron ogni ora** (cPanel → *Operazioni cron* → "Una volta all'ora"):
+
+```
+php /home/UTENTE/public_html/cron.php
+```
+
+(adatta il percorso a quello della tua cartella; è lo stesso di `index.php`). Se il tuo hosting permette solo di aprire un indirizzo, metti `'cron_key' => 'una-chiave'` in `config.php` e usa `curl -s "https://appuntamenti4me.it/cron.php?key=una-chiave"`.
+
+Cosa invia, una volta sola per evento:
+- **Promemoria al cliente** il giorno prima (dalle 17, `reminder_hour`), con link per spostare o annullare. Solo prenotazioni confermate con email.
+- **Riepilogo serale al titolare** (dalle 20, `summary_hour`) con gli appuntamenti di domani e le richieste da approvare; non parte se non c'è nulla. Si disattiva dalle Impostazioni.
+- **Prova gratuita**: avviso a 7 giorni e a 2 giorni dalla fine, e un messaggio alla scadenza con il link all'abbonamento.
+- **Configurazione**: dopo 2 giorni, se mancano telefono, indirizzo, logo o descrizione, un'email con cosa completare.
+
+**SMTP**: in `config.php` → `mail` puoi usare una casella del tuo dominio (`driver`, `host`, `port`, `secure`, `user`, `pass`, vedi `config.sample.php`). Le email arrivano più spesso in posta in arrivo e non nello spam. Se l'invio non riesce l'errore finisce nel log del server.

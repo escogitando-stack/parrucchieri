@@ -222,6 +222,7 @@ final class Api
             'shop_description' => $acct['shop_description'],
             'shop_hours' => $acct['shop_hours'],
             'has_logo' => ($acct['logo_mime'] ?? '') !== '',
+            'daily_summary' => $this->db->metaGet('nosummary_' . $this->acct) !== '1',
         ];
     }
 
@@ -280,6 +281,9 @@ final class Api
             throw new HttpError(400, 'Il periodo prenotabile deve essere tra 1 e 365 giorni');
         }
         $enabled = $this->optInt($b, 'booking_enabled');
+        if (array_key_exists('daily_summary', $b)) {
+            $this->db->metaSet('nosummary_' . $this->acct, $b['daily_summary'] ? '0' : '1');
+        }
         $values = [
             'business_name' => $name !== null ? trim($name) : null,
             'category' => $category,

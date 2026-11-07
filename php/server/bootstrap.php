@@ -17,6 +17,7 @@ require_once __DIR__ . '/Notify.php';
 require_once __DIR__ . '/Billing.php';
 require_once __DIR__ . '/Pages.php';
 require_once __DIR__ . '/Admin.php';
+require_once __DIR__ . '/Automation.php';
 
 /**
  * @return array<string,mixed>

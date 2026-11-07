@@ -73,7 +73,7 @@ jobs:
             tasks:
               - export DEPLOYPATH=${DEPLOYPATH%/}/
               - /bin/mkdir -p \$DEPLOYPATH
-              - /bin/cp -R .htaccess index.php api.php app.html assets server \$DEPLOYPATH
+              - /bin/cp -R .htaccess index.php api.php cron.php app.html assets server \$DEPLOYPATH
           YML
           cat "$RUNNER_TEMP/site/.cpanel.yml"
 

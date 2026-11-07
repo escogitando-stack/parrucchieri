@@ -240,4 +240,56 @@ final class Notify
             : "Ciao $clientName, purtroppo non riusciamo a confermare la prenotazione di $when da {$acct['business_name']}. Vuoi scegliere un altro orario?";
         return 'https://wa.me/' . $num . '?text=' . rawurlencode($msg);
     }
+
+    /** Promemoria del giorno prima. @param array<string,mixed> $cfg @param array<string,mixed> $acct @param array<string,mixed> $apt @param array<string,mixed> $client */
+    public static function reminder(array $cfg, array $acct, array $apt, array $client, string $services): bool
+    {
+        $token = (string)$apt['public_token'];
+        $text = 'Ciao ' . $client['name'] . ", ti ricordiamo la tua prenotazione di domani.\n\n" . self::summary($acct, $apt, $services)
+            . (!empty($acct['shop_address']) ? 'Dove: ' . $acct['shop_address'] . "\n" : '')
+            . (!empty($acct['shop_phone']) ? 'Telefono: ' . $acct['shop_phone'] . "\n" : '')
+            . ($token !== '' ? "\nSe devi cambiare orario: " . self::baseUrl($cfg) . '/sposta/' . $token : '');
+        return self::mail($cfg, (string)$client['email'], 'Promemoria: domani alle ' . $apt['start_time'], $text, $token !== '' ? 'Annulla la prenotazione' : '', $token !== '' ? self::baseUrl($cfg) . '/annulla/' . $token : '', self::ownerEmail($acct), (string)$acct['business_name']);
+    }
+
+    /**
+     * Riepilogo serale al titolare: appuntamenti di domani e richieste da approvare.
+     *
+     * @param array<string,mixed> $cfg @param array<string,mixed> $acct
+     * @param array<int,array<string,mixed>> $rows appuntamenti di domani (start_time, client_name, services, staff_name)
+     */
+    public static function dailySummary(array $cfg, array $acct, string $tomorrow, array $rows, int $pending): bool
+    {
+        $lines = [];
+        foreach ($rows as $r) {
+            $lines[] = $r['start_time'] . ' - ' . $r['client_name'] . (($r['services'] ?? '') !== '' ? ' (' . $r['services'] . ')' : '') . (!empty($r['staff_name']) ? ' con ' . $r['staff_name'] : '');
+        }
+        $text = 'Domani, ' . self::dateIt($tomorrow) . ($rows === [] ? ": nessun appuntamento.\n" : ' - ' . count($rows) . (count($rows) === 1 ? " appuntamento:\n\n" : " appuntamenti:\n\n") . implode("\n", $lines) . "\n")
+            . ($pending > 0 ? "\nHai " . $pending . ($pending === 1 ? ' richiesta' : ' richieste') . " in attesa di risposta." : '');
+        $subject = 'Domani: ' . count($rows) . (count($rows) === 1 ? ' appuntamento' : ' appuntamenti') . ($pending > 0 ? ' e ' . $pending . ' da approvare' : '');
+        return self::mail($cfg, self::ownerEmail($acct), $subject, $text, 'Apri il calendario', self::baseUrl($cfg) . '/calendar');
+    }
+
+    /** La prova gratuita sta per finire. @param array<string,mixed> $cfg @param array<string,mixed> $acct */
+    public static function trialEnding(array $cfg, array $acct, int $daysLeft): bool
+    {
+        $text = 'Ciao, la tua prova gratuita di ' . ($cfg['site_name'] ?? 'Appuntamenti4me') . ' termina ' . ($daysLeft <= 1 ? 'domani' : 'tra ' . $daysLeft . ' giorni') . ".\n\n"
+            . 'Per continuare a ricevere prenotazioni dalla tua pagina (' . self::shopUrl($cfg, $acct) . ') scegli un abbonamento: i tuoi dati restano al sicuro e non si perde nulla.';
+        return self::mail($cfg, (string)$acct['email'], 'La tua prova gratuita sta per finire', $text, 'Scegli l\'abbonamento', self::baseUrl($cfg) . '/abbonamento', Pages::contactEmail($cfg));
+    }
+
+    /** La prova è finita. @param array<string,mixed> $cfg @param array<string,mixed> $acct */
+    public static function trialExpired(array $cfg, array $acct): bool
+    {
+        $text = "Ciao, la tua prova gratuita è terminata e la pagina di prenotazione è sospesa.\n\nI tuoi dati sono conservati: attivando un abbonamento riparte tutto da dove eri rimasto.";
+        return self::mail($cfg, (string)$acct['email'], 'Prova gratuita terminata', $text, 'Attiva l\'abbonamento', self::baseUrl($cfg) . '/abbonamento', Pages::contactEmail($cfg));
+    }
+
+    /** Suggerimenti per completare la configurazione. @param array<string,mixed> $cfg @param array<string,mixed> $acct @param array<int,string> $missing */
+    public static function onboarding(array $cfg, array $acct, array $missing): bool
+    {
+        $text = "Ciao, la tua pagina di prenotazione è pronta ma si può rendere più efficace.\n\nManca ancora:\n- " . implode("\n- ", $missing)
+            . "\n\nBastano due minuti dalle Impostazioni. Poi condividi il link con i tuoi clienti: " . self::shopUrl($cfg, $acct);
+        return self::mail($cfg, (string)$acct['email'], 'Completa la tua pagina di prenotazione', $text, 'Apri le impostazioni', self::baseUrl($cfg) . '/settings', Pages::contactEmail($cfg));
+    }
 }

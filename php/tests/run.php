@@ -690,6 +690,44 @@ $pv = Shop::privacyPage($cfgB, Auth::account($dbB, $idB));
 check('informativa privacy del negozio', str_contains($pv, 'Titolare del trattamento') && str_contains($pv, 'Salone Bella Vita') && str_contains($pv, 'Garante'));
 check('pagina pubblica: consenso e recapito', str_contains($page, 'id="consent"') && str_contains($page, '/bella-vita/privacy') && !str_contains($page, 'id="phone" type="tel" autocomplete="tel" required'));
 
+// ── Attività automatiche (cron) ──
+fwrite(STDOUT, "Automazioni\n");
+use App\Automation;
+$eve = strtotime($thu . ' 12:00:00 -1 day') + 8 * 3600 + 1800; // la sera prima, alle 20:30
+$morning = strtotime($thu . ' 08:00:00 -1 day');
+\App\Mailer::$sent = [];
+$r0 = Automation::run($dbB, $cfgB, $morning);
+check('promemoria: non prima delle 17', $r0['reminders'] === 0 && $r0['summaries'] === 0);
+$r1 = Automation::run($dbB, $cfgB, $eve);
+$rem = array_values(array_filter(\App\Mailer::$sent, static fn($m) => str_contains($m['subject'], 'Promemoria')));
+check('promemoria al cliente il giorno prima', $r1['reminders'] === 1 && count($rem) === 1 && $rem[0]['to'] === 'auto@example.com' && str_contains($rem[0]['text'], '/sposta/'));
+check('riepilogo serale al titolare', $r1['summaries'] === 1 && (bool)array_filter(\App\Mailer::$sent, static fn($m) => $m['to'] === 'bella@example.com' && str_contains($m['subject'], 'Domani:')));
+\App\Mailer::$sent = [];
+$r2 = Automation::run($dbB, $cfgB, $eve + 3600);
+check('ogni invio una volta sola', $r2['reminders'] === 0 && $r2['summaries'] === 0 && \App\Mailer::$sent === []);
+$apiB->handle('PUT', '/api/account', [], ['daily_summary' => false]);
+check('riepilogo disattivabile', $apiB->handle('GET', '/api/account')[1]['account']['daily_summary'] === false);
+// prova gratuita
+$dbT = newDb();
+$cfgT = ['trial_days' => 30, 'base_url' => 'https://appuntamenti4me.it', 'require_approval' => false];
+$idT = Auth::register($dbT, $cfgT, 'Prova Srl', 'parrucchiere', 'prova@example.com', 'password123')['id'];
+$ends = (int)strtotime((string)Auth::account($dbT, $idT)['trial_ends_at']);
+\App\Mailer::$sent = [];
+check('prova: nessuna email a inizio prova', Automation::run($dbT, $cfgT, $ends - 20 * 86400)['trial'] === 0);
+check('prova: avviso a 7 giorni', Automation::run($dbT, $cfgT, $ends - 6 * 86400)['trial'] === 1 && (bool)array_filter(\App\Mailer::$sent, static fn($m) => str_contains($m['subject'], 'sta per finire') && str_contains($m['text'], '/abbonamento')));
+check('prova: avviso a 2 giorni', Automation::run($dbT, $cfgT, $ends - 86400)['trial'] === 1);
+check('prova: nessun doppione', Automation::run($dbT, $cfgT, $ends - 3600)['trial'] === 0);
+check('prova: email alla scadenza', Automation::run($dbT, $cfgT, $ends + 3600)['trial'] === 1 && str_contains(end(\App\Mailer::$sent)['subject'], 'terminata'));
+// configurazione incompleta
+$dbO = newDb();
+$idO = Auth::register($dbO, $cfgT, 'Nuovo Salone', 'parrucchiere', 'nuovo@example.com', 'password123')['id'];
+\App\Mailer::$sent = [];
+check('configurazione: non subito', Automation::run($dbO, $cfgT)['onboarding'] === 0);
+$dbO->exec('UPDATE accounts SET onboard_mail = 0');
+$late = Automation::run($dbO, $cfgT, time() + 3 * 86400);
+check('configurazione: dopo 2 giorni con cosa manca', $late['onboarding'] === 1 && str_contains(end(\App\Mailer::$sent)['text'], 'il logo') && str_contains(end(\App\Mailer::$sent)['text'], '/nuovo-salone'));
+check('configurazione: una volta sola', Automation::run($dbO, $cfgT, time() + 4 * 86400)['onboarding'] === 0);
+
 // ── Piani gestiti dall'amministratore ──
 fwrite(STDOUT, "Piani\n");
 use App\Plans;
