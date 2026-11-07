@@ -21,7 +21,7 @@ final class HttpError extends \RuntimeException
  */
 final class Api
 {
-    private const STATUSES = ['booked', 'confirmed', 'in_progress', 'completed', 'cancelled', 'no_show'];
+    private const STATUSES = ['requested', 'booked', 'confirmed', 'in_progress', 'completed', 'cancelled', 'no_show'];
 
     /** @param array<string,mixed> $cfg */
     public function __construct(private Db $db, private int $acct, private array $cfg = [])
@@ -56,6 +56,10 @@ final class Api
             ['PUT', '#^/api/account$#', 'updateAccount'],
             ['POST', '#^/api/account/password$#', 'changePassword'],
             ['GET', '#^/api/stats$#', 'stats'],
+            ['POST', '#^/api/appointments/(\d+)/approve$#', 'approveAppointment'],
+            ['POST', '#^/api/appointments/(\d+)/reject$#', 'rejectAppointment'],
+            ['GET', '#^/api/working-hours$#', 'listWorkingHours'],
+            ['PUT', '#^/api/working-hours/(\d+)$#', 'setWorkingHours'],
             ['GET', '#^/api/calendar$#', 'calendar'],
             ['GET', '#^/api/appointments$#', 'listAppointments'],
             ['POST', '#^/api/appointments$#', 'createAppointment'],
@@ -195,7 +199,7 @@ final class Api
     {
         $acct = Auth::account($this->db, $this->acct) ?? throw new HttpError(404, 'Non trovato');
         $preset = Categories::get((string)$acct['category']);
-        $plan = Auth::plan($acct);
+        $plan = Auth::effectivePlan($this->cfg, $acct);
         return [
             'email' => $acct['email'],
             'business_name' => $acct['business_name'],
@@ -205,12 +209,38 @@ final class Api
             'categories' => Categories::options(),
             'plan' => ['state' => $plan['state'], 'days_left' => $plan['days_left'], 'ends_at' => $plan['ends_at']],
             'is_admin' => Auth::isAdmin($this->cfg, $acct),
+            'slug' => $acct['slug'],
+            'shop_url' => Notify::shopUrl($this->cfg, $acct),
+            'booking_enabled' => (int)$acct['booking_enabled'],
+            'slot_minutes' => (int)$acct['slot_minutes'],
+            'booking_notice_hours' => (int)$acct['booking_notice_hours'],
+            'booking_horizon_days' => (int)$acct['booking_horizon_days'],
+            'shop_phone' => $acct['shop_phone'],
+            'shop_whatsapp' => $acct['shop_whatsapp'],
+            'shop_email' => $acct['shop_email'],
+            'shop_address' => $acct['shop_address'],
+            'shop_description' => $acct['shop_description'],
+            'shop_hours' => $acct['shop_hours'],
+            'has_logo' => ($acct['logo_mime'] ?? '') !== '',
         ];
     }
 
     private function getAccount(array $m, array $q, array $b): array
     {
         return [200, ['account' => $this->accountPayload()]];
+    }
+
+    private function text(array $b, string $k, int $max): ?string
+    {
+        $v = $this->optString($b, $k);
+        if ($v === null) {
+            return null;
+        }
+        $v = trim($v);
+        if (mb_strlen($v) > $max) {
+            throw new HttpError(400, "Il campo $k è troppo lungo (massimo $max caratteri)");
+        }
+        return $v;
     }
 
     private function updateAccount(array $m, array $q, array $b): array
@@ -223,10 +253,71 @@ final class Api
         if ($category !== null && !Categories::valid($category)) {
             throw new HttpError(400, 'Tipo di attività non valido');
         }
-        [$sets, $params] = $this->sets([
+        $slug = $this->optString($b, 'slug');
+        if ($slug !== null) {
+            $slug = strtolower(trim($slug));
+            if (!Booking::slugValid($slug)) {
+                throw new HttpError(400, 'Indirizzo non valido: usa da 3 a 80 tra lettere minuscole, numeri e trattini.');
+            }
+            if ($this->db->row('SELECT id FROM accounts WHERE slug = ? AND id <> ?', [$slug, $this->acct]) !== null) {
+                throw new HttpError(409, 'Questo indirizzo è già usato da un altro negozio.');
+            }
+        }
+        $email = $this->text($b, 'shop_email', 190);
+        if ($email !== null && $email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            throw new HttpError(400, 'L\'email del negozio non è valida');
+        }
+        $slot = $this->optInt($b, 'slot_minutes');
+        if ($slot !== null && !in_array($slot, [10, 15, 20, 30, 45, 60], true)) {
+            throw new HttpError(400, 'Intervallo tra gli orari non valido');
+        }
+        $notice = $this->optInt($b, 'booking_notice_hours');
+        if ($notice !== null && ($notice < 0 || $notice > 168)) {
+            throw new HttpError(400, 'Il preavviso deve essere tra 0 e 168 ore');
+        }
+        $horizon = $this->optInt($b, 'booking_horizon_days');
+        if ($horizon !== null && ($horizon < 1 || $horizon > 365)) {
+            throw new HttpError(400, 'Il periodo prenotabile deve essere tra 1 e 365 giorni');
+        }
+        $enabled = $this->optInt($b, 'booking_enabled');
+        $values = [
             'business_name' => $name !== null ? trim($name) : null,
             'category' => $category,
-        ]);
+            'slug' => $slug,
+            'shop_email' => $email,
+            'shop_phone' => $this->text($b, 'shop_phone', 64),
+            'shop_whatsapp' => $this->text($b, 'shop_whatsapp', 64),
+            'shop_address' => $this->text($b, 'shop_address', 255),
+            'shop_description' => $this->text($b, 'shop_description', 1000),
+            'shop_hours' => $this->text($b, 'shop_hours', 500),
+            'slot_minutes' => $slot,
+            'booking_notice_hours' => $notice,
+            'booking_horizon_days' => $horizon,
+            'booking_enabled' => $enabled !== null ? ($enabled ? 1 : 0) : null,
+        ];
+        if (($b['remove_logo'] ?? false) === true) {
+            $values['logo_mime'] = '';
+            $values['logo_data'] = null;
+        }
+        $logoUrl = $this->optString($b, 'logo');
+        if ($logoUrl !== null && $logoUrl !== '') {
+            $logo = Shop::parseLogo($logoUrl);
+            if ($logo === null) {
+                throw new HttpError(400, 'Logo non valido: usa un\'immagine PNG, JPEG, WebP o GIF fino a 400 KB.');
+            }
+            $values['logo_mime'] = $logo['mime'];
+            $values['logo_data'] = $logo['data'];
+        }
+        $sets = [];
+        $params = [];
+        foreach ($values as $col => $val) {
+            if ($val !== null) {
+                $sets[] = "$col = ?";
+                $params[] = $val;
+            } elseif ($col === 'logo_data' && array_key_exists('logo_data', $values) && ($b['remove_logo'] ?? false) === true) {
+                $sets[] = 'logo_data = NULL';
+            }
+        }
         if ($sets) {
             $params[] = $this->acct;
             $this->db->exec('UPDATE accounts SET ' . implode(', ', $sets) . ' WHERE id = ?', $params);
@@ -265,13 +356,14 @@ final class Api
             'upcoming_appointments' => $this->count("SELECT COUNT(*) AS c FROM appointments WHERE status IN ('booked', 'confirmed') AND scheduled_date >= ? AND account_id = ?", [$today, $A]),
             'completed_appointments' => $this->count("SELECT COUNT(*) AS c FROM appointments WHERE status = 'completed' AND account_id = ?", [$A]),
             'revenue' => (float)($value['t'] ?? 0),
+            'pending_requests' => $this->count("SELECT COUNT(*) AS c FROM appointments WHERE status = 'requested' AND account_id = ?", [$A]),
             'low_stock_products' => $this->count('SELECT COUNT(*) AS c FROM products WHERE stock <= low_stock_alert AND account_id = ?', [$A]),
         ]];
     }
 
     // ── Appuntamenti ─────────────────────────────────────────────────
 
-    private const APT_SELECT = "SELECT a.*, cl.name AS client_name, cl.phone AS client_phone,
+    private const APT_SELECT = "SELECT a.*, cl.name AS client_name, cl.phone AS client_phone, cl.email AS client_email,
             s.name AS staff_name, s.color AS staff_color
         FROM appointments a
         LEFT JOIN clients cl ON cl.id = a.client_id
@@ -360,7 +452,112 @@ final class Api
             'SELECT * FROM appointment_notes WHERE appointment_id = ? ORDER BY created_at DESC, id DESC',
             [$id]
         );
+        $apt['whatsapp'] = $this->whatsappLinks($apt);
         return [200, ['appointment' => $apt]];
+    }
+
+    /** Link WhatsApp già scritti (conferma / rifiuto), da inviare a mano dal titolare. @return array{confirm:string,decline:string} */
+    private function whatsappLinks(array $apt): array
+    {
+        $acct = Auth::account($this->db, $this->acct) ?? [];
+        $name = (string)($apt['client_name'] ?? '');
+        $phone = (string)($apt['client_phone'] ?? '');
+        return [
+            'confirm' => Notify::whatsappUrl($acct, $apt, $name, $phone, true),
+            'decline' => Notify::whatsappUrl($acct, $apt, $name, $phone, false),
+        ];
+    }
+
+    /** @return array<string,mixed> */
+    private function decide(int $id, bool $approve, array $b): array
+    {
+        $apt = $this->fetchAppointment($id) ?? throw new HttpError(404, 'Non trovato');
+        if ($apt['status'] !== 'requested') {
+            throw new HttpError(409, 'Questa richiesta è già stata gestita.');
+        }
+        $acct = Auth::account($this->db, $this->acct) ?? throw new HttpError(404, 'Non trovato');
+        if ($approve) {
+            $staffId = $this->optInt($b, 'staff_id') ?? ($apt['staff_id'] !== null ? (int)$apt['staff_id'] : null);
+            if ($staffId === null) {
+                $first = $this->db->row('SELECT id FROM staff WHERE account_id = ? AND active = 1 ORDER BY id LIMIT 1', [$this->acct]);
+                $staffId = $first !== null ? (int)$first['id'] : null;
+            }
+            if ($staffId === null || !$this->exists('staff', $staffId)) {
+                throw new HttpError(400, 'Scegli il collaboratore');
+            }
+            $start = $this->optString($b, 'start_time') ?? (string)$apt['start_time'];
+            $duration = max(1, (toMinutes((string)$apt['end_time']) ?? 0) - (toMinutes((string)$apt['start_time']) ?? 0));
+            if (toMinutes($start) === null) {
+                throw new HttpError(400, 'Gli orari devono essere nel formato HH:MM');
+            }
+            $end = addMinutes($start, $duration);
+            if (($b['allow_conflict'] ?? false) !== true) {
+                $conflicts = findConflicts($start, $end, $this->busyFor($staffId, (string)$apt['scheduled_date'], $id));
+                if ($conflicts) {
+                    throw new HttpError(409, describeConflicts($this->staffName($staffId), $conflicts), ['conflicts' => $conflicts]);
+                }
+            }
+            $this->db->exec("UPDATE appointments SET status = 'confirmed', staff_id = ?, start_time = ?, end_time = ? WHERE id = ? AND account_id = ?", [$staffId, $start, $end, $id, $this->acct]);
+        } else {
+            $this->db->exec("UPDATE appointments SET status = 'cancelled' WHERE id = ? AND account_id = ?", [$id, $this->acct]);
+        }
+        $apt = $this->fetchAppointment($id) ?? $apt;
+        $sent = Notify::decision($this->cfg, $acct, $apt, ['name' => $apt['client_name'], 'email' => $apt['client_email']], Booking::serviceNames($this->db, $id), $approve);
+        $apt['whatsapp'] = $this->whatsappLinks($apt);
+        return [200, ['appointment' => $apt, 'email_sent' => $sent, 'whatsapp_url' => $approve ? $apt['whatsapp']['confirm'] : $apt['whatsapp']['decline']]];
+    }
+
+    private function approveAppointment(array $m, array $q, array $b): array
+    {
+        return $this->decide($this->id($m), true, $b);
+    }
+
+    private function rejectAppointment(array $m, array $q, array $b): array
+    {
+        return $this->decide($this->id($m), false, $b);
+    }
+
+    // ── Orari di lavoro ──────────────────────────────────────────────
+
+    private function listWorkingHours(array $m, array $q, array $b): array
+    {
+        $out = [];
+        foreach ($this->db->all('SELECT staff_id, weekday, start_time, end_time FROM working_hours WHERE account_id = ? ORDER BY staff_id, weekday, start_time', [$this->acct]) as $r) {
+            $out[(int)$r['staff_id']][] = ['weekday' => (int)$r['weekday'], 'start_time' => $r['start_time'], 'end_time' => $r['end_time']];
+        }
+        return [200, ['hours' => (object)$out]];
+    }
+
+    private function setWorkingHours(array $m, array $q, array $b): array
+    {
+        $staffId = $this->id($m);
+        if (!$this->exists('staff', $staffId)) {
+            throw new HttpError(404, 'Collaboratore non trovato');
+        }
+        $list = $b['hours'] ?? null;
+        if (!is_array($list) || count($list) > 70) {
+            throw new HttpError(400, 'Orari non validi');
+        }
+        $clean = [];
+        foreach ($list as $h) {
+            $day = is_array($h) ? ($h['weekday'] ?? null) : null;
+            $from = is_array($h) ? ($h['start_time'] ?? null) : null;
+            $to = is_array($h) ? ($h['end_time'] ?? null) : null;
+            if (!is_int($day) || $day < 1 || $day > 7 || !is_string($from) || !is_string($to)) {
+                throw new HttpError(400, 'Orari non validi');
+            }
+            $f = toMinutes($from);
+            $t = toMinutes($to);
+            if ($f === null || $t === null || $t <= $f) {
+                throw new HttpError(400, 'In ogni fascia l\'orario di fine deve essere dopo quello di inizio');
+            }
+            $clean[] = [$day, addMinutes('00:00', $f), addMinutes('00:00', $t)];
+        }
+        $this->db->exec('DELETE FROM working_hours WHERE staff_id = ? AND account_id = ?', [$staffId, $this->acct]);
+        foreach ($clean as [$day, $from, $to]) {
+            $this->db->exec('INSERT INTO working_hours (account_id, staff_id, weekday, start_time, end_time) VALUES (?, ?, ?, ?, ?)', [$this->acct, $staffId, $day, $from, $to]);
+        }
+        return [200, ['ok' => true]];
     }
 
     /** Cosa occupa già un collaboratore in una data: altri appuntamenti e orari bloccati. */
@@ -725,7 +922,9 @@ final class Api
                 $this->color($this->optString($b, 'color')) ?: '#7c3aed',
             ]
         );
-        return [201, ['staff' => $this->db->row('SELECT * FROM staff WHERE id = ? AND account_id = ?', [$this->db->lastId(), $this->acct])]];
+        $newId = $this->db->lastId();
+        Schema::defaultHours($this->db, $this->acct, $newId);
+        return [201, ['staff' => $this->db->row('SELECT * FROM staff WHERE id = ? AND account_id = ?', [$newId, $this->acct])]];
     }
 
     private function updateStaff(array $m, array $q, array $b): array
@@ -763,7 +962,7 @@ final class Api
     private function createService(array $m, array $q, array $b): array
     {
         $this->db->exec(
-            'INSERT INTO services (account_id, name, description, duration, price, color, category) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO services (account_id, name, description, duration, price, color, category, online) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
             [
                 $this->acct,
                 $this->reqString($b, 'name'),
@@ -772,6 +971,7 @@ final class Api
                 $this->optNumber($b, 'price') ?? 0.0,
                 $this->color($this->optString($b, 'color')) ?: '#6b7280',
                 $this->optString($b, 'category') ?? '',
+                ($this->optInt($b, 'online') ?? 1) ? 1 : 0,
             ]
         );
         return [201, ['service' => $this->db->row('SELECT * FROM services WHERE id = ? AND account_id = ?', [$this->db->lastId(), $this->acct])]];
@@ -796,6 +996,7 @@ final class Api
             'color' => $this->color($this->optString($b, 'color')),
             'category' => $this->optString($b, 'category'),
             'active' => $this->optInt($b, 'active'),
+            'online' => ($o = $this->optInt($b, 'online')) !== null ? ($o ? 1 : 0) : null,
         ]);
         if ($sets) {
             $params[] = $id;

@@ -1,0 +1,295 @@
+<?php
+declare(strict_types=1);
+
+namespace App;
+
+/** Pagina pubblica di un negozio (/nome): profilo e prenotazione online. */
+final class Shop
+{
+    private static function h(?string $s): string
+    {
+        return Pages::h($s);
+    }
+
+    /** Il logo caricato, come immagine da servire (o null). @param array<string,mixed> $acct @return array{mime:string,data:string}|null */
+    public static function logo(array $acct): ?array
+    {
+        $mime = (string)($acct['logo_mime'] ?? '');
+        $data = base64_decode((string)($acct['logo_data'] ?? ''), true);
+        if ($mime === '' || $data === false || $data === '') {
+            return null;
+        }
+        return ['mime' => $mime, 'data' => $data];
+    }
+
+    /**
+     * Controlla e prepara un logo ricevuto come data URL. Accetta PNG, JPEG, WebP, GIF fino a 400 KB.
+     *
+     * @return array{mime:string,data:string}|null null se non valido
+     */
+    public static function parseLogo(string $dataUrl): ?array
+    {
+        if (!preg_match('#^data:(image/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/=\s]+)$#', $dataUrl, $m)) {
+            return null;
+        }
+        $raw = base64_decode(preg_replace('/\s+/', '', $m[2]) ?? '', true);
+        if ($raw === false || $raw === '' || strlen($raw) > 400 * 1024) {
+            return null;
+        }
+        $info = @getimagesizeFromString($raw);
+        if ($info === false || ($info['mime'] ?? '') !== $m[1] || $info[0] > 4000 || $info[1] > 4000) {
+            return null;
+        }
+        return ['mime' => $m[1], 'data' => base64_encode($raw)];
+    }
+
+    /** @param array<string,mixed> $cfg @param array<string,mixed> $acct */
+    public static function notFound(array $cfg): string
+    {
+        $body = '<form class="box"><h1>Pagina non trovata</h1><p class="sub">L\'indirizzo che hai aperto non esiste o non è più attivo.</p></form>';
+        return Pages::layout($cfg, 'Pagina non trovata', $body, true);
+    }
+
+    /**
+     * @param array<string,mixed> $cfg
+     * @param array<string,mixed> $acct
+     * @param array<int,array<string,mixed>> $services
+     * @param array<int,array<string,mixed>> $staff
+     */
+    public static function page(array $cfg, array $acct, array $services, array $staff, bool $open): string
+    {
+        $slug = (string)$acct['slug'];
+        $name = (string)$acct['business_name'];
+        $url = Notify::shopUrl($cfg, $acct);
+        $hasLogo = ($acct['logo_mime'] ?? '') !== '';
+        $logo = $hasLogo
+            ? '<img class="logo" src="/' . self::h($slug) . '/logo?v=' . substr(md5((string)$acct['logo_data']), 0, 8) . '" alt="Logo ' . self::h($name) . '">'
+            : '<div class="logo ph">' . self::h(mb_strtoupper(mb_substr($name, 0, 1))) . '</div>';
+
+        $rows = '';
+        $phone = trim((string)($acct['shop_phone'] ?? ''));
+        if ($phone !== '') {
+            $rows .= '<li><span class="ico">' . Pages::icon('phone') . '</span><a href="tel:' . self::h((string)preg_replace('/[^0-9+]/', '', $phone)) . '">' . self::h($phone) . '</a></li>';
+        }
+        $wa = Notify::digits((string)($acct['shop_whatsapp'] ?? ''));
+        if ($wa !== '') {
+            $rows .= '<li><span class="ico">' . Pages::icon('chat') . '</span><a href="https://wa.me/' . self::h($wa) . '" rel="noopener">Scrivici su WhatsApp</a></li>';
+        }
+        $mail = trim((string)($acct['shop_email'] ?? ''));
+        if ($mail !== '') {
+            $rows .= '<li><span class="ico">' . Pages::icon('mail') . '</span><a href="mailto:' . self::h($mail) . '">' . self::h($mail) . '</a></li>';
+        }
+        $addr = trim((string)($acct['shop_address'] ?? ''));
+        if ($addr !== '') {
+            $rows .= '<li><span class="ico">' . Pages::icon('pin') . '</span><a href="https://www.google.com/maps/search/?api=1&amp;query=' . rawurlencode($addr) . '" rel="noopener" target="_blank">' . self::h($addr) . '</a></li>';
+        }
+        $hours = trim((string)($acct['shop_hours'] ?? ''));
+        if ($hours !== '') {
+            $rows .= '<li><span class="ico">' . Pages::icon('clock') . '</span><span>' . nl2br(self::h($hours)) . '</span></li>';
+        }
+        $desc = trim((string)($acct['shop_description'] ?? ''));
+        $contacts = $rows !== '' ? '<div class="card"><ul class="contact-list">' . $rows . '</ul></div>' : '';
+
+        $head = '<meta name="description" content="' . self::h(($desc !== '' ? mb_substr($desc, 0, 150) : 'Prenota online da ' . $name)) . '">' . "\n"
+            . '<meta property="og:title" content="' . self::h($name) . '">' . "\n"
+            . ($hasLogo ? '<meta property="og:image" content="' . self::h($url) . '/logo">' . "\n" : '')
+            . '<style>' . self::css() . '</style>' . "\n";
+
+        $head_html = '<section class="shop-head">' . $logo . '<div><h1>' . self::h($name) . '</h1><p class="cat">' . self::h(Categories::get((string)$acct['category'])['label']) . '</p></div></section>'
+            . ($desc !== '' ? '<p class="desc">' . nl2br(self::h($desc)) . '</p>' : '');
+
+        if (!$open || $services === []) {
+            $msg = !$open ? 'Le prenotazioni online non sono attive al momento.' : 'Non ci sono ancora servizi prenotabili online.';
+            $book = '<div class="card"><h3>Prenota</h3><p>' . $msg . ($phone !== '' ? ' Contattaci al ' . self::h($phone) . '.' : '') . '</p></div>';
+            $script = '';
+        } else {
+            $book = self::bookingCard($services, $staff);
+            $script = '<script>' . str_replace('__BASE__', '/' . $slug, self::js()) . '</script>';
+        }
+
+        $brand = '<a class="brand" href="/' . self::h($slug) . '">' . self::h($name) . '</a>';
+        $footer = 'Prenotazioni gestite con <a href="/">' . self::h((string)($cfg['site_name'] ?? 'Appuntamenti4me')) . '</a>';
+        $body = '<div class="shop">' . $head_html . '<div class="shop-grid"><div>' . $book . '</div><div>' . $contacts . '</div></div></div>' . $script;
+        return Pages::layout($cfg, $name, $body, false, false, '', $head, $brand, $footer);
+    }
+
+    /** @param array<int,array<string,mixed>> $services @param array<int,array<string,mixed>> $staff */
+    private static function bookingCard(array $services, array $staff): string
+    {
+        $svc = '';
+        foreach ($services as $s) {
+            $price = (float)$s['price'] > 0 ? ' · ' . number_format((float)$s['price'], 2, ',', '.') . ' €' : '';
+            $svc .= '<label class="svc"><input type="checkbox" name="svc" value="' . (int)$s['id'] . '"><span><b>' . self::h((string)$s['name']) . '</b><small>' . (int)$s['duration'] . ' min' . $price . '</small></span></label>';
+        }
+        $staffSel = '';
+        if (count($staff) > 1) {
+            $opts = '<option value="0">Chiunque sia libero</option>';
+            foreach ($staff as $st) {
+                $opts .= '<option value="' . (int)$st['id'] . '">' . self::h((string)$st['name']) . '</option>';
+            }
+            $staffSel = '<label for="staff">Con chi</label><select id="staff">' . $opts . '</select>';
+        }
+        return <<<HTML
+<div class="card book" id="book">
+  <h3>Prenota online</h3>
+  <p class="hint">Scegli cosa ti serve e quando: il negozio ti confermerà la richiesta via email.</p>
+  <div id="ok" class="ok" hidden></div>
+  <div id="flow">
+    <div class="step"><b>1 · Servizi</b><div class="svcs">$svc</div>$staffSel</div>
+    <div class="step" id="s2" hidden>
+      <b>2 · Giorno</b>
+      <div class="cal-head"><button type="button" id="prev" aria-label="Mese precedente">‹</button><span id="mlabel"></span><button type="button" id="next" aria-label="Mese successivo">›</button></div>
+      <div class="cal" id="cal"></div>
+      <p class="hint" id="nodays" hidden>Nessun orario libero in questo mese.</p>
+      <p class="hint">Non trovi l'orario giusto? <a href="#" id="freeLink">Invia comunque una richiesta</a>: il negozio ti risponderà.</p>
+      <div id="free" hidden class="free">
+        <label for="fdate">Giorno preferito</label><input type="date" id="fdate">
+        <label for="ftime">Orario preferito</label><input type="time" id="ftime" value="10:00">
+      </div>
+    </div>
+    <div class="step" id="s3" hidden><b>3 · Orario</b><div class="slots" id="slots"></div></div>
+    <form class="step" id="s4" hidden autocomplete="on">
+      <b id="s4t">4 · I tuoi dati</b>
+      <p class="chosen" id="chosen"></p>
+      <label for="name">Nome e cognome</label><input id="name" autocomplete="name" required maxlength="120">
+      <label for="phone">Telefono</label><input id="phone" type="tel" autocomplete="tel" required maxlength="30">
+      <label for="email">Email</label><input id="email" type="email" autocomplete="email" required maxlength="190">
+      <label for="notes">Note (facoltative)</label><input id="notes" maxlength="500">
+      <input class="hp" id="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <p class="err" id="err" hidden></p>
+      <button class="btn" id="send" type="submit">Invia richiesta</button>
+    </form>
+  </div>
+</div>
+HTML;
+    }
+
+    private static function css(): string
+    {
+        return <<<'CSS'
+.shop{max-width:980px;margin:0 auto;padding:6px 0 10px}
+.shop-head{display:flex;gap:16px;align-items:center;margin:8px 0 6px}
+.shop-head h1{margin:0;font-size:clamp(24px,4vw,34px);letter-spacing:-.01em}
+.shop-head .cat{margin:2px 0 0;color:#78716c;font-size:14px}
+.logo{width:72px;height:72px;border-radius:16px;object-fit:contain;background:#fff;border:1px solid #e7e5e4;flex:none}
+.logo.ph{display:flex;align-items:center;justify-content:center;background:#fce7f3;color:#be185d;font-size:32px;font-weight:700;border-color:#f9a8d4}
+.desc{color:#44403c;margin:10px 0 0;max-width:720px}
+.shop-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:18px;margin-top:18px;align-items:start}
+@media(max-width:820px){.shop-grid{grid-template-columns:1fr}}
+.book h3{margin:0 0 4px;font-size:20px}.hint{color:#78716c;font-size:14px;margin:4px 0 10px}
+.step{margin:18px 0 0}.step>b{display:block;margin-bottom:8px;font-size:14px;color:#44403c}
+.svcs{display:grid;gap:8px}
+label.svc{display:flex;gap:10px;align-items:center;border:1px solid #e7e5e4;border-radius:10px;padding:10px 12px;margin:0;font-weight:400;cursor:pointer}
+label.svc:has(input:checked){border-color:#be185d;background:#fdf2f8}
+label.svc input{margin:0}label.svc span{display:flex;flex-direction:column}label.svc small{color:#78716c;font-size:12px}
+.cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;text-transform:capitalize;font-weight:600}
+.cal-head button{border:1px solid #e7e5e4;background:#fff;border-radius:8px;width:36px;height:34px;font-size:20px;cursor:pointer}
+.cal-head button:disabled{opacity:.35;cursor:default}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center}
+.cal .dow{font-size:11px;color:#a8a29e;padding:4px 0;text-transform:uppercase}
+.cal button,.cal span.d{height:38px;border-radius:8px;border:0;background:transparent;font-size:14px;color:#d6d3d1}
+.cal button.free{background:#fdf2f8;color:#9d174d;font-weight:700;cursor:pointer;border:1px solid #fbcfe8}
+.cal button.sel{background:#be185d;color:#fff;border-color:#be185d}
+.slots{display:flex;flex-wrap:wrap;gap:8px}
+.slots button{border:1px solid #e7e5e4;background:#fff;border-radius:8px;padding:8px 14px;font-size:15px;cursor:pointer}
+.slots button.sel{background:#be185d;color:#fff;border-color:#be185d}
+.free{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:2px 12px 12px;margin-top:8px}
+.chosen{background:#f5f5f4;border-radius:8px;padding:8px 12px;margin:0 0 4px;font-size:14px}
+#s4 .btn{width:100%;margin-top:16px}
+a{color:#be185d}
+CSS;
+    }
+
+    private static function js(): string
+    {
+        return <<<'JS'
+(function(){
+var BASE='__BASE__',MONTHS=['gennaio','febbraio','marzo','aprile','maggio','giugno','luglio','agosto','settembre','ottobre','novembre','dicembre'];
+function $(i){return document.getElementById(i)}
+var st={month:null,date:null,time:null,free:false,staff:0,days:[]};
+var now=new Date();st.month=new Date(now.getFullYear(),now.getMonth(),1);var thisMonth=new Date(now.getFullYear(),now.getMonth(),1);
+function pad(n){return (n<10?'0':'')+n}
+function ymd(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())}
+function services(){return Array.prototype.map.call(document.querySelectorAll('input[name=svc]:checked'),function(i){return i.value}).join(',')}
+function staffId(){return $('staff')?$('staff').value:'0'}
+function get(path,params){return fetch(BASE+path+'?'+params,{headers:{'Accept':'application/json'}}).then(function(r){return r.json()})}
+function itDate(s){var p=s.split('-');var d=new Date(+p[0],+p[1]-1,+p[2]);return ['domenica','lunedì','martedì','mercoledì','giovedì','venerdì','sabato'][d.getDay()]+' '+(+p[2])+' '+MONTHS[+p[1]-1]}
+function show(id,on){$(id).hidden=!on}
+function reset3(){st.time=null;show('s3',false);show('s4',false)}
+function loadMonth(){
+  var s=services();if(!s){show('s2',false);reset3();return}
+  show('s2',true);
+  $('mlabel').textContent=MONTHS[st.month.getMonth()]+' '+st.month.getFullYear();
+  $('prev').disabled=st.month<=thisMonth;
+  var m=st.month.getFullYear()+'-'+pad(st.month.getMonth()+1);
+  get('/giorni','mese='+m+'&servizi='+s+'&staff='+staffId()).then(function(d){st.days=d.days||[];drawCal();show('nodays',st.days.length===0)}).catch(function(){st.days=[];drawCal()});
+}
+function drawCal(){
+  var c=$('cal');c.textContent='';
+  ['L','M','M','G','V','S','D'].forEach(function(x){var e=document.createElement('div');e.className='dow';e.textContent=x;c.appendChild(e)});
+  var first=new Date(st.month.getFullYear(),st.month.getMonth(),1),lead=(first.getDay()+6)%7,n=new Date(st.month.getFullYear(),st.month.getMonth()+1,0).getDate();
+  for(var i=0;i<lead;i++){c.appendChild(document.createElement('span'))}
+  for(var d=1;d<=n;d++){
+    var key=st.month.getFullYear()+'-'+pad(st.month.getMonth()+1)+'-'+pad(d);
+    if(st.days.indexOf(key)>=0){var b=document.createElement('button');b.type='button';b.textContent=d;b.className='free'+(st.date===key&&!st.free?' sel':'');b.setAttribute('data-d',key);b.onclick=(function(k){return function(){pickDate(k)}})(key);c.appendChild(b)}
+    else{var s=document.createElement('span');s.className='d';s.textContent=d;c.appendChild(s)}
+  }
+}
+function pickDate(k){
+  st.free=false;show('free',false);st.date=k;st.time=null;drawCal();show('s4',false);
+  get('/orari','data='+k+'&servizi='+services()+'&staff='+staffId()).then(function(d){
+    var box=$('slots');box.textContent='';var list=d.slots||[];
+    if(!list.length){box.textContent='Nessun orario libero in questo giorno.'}
+    list.forEach(function(t){var b=document.createElement('button');b.type='button';b.textContent=t;b.onclick=function(){st.time=t;Array.prototype.forEach.call(box.children,function(x){x.className=''});b.className='sel';showForm()};box.appendChild(b)});
+    show('s3',true);
+  });
+}
+function showForm(){
+  $('chosen').textContent=(st.free?'Richiesta per ':'')+itDate(st.date)+' alle '+st.time+(st.free?' (da confermare)':'');
+  $('s4t').textContent=(st.free?'3':'4')+' · I tuoi dati';
+  $('send').textContent=st.free?'Invia la richiesta':'Invia richiesta';
+  show('s4',true);
+}
+function freeChanged(){
+  var d=$('fdate').value,t=$('ftime').value;
+  if(d&&t){st.free=true;st.date=d;st.time=t;show('s3',false);showForm()}else{show('s4',false)}
+}
+$('freeLink').onclick=function(e){e.preventDefault();st.free=true;show('free',true);show('s3',false);show('s4',false);
+  var min=ymd(new Date());$('fdate').min=min;if(!$('fdate').value){$('fdate').value=''}};
+$('fdate').onchange=freeChanged;$('ftime').onchange=freeChanged;
+$('prev').onclick=function(){st.month=new Date(st.month.getFullYear(),st.month.getMonth()-1,1);loadMonth()};
+$('next').onclick=function(){st.month=new Date(st.month.getFullYear(),st.month.getMonth()+1,1);loadMonth()};
+Array.prototype.forEach.call(document.querySelectorAll('input[name=svc]'),function(i){i.onchange=function(){st.date=null;reset3();loadMonth()}});
+if($('staff')){$('staff').onchange=function(){st.date=null;reset3();loadMonth()}}
+$('s4').onsubmit=function(e){
+  e.preventDefault();var err=$('err');err.hidden=true;$('send').disabled=true;
+  fetch(BASE+'/prenota',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    name:$('name').value,phone:$('phone').value,email:$('email').value,notes:$('notes').value,website:$('website').value,
+    date:st.date,time:st.time,free:st.free,staff_id:+staffId(),service_ids:services().split(',').map(Number)})})
+  .then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j}})})
+  .then(function(x){
+    $('send').disabled=false;
+    if(!x.ok){err.textContent=x.j.error||'Invio non riuscito, riprova.';err.hidden=false;if(!st.free){loadMonth();reset3()}return}
+    show('flow',false);var ok=$('ok');ok.textContent=x.j.message||'Richiesta inviata!';ok.hidden=false;ok.scrollIntoView({behavior:'smooth',block:'center'});
+  }).catch(function(){$('send').disabled=false;err.textContent='Connessione non riuscita, riprova.';err.hidden=false});
+};
+})();
+JS;
+    }
+
+    /** Pagina di annullamento dal link ricevuto per email. @param array<string,mixed> $cfg @param array<string,mixed>|null $apt */
+    public static function cancelPage(array $cfg, ?array $apt, string $token, ?string $notice = null): string
+    {
+        if ($apt === null) {
+            return Pages::layout($cfg, 'Link non valido', '<form class="box"><h1>Link non valido</h1><p class="sub">Questo link non è corretto o è scaduto.</p></form>', true);
+        }
+        $when = Notify::dateIt((string)$apt['scheduled_date']) . ' alle ' . $apt['start_time'];
+        $active = in_array($apt['status'], ['requested', 'booked', 'confirmed'], true) && $apt['scheduled_date'] >= date('Y-m-d');
+        $body = '<form class="box" method="post" action="/annulla/' . self::h($token) . '"><h1>Annulla prenotazione</h1>'
+            . ($notice !== null ? '<p class="ok">' . self::h($notice) . '</p>' : '')
+            . '<p class="sub">' . self::h($when) . '</p>'
+            . ($active ? '<p>Vuoi annullare questa prenotazione?</p><button class="btn" type="submit">Sì, annulla</button>' : '<p>Questa prenotazione non è più attiva.</p>')
+            . '</form>';
+        return Pages::layout($cfg, 'Annulla prenotazione', $body, true);
+    }
+}

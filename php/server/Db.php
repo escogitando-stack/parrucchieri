@@ -113,6 +113,22 @@ final class Db
         }
     }
 
+    /** Un solo processo alla volta per nome (MySQL); con SQLite non serve. */
+    public function lock(string $name, int $seconds = 5): bool
+    {
+        if ($this->driver === 'sqlite') {
+            return true;
+        }
+        return (int)($this->row('SELECT GET_LOCK(?, ?) AS l', ['appuntamenti_' . $name, $seconds])['l'] ?? 0) === 1;
+    }
+
+    public function unlock(string $name): void
+    {
+        if ($this->driver !== 'sqlite') {
+            $this->row('SELECT RELEASE_LOCK(?) AS l', ['appuntamenti_' . $name]);
+        }
+    }
+
     public function begin(): void
     {
         $this->pdo->beginTransaction();

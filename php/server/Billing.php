@@ -13,8 +13,7 @@ final class Billing
     public static function enabled(array $cfg): bool
     {
         $s = $cfg['stripe'] ?? [];
-        return !empty($s['secret_key']) && !empty($s['webhook_secret'])
-            && (!empty($s['price_monthly']) || !empty($s['price_yearly']));
+        return !empty($s['secret_key']) && !empty($s['webhook_secret']);
     }
 
     /**
@@ -46,7 +45,12 @@ final class Billing
     /** Pagina di pagamento ospitata da Stripe: restituisce l'indirizzo a cui mandare il cliente. */
     public static function checkoutUrl(array $cfg, array $acct, string $plan, string $baseUrl): string
     {
-        $price = (string)($cfg['stripe'][$plan === 'annuale' ? 'price_yearly' : 'price_monthly'] ?? '');
+        return self::checkoutUrlForPrice($cfg, $acct, (string)($cfg['stripe'][$plan === 'annuale' ? 'price_yearly' : 'price_monthly'] ?? ''), $baseUrl);
+    }
+
+    /** Come checkoutUrl, per un codice prezzo Stripe preciso (quello del piano scelto). */
+    public static function checkoutUrlForPrice(array $cfg, array $acct, string $price, string $baseUrl): string
+    {
         if ($price === '') {
             throw new \RuntimeException('Piano non configurato');
         }

@@ -23,17 +23,18 @@ final class Admin
      *
      * @return array<int,array<string,mixed>>
      */
-    public static function rows(Db $db, ?int $now = null): array
+    public static function rows(Db $db, ?int $now = null, array $cfg = []): array
     {
         $rows = $db->all(
             'SELECT a.id, a.email, a.business_name, a.category, a.plan_status, a.trial_ends_at, a.paid_until, a.suspended,
-                    a.last_login_at, a.created_at, a.stripe_customer_id,
+                    a.last_login_at, a.created_at, a.stripe_customer_id, a.approved, a.slug, a.shop_email,
                     (SELECT COUNT(*) FROM clients c WHERE c.account_id = a.id) AS clients,
                     (SELECT COUNT(*) FROM appointments p WHERE p.account_id = a.id) AS appointments
              FROM accounts a ORDER BY a.id DESC'
         );
         foreach ($rows as &$r) {
-            $r['plan'] = Auth::plan($r, $now);
+            $r['is_admin'] = Auth::isAdmin($cfg, $r);
+            $r['plan'] = $r['is_admin'] ? Auth::effectivePlan($cfg, $r) : Auth::plan($r, $now);
             $r['clients'] = (int)$r['clients'];
             $r['appointments'] = (int)$r['appointments'];
             $r['category_label'] = Categories::get((string)$r['category'])['label'];
@@ -44,12 +45,12 @@ final class Admin
 
     /**
      * @param array<int,array<string,mixed>> $rows
-     * @return array{total:int,trial:int,active:int,expired:int,suspended:int,new7:int}
+     * @return array{total:int,trial:int,active:int,expired:int,suspended:int,pending:int,new7:int}
      */
     public static function stats(array $rows, ?int $now = null): array
     {
         $now ??= time();
-        $s = ['total' => count($rows), 'trial' => 0, 'active' => 0, 'expired' => 0, 'suspended' => 0, 'new7' => 0];
+        $s = ['total' => count($rows), 'trial' => 0, 'active' => 0, 'expired' => 0, 'suspended' => 0, 'pending' => 0, 'new7' => 0];
         foreach ($rows as $r) {
             $s[$r['plan']['state']]++;
             if ((int)strtotime((string)$r['created_at']) >= $now - 7 * 86400) {
@@ -89,6 +90,20 @@ final class Admin
         return true;
     }
 
+    /** Approva un nuovo negozio: da ora parte la prova gratuita. Restituisce false se non esiste o era già approvato. */
+    public static function approve(Db $db, array $cfg, int $id, ?int $now = null): bool
+    {
+        $now ??= time();
+        $acct = Auth::account($db, $id);
+        if ($acct === null || (int)$acct['approved'] === 1) {
+            return false;
+        }
+        $days = max(1, (int)($cfg['trial_days'] ?? 30));
+        $db->exec("UPDATE accounts SET approved = 1, plan_status = 'trial', trial_ends_at = ? WHERE id = ?", [date('Y-m-d H:i:s', $now + $days * 86400), $id]);
+        Notify::accountApproved($cfg, Auth::account($db, $id) ?? $acct);
+        return true;
+    }
+
     public static function setSuspended(Db $db, int $id, bool $suspended): bool
     {
         return $db->exec('UPDATE accounts SET suspended = ? WHERE id = ?', [$suspended ? 1 : 0, $id]) > 0;
@@ -117,7 +132,7 @@ final class Admin
         }
         $db->begin();
         try {
-            foreach (['appointments', 'blocked_slots', 'products', 'services', 'staff', 'clients'] as $table) {
+            foreach (['appointments', 'blocked_slots', 'working_hours', 'products', 'services', 'staff', 'clients'] as $table) {
                 $db->exec("DELETE FROM $table WHERE account_id = ?", [$id]);
             }
             $db->exec('DELETE FROM accounts WHERE id = ?', [$id]);

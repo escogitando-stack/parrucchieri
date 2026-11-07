@@ -7,6 +7,7 @@ declare(strict_types=1);
  */
 
 require __DIR__ . '/../server/bootstrap.php';
+\App\Mailer::$driver = 'array';
 
 use App\Api;
 use App\Db;
@@ -364,7 +365,7 @@ check('stessa email non registrabile due volte', (function () use ($db) { try { 
 // ── Registrazione e accesso ──────────────────────────────────────────
 fwrite(STDOUT, "Registrazione e accesso\n");
 $db = newDb();
-$cfg = ['trial_days' => 30];
+$cfg = ['trial_days' => 30, 'require_approval' => false];
 check('password troppo corta', !Auth::register($db, $cfg, 'Salone', 'parrucchiere', 'x@example.com', 'corta')['ok']);
 check('email non valida', !Auth::register($db, $cfg, 'Salone', 'parrucchiere', 'non-una-email', 'password123')['ok']);
 check('nome vuoto', !Auth::register($db, $cfg, ' ', 'parrucchiere', 'x@example.com', 'password123')['ok']);
@@ -475,10 +476,10 @@ foreach ([
     $old->exec($sql);
 }
 Schema::ensure($old);
-check('migrazione: versione e tabella account', $old->metaGet('schema_version') === '4' && $old->tableExists('accounts') && $old->columnExists('clients', 'account_id'));
+check('migrazione: versione e tabella account', $old->metaGet('schema_version') === '6' && $old->tableExists('accounts') && $old->columnExists('clients', 'account_id'));
 check('migrazione: dati esistenti senza proprietario', Schema::hasUnownedData($old));
 Schema::ensure($old);
-check('migrazione ripetibile', $old->metaGet('schema_version') === '4');
+check('migrazione ripetibile', $old->metaGet('schema_version') === '6');
 $first = Auth::register($old, ['trial_days' => 30], 'Salone Giulia', 'parrucchiere', 'giulia@example.com', 'password123');
 check('primo negozio eredita i dati', $first['ok'] && !Schema::hasUnownedData($old)
     && $old->row('SELECT COUNT(*) AS c FROM clients WHERE account_id = ?', [$first['id']])['c'] === 1
@@ -493,6 +494,154 @@ check('secondo negozio parte pulito con i suoi servizi', $second['ok']
     && $old->row('SELECT COUNT(*) AS c FROM services WHERE account_id = ?', [$second['id']])['c'] === 7);
 Auth::logout();
 
+
+// ── Approvazione dei nuovi negozi ──
+fwrite(STDOUT, "Approvazione nuovi negozi\n");
+$dbP = newDb();
+$cfgP = ['trial_days' => 30, 'contact_email' => 'info@appuntamenti4me.it', 'base_url' => 'https://appuntamenti4me.it'];
+\App\Mailer::$sent = [];
+$rp = Auth::register($dbP, $cfgP, 'Salone Prova', 'parrucchiere', 'nuovo@example.com', 'password123');
+$ap = Auth::account($dbP, $rp['id']);
+check('nuovo negozio: da approvare', $rp['ok'] && Auth::plan($ap)['state'] === 'pending' && !Auth::canUse($cfgP, $ap));
+check('registrazione: email all\'amministratore', count(\App\Mailer::$sent) === 1 && \App\Mailer::$sent[0]['to'] === 'info@appuntamenti4me.it' && str_contains(\App\Mailer::$sent[0]['text'], 'nuovo@example.com') && str_contains(\App\Mailer::$sent[0]['text'], '/admin'));
+check('pagina di attesa', str_contains(Pages::pending($cfgP, $ap), 'Registrazione ricevuta'));
+check('admin: stato Da approvare nell\'elenco', Admin::stats(Admin::rows($dbP))['pending'] === 1);
+\App\Mailer::$sent = [];
+check('approvazione', Admin::approve($dbP, $cfgP, $rp['id']) && Auth::plan(Auth::account($dbP, $rp['id']))['state'] === 'trial');
+check('approvazione: email al cliente con indirizzo pagina', count(\App\Mailer::$sent) === 1 && \App\Mailer::$sent[0]['to'] === 'nuovo@example.com' && str_contains(\App\Mailer::$sent[0]['text'], 'appuntamenti4me.it/salone-prova'));
+check('approvazione non ripetibile', !Admin::approve($dbP, $cfgP, $rp['id']));
+$ra = Auth::register($dbP, $cfgP + ['admin_emails' => ['boss@example.com']], 'Boss', 'altro', 'boss@example.com', 'password123');
+check('email amministratore: approvata subito', Auth::plan(Auth::account($dbP, $ra['id']))['state'] === 'trial');
+
+// ── Prenotazioni online ──
+fwrite(STDOUT, "Prenotazioni online\n");
+use App\Availability;
+use App\Booking;
+use App\Notify;
+use App\Shop;
+$dbB = newDb();
+$cfgB = ['trial_days' => 30, 'base_url' => 'https://appuntamenti4me.it', 'require_approval' => false];
+$idB = Auth::register($dbB, $cfgB, 'Salone Bella Vita', 'parrucchiere', 'bella@example.com', 'password123')['id'];
+$acctB = Auth::account($dbB, $idB);
+check('indirizzo pubblico dal nome', $acctB['slug'] === 'salone-bella-vita');
+check('indirizzi unici', Booking::makeSlug($dbB, 'Salone Bella Vita') === 'salone-bella-vita-2' && Booking::makeSlug($dbB, 'Admin') === 'negozio-admin');
+check('indirizzo valido/riservato', Booking::slugValid('rossi-srl') && !Booking::slugValid('admin') && !Booking::slugValid('a') && !Booking::slugValid('Rossi'));
+check('ricerca per indirizzo', Booking::accountBySlug($dbB, 'salone-bella-vita')['id'] == $idB && Booking::accountBySlug($dbB, 'calendar') === null);
+$svc = Availability::services($dbB, $idB);
+check('servizi prenotabili online', count($svc) >= 3);
+$one = (int)$svc[0]['id'];
+$dur = (int)$svc[0]['duration'];
+$monday = date('Y-m-d', strtotime('next monday', strtotime('+3 days')));
+$sunday = date('Y-m-d', strtotime('next sunday', strtotime('+3 days')));
+$pk = Availability::pick($dbB, $idB, [$one]);
+check('durata dei servizi scelti', $pk !== null && $pk['duration'] === $dur && Availability::pick($dbB, $idB, []) === null && Availability::pick($dbB, $idB, [999999]) === null);
+$slots = Availability::slots($dbB, $acctB, $monday, $dur, null);
+check('orari liberi di lunedì', isset($slots['09:00']) && !isset($slots['13:00']) && isset($slots['15:00']));
+check('domenica chiuso', Availability::slots($dbB, $acctB, $sunday, $dur, null) === []);
+check('giorni del mese con orari', in_array($monday, Availability::days($dbB, $acctB, substr($monday, 0, 7), $dur, null), true) || in_array($monday, Availability::days($dbB, $acctB, date('Y-m', strtotime($monday)), $dur, null), true));
+check('data passata o troppo lontana non prenotabile', !Availability::dateAllowed($acctB, date('Y-m-d', strtotime('-1 day'))) && !Availability::dateAllowed($acctB, date('Y-m-d', strtotime('+400 days'))));
+$in = ['name' => 'Chiara Rossi', 'phone' => '333 1234567', 'email' => 'Chiara@Example.com', 'date' => $monday, 'time' => '09:00', 'service_ids' => [$one], 'notes' => 'Prima volta'];
+\App\Mailer::$sent = [];
+$res = Booking::create($dbB, $cfgB, $acctB, $in, '1.2.3.4');
+check('richiesta creata da approvare', $res['ok'] && $dbB->row('SELECT status, source FROM appointments WHERE id = ?', [$res['id']]) == ['status' => 'requested', 'source' => 'online']);
+check('email al cliente e al titolare', count(\App\Mailer::$sent) === 2 && \App\Mailer::$sent[0]['to'] === 'chiara@example.com' && str_contains(\App\Mailer::$sent[0]['text'], '/annulla/') && \App\Mailer::$sent[1]['to'] === 'bella@example.com');
+check('cliente creato con la sua email', $dbB->row('SELECT email FROM clients WHERE account_id = ? AND name = ?', [$idB, 'Chiara Rossi'])['email'] === 'chiara@example.com');
+$after = Availability::slots($dbB, $acctB, $monday, $dur, null);
+check('orario occupato dalla richiesta', !isset($after['09:00']) || (int)$dbB->row('SELECT COUNT(*) AS c FROM staff WHERE account_id = ? AND active = 1', [$idB])['c'] > 1);
+$res2 = Booking::create($dbB, $cfgB, $acctB, ['email' => 'altra@example.com', 'name' => 'Altra'] + $in, '1.2.3.5');
+check('stesso orario non prenotabile due volte', !$res2['ok'] && str_contains($res2['error'], 'occupato'));
+check('dati obbligatori', !Booking::create($dbB, $cfgB, $acctB, ['name' => ''] + $in)['ok'] && !Booking::create($dbB, $cfgB, $acctB, ['email' => 'no'] + $in)['ok'] && !Booking::create($dbB, $cfgB, $acctB, ['phone' => '1'] + $in)['ok'] && !Booking::create($dbB, $cfgB, $acctB, ['service_ids' => []] + $in)['ok']);
+check('domenica rifiutata', !Booking::create($dbB, $cfgB, $acctB, ['date' => $sunday, 'email' => 'x1@example.com'] + $in)['ok']);
+$free = Booking::create($dbB, $cfgB, $acctB, ['date' => $sunday, 'time' => '11:00', 'free' => true, 'email' => 'libera@example.com', 'name' => 'Libera'] + $in, '9.9.9.9');
+$fr = $dbB->row('SELECT status, source, notes FROM appointments WHERE id = ?', [$free['id'] ?? 0]);
+check('richiesta senza orari liberi accettata', $free['ok'] && $fr['status'] === 'requested' && $fr['source'] === 'online_free' && str_contains($fr['notes'], 'orario preferito 11:00'));
+for ($i = 0; $i < 6; $i++) {
+    $last = Booking::create($dbB, $cfgB, $acctB, ['date' => $sunday, 'time' => '11:00', 'free' => true, 'email' => "spam$i@example.com", 'name' => 'Spam'] + $in, '7.7.7.7');
+}
+check('troppe richieste dallo stesso indirizzo', !$last['ok'] && str_contains($last['error'], 'molte richieste'));
+for ($i = 0; $i < 4; $i++) {
+    $same = Booking::create($dbB, $cfgB, $acctB, ['date' => $sunday, 'time' => '1' . $i . ':00', 'free' => true, 'email' => 'stessa@example.com', 'name' => 'Stessa'] + $in, '6.6.6.' . $i);
+}
+check('al massimo 3 richieste aperte per email', !$same['ok']);
+$sus = Auth::account($dbB, $idB);
+$dbB->exec('UPDATE accounts SET booking_enabled = 0 WHERE id = ?', [$idB]);
+check('prenotazioni disattivate', !Booking::create($dbB, $cfgB, Auth::account($dbB, $idB), ['email' => 'off@example.com'] + $in)['ok'] && !Booking::open($cfgB, Auth::account($dbB, $idB)));
+$dbB->exec('UPDATE accounts SET booking_enabled = 1 WHERE id = ?', [$idB]);
+
+// Il titolare approva / rifiuta
+$tok = $dbB->row('SELECT public_token FROM appointments WHERE id = ?', [$res['id']])['public_token'];
+$apiB = new \App\Api($dbB, $idB, $cfgB);
+[$s, $d] = $apiB->handle('GET', '/api/stats');
+check('statistiche: richieste da approvare', $s === 200 && $d['pending_requests'] >= 2);
+\App\Mailer::$sent = [];
+[$s, $d] = $apiB->handle('POST', '/api/appointments/' . $res['id'] . '/approve', [], []);
+check('approvazione richiesta', $s === 200 && $d['appointment']['status'] === 'confirmed' && $d['email_sent'] === true && str_contains($d['whatsapp_url'], 'https://wa.me/393331234567?text='));
+check('email di conferma al cliente', \App\Mailer::$sent[0]['to'] === 'chiara@example.com' && str_contains($tok, '') && str_contains(\App\Mailer::$sent[0]['subject'], 'confermata'));
+check('richiesta già gestita', $apiB->handle('POST', '/api/appointments/' . $res['id'] . '/approve', [], [])[0] === 409);
+[$s, $d] = $apiB->handle('POST', '/api/appointments/' . $free['id'] . '/reject', [], []);
+check('rifiuto richiesta', $s === 200 && $d['appointment']['status'] === 'cancelled' && str_contains($d['whatsapp_url'], 'wa.me'));
+$staffB = (int)$dbB->row('SELECT id FROM staff WHERE account_id = ? LIMIT 1', [$idB])['id'];
+$free2 = Booking::create($dbB, $cfgB, $acctB, ['date' => $monday, 'time' => '09:30', 'free' => true, 'email' => 'f2@example.com', 'name' => 'F2'] + $in, '5.5.5.5');
+check('approvazione con conflitto → 409', $apiB->handle('POST', '/api/appointments/' . $free2['id'] . '/approve', [], ['staff_id' => $staffB])[0] === 409);
+check('approvazione sceglie il collaboratore e l\'orario', $apiB->handle('POST', '/api/appointments/' . $free2['id'] . '/approve', [], ['staff_id' => $staffB, 'start_time' => '16:00'])[0] === 200);
+// altro negozio non può gestirla
+$idC = addAccount($dbB, 'c@example.com');
+check('un altro negozio non vede le richieste', (new \App\Api($dbB, $idC, $cfgB))->handle('POST', '/api/appointments/' . $free['id'] . '/approve', [], [])[0] === 404);
+// annullamento dal link
+$cancelTok = $dbB->row('SELECT public_token FROM appointments WHERE id = ?', [$res['id']])['public_token'];
+check('pagina annullamento', str_contains(Shop::cancelPage($cfgB, Booking::byToken($dbB, $cancelTok), $cancelTok), 'Annulla prenotazione') && str_contains(Shop::cancelPage($cfgB, null, 'x'), 'non è corretto'));
+\App\Mailer::$sent = [];
+check('il cliente annulla dal link', Booking::cancelByToken($dbB, $cfgB, $cancelTok) && $dbB->row('SELECT status FROM appointments WHERE id = ?', [$res['id']])['status'] === 'cancelled' && \App\Mailer::$sent[0]['to'] === 'bella@example.com');
+check('link non valido', !Booking::cancelByToken($dbB, $cfgB, 'zzz') && Booking::byToken($dbB, str_repeat('a', 32)) === null);
+// orari di lavoro
+[$s, $d] = $apiB->handle('PUT', '/api/working-hours/' . $staffB, [], ['hours' => [['weekday' => 6, 'start_time' => '10:00', 'end_time' => '12:00']]]);
+check('orari di lavoro salvati', $s === 200 && count((array)$apiB->handle('GET', '/api/working-hours')[1]['hours']->{$staffB} ?? []) === 1 || count($apiB->handle('GET', '/api/working-hours')[1]['hours']->{$staffB} ?? []) === 1);
+check('orari non validi rifiutati', $apiB->handle('PUT', '/api/working-hours/' . $staffB, [], ['hours' => [['weekday' => 9, 'start_time' => '10:00', 'end_time' => '12:00']]])[0] === 400 && $apiB->handle('PUT', '/api/working-hours/' . $staffB, [], ['hours' => [['weekday' => 1, 'start_time' => '12:00', 'end_time' => '10:00']]])[0] === 400);
+check('orari di un altro negozio non modificabili', (new \App\Api($dbB, $idC, $cfgB))->handle('PUT', '/api/working-hours/' . $staffB, [], ['hours' => []])[0] === 404);
+// profilo
+[$s, $d] = $apiB->handle('PUT', '/api/account', [], ['shop_phone' => '+39 0565 123456', 'shop_description' => 'Taglio e colore', 'slug' => 'bella-vita']);
+check('profilo e indirizzo aggiornati', $s === 200 && $d['account']['slug'] === 'bella-vita' && $d['account']['shop_phone'] === '+39 0565 123456' && str_ends_with($d['account']['shop_url'], '/bella-vita'));
+check('indirizzo già usato o riservato', (new \App\Api($dbB, $idC, $cfgB))->handle('PUT', '/api/account', [], ['slug' => 'bella-vita'])[0] === 409 && $apiB->handle('PUT', '/api/account', [], ['slug' => 'admin'])[0] === 400 && $apiB->handle('PUT', '/api/account', [], ['shop_email' => 'no'])[0] === 400);
+$png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+[$s, $d] = $apiB->handle('PUT', '/api/account', [], ['logo' => $png]);
+check('logo caricato', $s === 200 && $d['account']['has_logo'] === true && Shop::logo(Auth::account($dbB, $idB)) !== null);
+check('logo non valido rifiutato', $apiB->handle('PUT', '/api/account', [], ['logo' => 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4='])[0] === 400 && $apiB->handle('PUT', '/api/account', [], ['logo' => 'data:image/png;base64,AAAA'])[0] === 400);
+check('logo rimosso', $apiB->handle('PUT', '/api/account', [], ['remove_logo' => true])[1]['account']['has_logo'] === false);
+$acctB = Auth::account($dbB, $idB);
+$page = Shop::page($cfgB, $acctB, Availability::services($dbB, $idB), Availability::staff($dbB, $idB), true);
+check('pagina pubblica: profilo, servizi, prenotazione', str_contains($page, 'Salone Bella Vita') && str_contains($page, 'tel:+390565123456') && str_contains($page, 'name="svc"') && str_contains($page, 'Invia comunque una richiesta') && str_contains($page, "BASE='/bella-vita'"));
+check('pagina pubblica: prenotazioni chiuse', !str_contains(Shop::page($cfgB, $acctB, [], [], false), 'name="svc"') && str_contains(Shop::page($cfgB, $acctB, [], [], false), 'non sono attive'));
+check('pagina pubblica escapa l\'HTML', !str_contains(Shop::page($cfgB, ['business_name' => '<script>x</script>', 'slug' => 'x-y'] + $acctB, [], [], true), '<script>x</script>'));
+// profilo: nuovo collaboratore con orari di partenza, servizio non online
+[$s, $d] = $apiB->handle('POST', '/api/staff', [], ['name' => 'Luca']);
+check('nuovo collaboratore ha orari di partenza', $s === 201 && (int)$dbB->row('SELECT COUNT(*) AS c FROM working_hours WHERE staff_id = ?', [$d['staff']['id']])['c'] === 10);
+$apiB->handle('PUT', '/api/services/' . $one, [], ['online' => 0]);
+check('servizio nascosto dalle prenotazioni online', Availability::pick($dbB, $idB, [$one]) === null);
+
+// ── Piani gestiti dall'amministratore ──
+fwrite(STDOUT, "Piani\n");
+use App\Plans;
+$dbL = newDb();
+check('piano: nome obbligatorio', Plans::save($dbL, 0, ['name' => '', 'duration_days' => 30, 'price' => '10']) !== null);
+check('piano: durata e prezzo validi', Plans::save($dbL, 0, ['name' => 'X', 'duration_days' => 0, 'price' => '10']) !== null && Plans::save($dbL, 0, ['name' => 'X', 'duration_days' => 30, 'price' => 'abc']) !== null && Plans::save($dbL, 0, ['name' => 'X', 'duration_days' => 30, 'price' => '1', 'stripe_price_id' => 'xx']) !== null);
+check('piano creato', Plans::save($dbL, 0, ['name' => 'Annuale', 'duration_days' => 365, 'price' => '190,50', 'active' => '1']) === null && Plans::save($dbL, 0, ['name' => 'Mensile', 'duration_days' => 30, 'price' => '19', 'active' => '1']) === null);
+$pl = Plans::all($dbL);
+$byName = array_column($pl, null, 'name');
+check('piani elencati e prezzo con virgola', count($pl) === 2 && abs($byName['Annuale']['price'] - 190.5) < 0.001);
+check('etichette', Plans::priceLabel(19.0) === '19 €' && Plans::priceLabel(190.5) === '190,50 €' && Plans::durationLabel(30) === 'al mese' && Plans::durationLabel(365) === "all'anno" && Plans::durationLabel(45) === 'per 45 giorni');
+check('piano modificato', Plans::save($dbL, $byName['Mensile']['id'], ['name' => 'Mensile Plus', 'duration_days' => 30, 'price' => '25', 'active' => '1']) === null && count(Plans::active($dbL)) === 2 && Plans::find($dbL, $byName['Mensile']['id'])['name'] === 'Mensile Plus');
+$landP = Pages::landing(['trial_days' => 30], Plans::all($dbL));
+check('home: piani dal database', str_contains($landP, 'Annuale') && str_contains($landP, '190,50 €') && str_contains($landP, 'all&#039;anno'));
+$idP = addAccount($dbL, 'p@example.com');
+$dbL->exec("UPDATE accounts SET plan_status = 'trial', trial_ends_at = '2000-01-01 00:00:00' WHERE id = ?", [$idP]);
+$ann = $byName['Annuale'];
+check('assegna piano: attivo per la durata', Plans::assign($dbL, $idP, $ann['id'], 1000000) && Auth::plan(Auth::account($dbL, $idP), 1000000 + 86400)['state'] === 'active' && Auth::account($dbL, $idP)['paid_until'] === date('Y-m-d H:i:s', 1000000 + 365 * 86400));
+check('assegna piano inesistente', !Plans::assign($dbL, $idP, 999) && !Plans::assign($dbL, 999, $ann['id']));
+check('piano eliminato', Plans::delete($dbL, $ann['id']) && count(Plans::all($dbL)) === 1);
+$adm = ['email' => 'boss@example.com', 'plan_status' => 'trial', 'trial_ends_at' => '2000-01-01 00:00:00', 'suspended' => 0, 'approved' => 1];
+check('amministratore: piano senza scadenza', Auth::effectivePlan(['admin_emails' => ['boss@example.com']], $adm)['state'] === 'active' && Auth::effectivePlan([], $adm)['state'] === 'expired' && Auth::effectivePlan(['admin_emails' => ['boss@example.com']], ['suspended' => 1] + $adm)['state'] === 'suspended');
+$admPage = Pages::admin([], Admin::rows($dbL, null, ['admin_emails' => ['p@example.com']]), Admin::stats(Admin::rows($dbL)), ['q' => '', 'state' => '', 'page' => 1, 'pages' => 1, 'shown' => 1], 'tok', 1, null, null, Plans::all($dbL));
+check('pannello admin: piani e assegnazione', str_contains($admPage, 'Piani di abbonamento') && str_contains($admPage, 'plan_save') && str_contains($admPage, 'Assegna piano') && str_contains($admPage, 'amministratore · senza scadenza'));
 
 // ── Amministratore definito nel config ──
 fwrite(STDOUT, "Amministratore da config\n");

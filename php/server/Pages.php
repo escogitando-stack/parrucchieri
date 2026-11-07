@@ -18,9 +18,10 @@ final class Pages
     }
 
     /** @param array<string,mixed> $cfg */
-    private static function layout(array $cfg, string $title, string $body, bool $narrow = false, bool $wide = false, ?string $nav = null, string $head = ''): string
+    public static function layout(array $cfg, string $title, string $body, bool $narrow = false, bool $wide = false, ?string $nav = null, string $head = '', ?string $brand = null, ?string $footer = null): string
     {
         $name = self::h(self::name($cfg));
+        $brandHtml = $brand ?? '<a class="brand" href="/">📅 ' . $name . '</a>';
         $t = self::h($title);
         $wrap = $narrow ? 'wrap narrow' : ($wide ? 'wrap wide' : 'wrap');
         $nav ??= '<a href="/login">Accedi</a><a href="/registrati">Prova gratis</a>';
@@ -30,6 +31,7 @@ final class Pages
                 $links .= ' · <a href="' . self::h((string)$cfg[$k]) . '">' . $label . '</a>';
             }
         }
+        $footerHtml = $footer ?? ('© ' . $name . $links);
         return <<<HTML
 <!DOCTYPE html>
 <html lang="it">
@@ -54,7 +56,7 @@ $head<style>
   th{background:#faf8f7;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#78716c;white-space:nowrap}
   tr:last-child td{border-bottom:0}
   .badge{display:inline-block;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:600}
-  .b-trial{background:#fef3c7;color:#92400e}.b-active{background:#dcfce7;color:#166534}.b-expired{background:#fee2e2;color:#991b1b}.b-suspended{background:#e7e5e4;color:#44403c}
+  .b-trial{background:#fef3c7;color:#92400e}.b-active{background:#dcfce7;color:#166534}.b-expired{background:#fee2e2;color:#991b1b}.b-suspended{background:#e7e5e4;color:#44403c}.b-pending{background:#dbeafe;color:#1e40af}
   .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin:8px 0 20px}
   .stat{background:#fff;border:1px solid #e7e5e4;border-radius:12px;padding:14px}.stat b{display:block;font-size:26px}.stat span{font-size:13px;color:#78716c}
   .filters{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}.filters input,.filters select{width:auto;height:40px;min-width:180px}.filters .btn{padding:9px 18px}
@@ -64,6 +66,7 @@ $head<style>
   details.act input[type=date],details.act input[type=number]{height:32px;width:auto;padding:0 8px;font-size:13px}
   .mini{border:1px solid #e7c5d4;background:#fff;color:#be185d;border-radius:8px;padding:5px 10px;font-size:13px;font-weight:600;cursor:pointer}
   .mini.danger{border-color:#fca5a5;color:#b91c1c}
+  .planrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 10px}.planrow input:not([type=checkbox]){width:auto;height:36px;font-size:14px;flex:1 1 130px}.planrow input[name=duration_days]{flex:0 0 90px}.planrow input[name=price]{flex:0 0 100px}
   .pager{display:flex;gap:10px;justify-content:center;margin:16px 0;font-size:14px}
   code.pw{font-size:18px;background:#fff;border:1px solid #e7e5e4;border-radius:8px;padding:4px 10px}
   .btn{display:inline-block;background:#be185d;color:#fff!important;border:0;border-radius:10px;padding:13px 22px;font-size:16px;font-weight:600;text-decoration:none;cursor:pointer}
@@ -122,13 +125,13 @@ $head<style>
 </head>
 <body>
 <header class="top">
-  <a class="brand" href="/">📅 $name</a>
+  $brandHtml
   <nav>$nav</nav>
 </header>
 <div class="$wrap">
 $body
 </div>
-<footer>© {$name}$links</footer>
+<footer>$footerHtml</footer>
 </body>
 </html>
 HTML;
@@ -236,6 +239,8 @@ SVG;
             'chart' => '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
             'chat' => '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M8.5 11h7M8.5 14h4"/>',
             'euro' => '<circle cx="12" cy="12" r="9"/><path d="M15.5 9a4 4 0 1 0 0 6M7.5 11h6M7.5 13.5h6"/>',
+            'pin' => '<path d="M12 21s7-6.2 7-11.5A7 7 0 0 0 5 9.5C5 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>',
+            'clock' => '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
             'calendar' => '<rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M3 10h18M8 3v4M16 3v4"/>',
             'bell' => '<path d="M6 17V11a6 6 0 1 1 12 0v6l1.5 2h-15z"/><path d="M10 21h4"/>',
             'mail' => '<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3.5 7l8.5 6 8.5-6"/>',
@@ -292,7 +297,7 @@ SVG;
     }
 
     /** @param array<string,mixed> $cfg */
-    public static function landing(array $cfg): string
+    public static function landing(array $cfg, array $dbPlans = []): string
     {
         $days = (int)($cfg['trial_days'] ?? 30);
         $name = self::name($cfg);
@@ -305,17 +310,31 @@ SVG;
         $yearly = (string)($pricing['yearly_label'] ?? '');
 
         $included = '<ul class="tick"><li>Agenda a colonne per collaboratore</li><li>Clienti con storico e note</li><li>Servizi, prodotti e magazzino</li><li>Incassi dei servizi completati</li><li>Nessun limite di clienti, appuntamenti o collaboratori</li></ul>';
-        $plans = '<div class="card plan"><span class="tag">Per iniziare</span><h3>Prova gratuita</h3><div class="price">0 € <small>per ' . $days . ' giorni</small></div>'
+        $plansHtml = '<div class="card plan"><span class="tag">Per iniziare</span><h3>Prova gratuita</h3><div class="price">0 € <small>per ' . $days . ' giorni</small></div>'
             . '<ul class="tick"><li>Tutte le funzioni incluse</li><li>Nessuna carta di credito</li><li>I dati restano se poi scegli un piano</li></ul>'
             . '<p style="margin-top:16px"><a class="btn" href="/registrati">Inizia gratis</a></p></div>';
-        if ($monthly !== '') {
-            $plans .= '<div class="card plan' . ($yearly === '' ? ' best' : '') . '"><h3>Mensile</h3><div class="price">' . self::h($monthly) . '</div>' . $included . '<p class="note" style="text-align:left">Disdici quando vuoi.</p></div>';
-        }
-        if ($yearly !== '') {
-            $plans .= '<div class="card plan best"><span class="tag">Il più conveniente</span><h3>Annuale</h3><div class="price">' . self::h($yearly) . '</div>' . $included . '<p class="note" style="text-align:left">Un solo pagamento all\'anno.</p></div>';
+        if ($dbPlans !== []) {
+            // Piani gestiti dall'amministratore (nome, durata e prezzo).
+            $bestId = 0;
+            foreach ($dbPlans as $p) {
+                if ($p['duration_days'] >= 365) {
+                    $bestId = $p['id'];
+                }
+            }
+            foreach ($dbPlans as $p) {
+                $isBest = $p['id'] === $bestId;
+                $plansHtml .= '<div class="card plan' . ($isBest ? ' best' : '') . '">' . ($isBest ? '<span class="tag">Il più conveniente</span>' : '') . '<h3>' . self::h($p['name']) . '</h3><div class="price">' . self::h(Plans::priceLabel($p['price'])) . ' <small>' . self::h(Plans::durationLabel($p['duration_days'])) . '</small></div>' . $included . '</div>';
+            }
+        } else {
+            if ($monthly !== '') {
+                $plansHtml .= '<div class="card plan' . ($yearly === '' ? ' best' : '') . '"><h3>Mensile</h3><div class="price">' . self::h($monthly) . '</div>' . $included . '<p class="note" style="text-align:left">Disdici quando vuoi.</p></div>';
+            }
+            if ($yearly !== '') {
+                $plansHtml .= '<div class="card plan best"><span class="tag">Il più conveniente</span><h3>Annuale</h3><div class="price">' . self::h($yearly) . '</div>' . $included . '<p class="note" style="text-align:left">Un solo pagamento all\'anno.</p></div>';
+            }
         }
         $costs = '<section class="blk" id="costi"><h2>Costi chiari</h2><p class="sub">Un solo prezzo, tutte le funzioni. Prima provi, poi decidi.</p><div class="plans" style="max-width:960px">'
-            . $plans . '</div><p class="note">Paghi online con carta tramite Stripe. Puoi disdire dalla pagina Abbonamento.</p></section>';
+            . $plansHtml . '</div><p class="note">Paghi online con carta tramite Stripe. Puoi disdire dalla pagina Abbonamento.</p></section>';
 
         $faqHtml = '';
         $faqLd = [];
@@ -494,6 +513,18 @@ HTML;
         return self::layout($cfg, 'Accedi · ' . self::name($cfg), $body, true);
     }
 
+    /** @param array<string,mixed> $cfg @param array<string,mixed> $acct */
+    public static function pending(array $cfg, array $acct): string
+    {
+        $email = self::h(self::contactEmail($cfg));
+        $body = '<form class="box"><h1>Registrazione ricevuta</h1>'
+            . '<p class="sub">Grazie ' . self::h((string)$acct['business_name']) . '! Controlliamo ogni nuova attività prima di attivarla.</p>'
+            . '<p>Appena la tua registrazione sarà approvata ti scriveremo all\'indirizzo <b>' . self::h((string)$acct['email']) . '</b> e potrai entrare e iniziare la prova gratuita.</p>'
+            . '<p style="color:#57534e;font-size:14px">Hai fretta? Scrivici a <a href="mailto:' . $email . '">' . $email . '</a>.</p></form>'
+            . '<p class="alt-link"><a href="/logout">Esci</a></p>';
+        return self::layout($cfg, 'In attesa di approvazione', $body, true);
+    }
+
     public static function closed(array $cfg): string
     {
         return self::layout($cfg, 'Registrazioni chiuse', '<form class="box"><h1>Registrazioni chiuse</h1><p class="sub">Al momento non è possibile creare nuovi account.</p></form><p class="alt-link"><a href="/login">Accedi</a></p>', true);
@@ -504,7 +535,7 @@ HTML;
      * @param array<string,mixed> $acct
      * @param array{state:string,days_left:int,ends_at:string} $plan
      */
-    public static function billing(array $cfg, array $acct, array $plan, ?string $notice = null, ?string $error = null): string
+    public static function billing(array $cfg, array $acct, array $plan, ?string $notice = null, ?string $error = null, array $dbPlans = []): string
     {
         $state = $plan['state'];
         $stripe = Billing::enabled($cfg);
@@ -524,6 +555,17 @@ HTML;
         $buttons = '';
         if ($state === 'suspended') {
             $buttons = '';
+        } elseif ($stripe && $state !== 'active' && $dbPlans !== []) {
+            foreach ($dbPlans as $p) {
+                if ($p['stripe_price_id'] === '') {
+                    continue;
+                }
+                $buttons .= '<form method="post" action="/abbonamento/acquista" style="margin:10px 0"><input type="hidden" name="piano" value="' . (int)$p['id'] . '"><button class="btn" style="width:100%">'
+                    . 'Scegli ' . self::h($p['name']) . ' · ' . self::h(Plans::priceLabel($p['price'])) . ' ' . self::h(Plans::durationLabel($p['duration_days'])) . '</button></form>';
+            }
+            if ($buttons === '') {
+                $buttons = '<p class="sub">Contattaci per attivare l\'abbonamento: ' . self::h(self::contactEmail($cfg)) . '</p>';
+            }
         } elseif ($stripe && $state !== 'active') {
             foreach (['monthly' => ['mensile', 'Mensile'], 'yearly' => ['annuale', 'Annuale']] as $key => [$plan_, $label]) {
                 if (empty($cfg['stripe']['price_' . $key])) {
@@ -555,14 +597,14 @@ HTML;
      * @param array{total:int,trial:int,active:int,expired:int,suspended:int,new7:int} $stats
      * @param array{q:string,state:string,page:int,pages:int,shown:int} $f
      */
-    public static function admin(array $cfg, array $rows, array $stats, array $f, string $csrf, int $selfId, ?string $notice = null, ?string $error = null): string
+    public static function admin(array $cfg, array $rows, array $stats, array $f, string $csrf, int $selfId, ?string $notice = null, ?string $error = null, array $plans = []): string
     {
         $h = [self::class, 'h'];
         $fmt = static fn(string $d, string $format = 'd/m/Y'): string => $d === '' ? '—' : date($format, (int)strtotime($d));
-        $labels = ['trial' => 'In prova', 'active' => 'Attivo', 'expired' => 'Scaduto', 'suspended' => 'Sospeso'];
+        $labels = ['pending' => 'Da approvare', 'trial' => 'In prova', 'active' => 'Attivo', 'expired' => 'Scaduto', 'suspended' => 'Sospeso'];
 
         $cards = '';
-        foreach ([['total', 'Negozi registrati'], ['trial', 'In prova'], ['active', 'Abbonati'], ['expired', 'Prova scaduta'], ['suspended', 'Sospesi'], ['new7', 'Nuovi (7 giorni)']] as [$k, $label]) {
+        foreach ([['total', 'Negozi registrati'], ['pending', 'Da approvare'], ['trial', 'In prova'], ['active', 'Abbonati'], ['expired', 'Prova scaduta'], ['suspended', 'Sospesi'], ['new7', 'Nuovi (7 giorni)']] as [$k, $label]) {
             $cards .= '<div class="stat"><b>' . $stats[$k] . '</b><span>' . $label . '</span></div>';
         }
 
@@ -571,6 +613,12 @@ HTML;
             $opts .= '<option value="' . $k . '"' . ($f['state'] === $k ? ' selected' : '') . '>' . $label . '</option>';
         }
 
+        $planOpts = '';
+        foreach ($plans as $p) {
+            if ($p['active']) {
+                $planOpts .= '<option value="' . (int)$p['id'] . '">' . self::h($p['name']) . ' (' . (int)$p['duration_days'] . ' g)</option>';
+            }
+        }
         $body = '';
         foreach ($rows as $r) {
             $id = (int)$r['id'];
@@ -578,11 +626,16 @@ HTML;
             $when = $state === 'trial' ? 'fino al ' . $fmt($r['plan']['ends_at']) . ' (' . $r['plan']['days_left'] . ' g)'
                 : ($state === 'active' ? ($r['plan']['ends_at'] !== '' ? 'rinnovo ' . $fmt($r['plan']['ends_at']) : 'senza scadenza')
                 : ($state === 'expired' ? 'dal ' . $fmt($r['plan']['ends_at']) : ''));
+            if (!empty($r['is_admin'])) {
+                $when = 'amministratore · senza scadenza';
+            }
             $hidden = '<input type="hidden" name="csrf" value="' . self::h($csrf) . '"><input type="hidden" name="id" value="' . $id . '">';
             $form = static fn(string $action, string $inner, string $extra = ''): string
                 => '<form method="post" action="/admin" ' . $extra . '>' . $hidden . '<input type="hidden" name="azione" value="' . $action . '">' . $inner . '</form>';
-            $menu = $form('extend', '<input type="hidden" name="days" value="7"><button class="mini">+7 giorni</button>')
+            $menu = ($state === 'pending' ? $form('approve', '<button class="mini">Approva</button>') : '')
+                . $form('extend', '<input type="hidden" name="days" value="7"><button class="mini">+7 giorni</button>')
                 . $form('extend', '<input type="hidden" name="days" value="30"><button class="mini">+30 giorni</button>')
+                . ($planOpts !== '' ? $form('assign', '<select name="plan_id" style="height:32px;width:auto;font-size:13px">' . $planOpts . '</select><button class="mini">Assegna piano</button>') : '')
                 . $form('activate', '<input type="date" name="until" required><button class="mini">Attiva fino al</button>')
                 . $form('suspend', '<button class="mini">' . ($r['suspended'] ? 'Riattiva account' : 'Sospendi account') . '</button>')
                 . $form('reset', '<button class="mini">Nuova password</button>', 'onsubmit="return confirm(\'Generare una nuova password per questo negozio?\')"');
@@ -590,7 +643,8 @@ HTML;
                 $menu .= $form('delete', '<button class="mini danger">Elimina account e dati</button>',
                     'onsubmit="return confirm(\'Eliminare DEFINITIVAMENTE ' . self::h(addslashes((string)$r['business_name'])) . ' e tutti i suoi dati?\')"');
             }
-            $body .= '<tr><td><b>' . self::h((string)$r['business_name']) . '</b><br><small>' . self::h((string)$r['email']) . '</small></td>'
+            $quick = $state === 'pending' ? $form('approve', '<button class="mini" style="background:#be185d;color:#fff">Approva</button>') : '';
+            $body .= '<tr><td><b>' . self::h((string)$r['business_name']) . '</b><br><small>' . self::h((string)$r['email']) . '</small><br><small>/' . self::h((string)$r['slug']) . '</small></td>'
                 . '<td>' . self::h((string)$r['category_label']) . '</td>'
                 . '<td><span class="badge b-' . $state . '">' . $labels[$state] . '</span><br><small>' . self::h($when) . '</small></td>'
                 . '<td>' . $fmt((string)$r['created_at']) . '</td>'
@@ -611,6 +665,27 @@ HTML;
                 . ($f['page'] < $f['pages'] ? '<a href="' . self::h($base . ($f['page'] + 1)) . '">Successiva →</a>' : '')
                 . '</div>';
         }
+
+        $planRows = '';
+        $planForm = static function (array $p) use ($csrf): string {
+            $id = (int)$p['id'];
+            return '<form method="post" action="/admin" class="planrow"><input type="hidden" name="csrf" value="' . self::h($csrf) . '"><input type="hidden" name="id" value="' . $id . '">'
+                . '<input name="name" value="' . self::h((string)$p['name']) . '" placeholder="Nome (es. Annuale)" required maxlength="60" aria-label="Nome">'
+                . '<input name="duration_days" type="number" min="1" max="3650" value="' . (int)$p['duration_days'] . '" required aria-label="Durata in giorni" title="Durata in giorni">'
+                . '<input name="price" value="' . ($id === 0 ? '' : self::h(number_format((float)$p['price'], 2, ',', ''))) . '" inputmode="decimal" placeholder="Prezzo €" required aria-label="Prezzo in euro">'
+                . '<input name="stripe_price_id" value="' . self::h((string)$p['stripe_price_id']) . '" placeholder="Codice Stripe (price_...) facoltativo" aria-label="Codice prezzo Stripe">'
+                . '<label class="check" style="margin:0"><input type="checkbox" name="active" value="1"' . (!empty($p['active']) ? ' checked' : '') . '>Attivo</label>'
+                . '<button class="mini" name="azione" value="plan_save">' . ($id === 0 ? 'Aggiungi piano' : 'Salva') . '</button>'
+                . ($id !== 0 ? '<button class="mini danger" name="azione" value="plan_delete" onclick="return confirm(\'Eliminare questo piano?\')">Elimina</button>' : '')
+                . '</form>';
+        };
+        foreach ($plans as $p) {
+            $planRows .= $planForm($p);
+        }
+        $planRows .= $planForm(['id' => 0, 'name' => '', 'duration_days' => 365, 'price' => 0, 'stripe_price_id' => '', 'active' => true]);
+        $planBox = '<details class="card" style="margin:0 0 18px"' . ($plans === [] ? ' open' : '') . '><summary style="cursor:pointer;font-weight:700">Piani di abbonamento (' . count($plans) . ')</summary>'
+            . '<p class="sub" style="text-align:left;margin:8px 0 12px;font-size:14px">Nome, durata in giorni e prezzo. I piani attivi compaiono nella home del sito e nella pagina Abbonamento; con il codice Stripe il cliente può pagare online, senza codice li assegni tu da "Azioni".</p>'
+            . $planRows . '</details>';
         $n = $notice ? '<p class="ok">' . $notice . '</p>' : ''; // già escapato da chi lo costruisce
         $e = $error ? '<p class="err">' . self::h($error) . '</p>' : '';
         $q = self::h($f['q']);
@@ -619,6 +694,7 @@ HTML;
 <h2 style="text-align:left;margin:10px 0 14px">Amministrazione</h2>
 $n$e
 <div class="stats">$cards</div>
+$planBox
 <form class="filters" method="get" action="/admin">
   <input name="q" value="$q" placeholder="Cerca per nome o email">
   <select name="stato">$opts</select>

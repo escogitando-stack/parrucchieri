@@ -5,6 +5,9 @@ use App\Auth;
 use App\Admin;
 use App\Billing;
 use App\Pages;
+use App\Booking;
+use App\Shop;
+use App\Availability;
 
 require __DIR__ . '/server/bootstrap.php';
 
@@ -123,13 +126,95 @@ if ($path === '/registrati' || $path === '/register') {
     exit;
 }
 
+// Annullamento dal link ricevuto per email.
+if (preg_match('#^/annulla/([a-f0-9]{32})$#', $path, $mm)) {
+    $apt = Booking::byToken($db, $mm[1]);
+    $notice = null;
+    if ($method === 'POST' && $apt !== null) {
+        $notice = Booking::cancelByToken($db, $cfg, $mm[1]) ? 'La prenotazione è stata annullata.' : 'Non è stato possibile annullare questa prenotazione.';
+        $apt = Booking::byToken($db, $mm[1]);
+    }
+    if ($apt === null) {
+        http_response_code(404);
+    }
+    echo Shop::cancelPage($cfg, $apt, $mm[1], $notice);
+    exit;
+}
+
+// Pagina pubblica del negozio: /nome, con logo, orari e prenotazione online.
+if (preg_match('#^/([a-z0-9][a-z0-9-]{1,78}[a-z0-9])(?:/(logo|giorni|orari|prenota))?$#', $path, $mm)) {
+    $shopAcct = Booking::accountBySlug($db, $mm[1]);
+    if ($shopAcct !== null) {
+        $sub = $mm[2] ?? '';
+        $live = Auth::plan($shopAcct)['state'] !== 'pending' && Auth::plan($shopAcct)['state'] !== 'suspended';
+        if (!$live) {
+            http_response_code(404);
+            echo Shop::notFound($cfg);
+            exit;
+        }
+        if ($sub === '') {
+            echo Shop::page($cfg, $shopAcct, Availability::services($db, (int)$shopAcct['id']), Availability::staff($db, (int)$shopAcct['id']), Booking::open($cfg, $shopAcct));
+            exit;
+        }
+        if ($sub === 'logo') {
+            $img = Shop::logo($shopAcct);
+            if ($img === null) {
+                http_response_code(404);
+                exit;
+            }
+            header('Content-Type: ' . $img['mime']);
+            header('Cache-Control: public, max-age=3600');
+            echo $img['data'];
+            exit;
+        }
+        header('Content-Type: application/json; charset=utf-8');
+        $json = static function (int $status, array $data): never {
+            http_response_code($status);
+            echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            exit;
+        };
+        $staffParam = (int)($_GET['staff'] ?? 0) ?: null;
+        $pick = $sub === 'prenota' ? null : Availability::pick($db, (int)$shopAcct['id'], explode(',', (string)($_GET['servizi'] ?? '')));
+        if ($sub === 'giorni' && $method === 'GET') {
+            $json(200, ['days' => $pick !== null && Booking::open($cfg, $shopAcct) ? Availability::days($db, $shopAcct, (string)($_GET['mese'] ?? ''), $pick['duration'], $staffParam) : []]);
+        }
+        if ($sub === 'orari' && $method === 'GET') {
+            $slots = [];
+            if ($pick !== null && Booking::open($cfg, $shopAcct)) {
+                foreach (Availability::slots($db, $shopAcct, (string)($_GET['data'] ?? ''), $pick['duration'], $staffParam) as $time => $sid) {
+                    $slots[] = $time;
+                }
+            }
+            $json(200, ['slots' => $slots]);
+        }
+        if ($sub === 'prenota' && $method === 'POST') {
+            $in = json_decode((string)file_get_contents('php://input'), true);
+            if (!is_array($in)) {
+                $json(400, ['error' => 'Richiesta non valida.']);
+            }
+            $email = (string)($in['email'] ?? '');
+            if (trim((string)($in['website'] ?? '')) !== '') {
+                // Campo trappola per i robot: si risponde come se fosse andata bene.
+                $json(200, ['ok' => true, 'message' => 'Richiesta inviata!']);
+            }
+            $res = Booking::create($db, $cfg, $shopAcct, $in, (string)($_SERVER['REMOTE_ADDR'] ?? ''));
+            if (!$res['ok']) {
+                $json(400, ['error' => $res['error'] ?? 'Richiesta non riuscita.']);
+            }
+            $free = !empty($in['free']);
+            $json(200, ['ok' => true, 'message' => ($free ? 'Richiesta inviata! Il negozio la valuterà e ti risponderà' : 'Richiesta inviata! Il negozio la confermerà appena possibile e ti scriverà') . ' all\'indirizzo ' . $email . '.']);
+        }
+        $json(405, ['error' => 'Metodo non consentito']);
+    }
+}
+
 if ($accountId === null) {
     if ($path === '/admin') {
         $_SESSION['after_login'] = '/admin';
         redirect('/login');
     }
     if ($path === '/') {
-        echo Pages::landing($cfg);
+        echo Pages::landing($cfg, App\Plans::active($db));
         exit;
     }
     redirect('/login');
@@ -140,7 +225,7 @@ if ($acct === null) {
     Auth::logout();
     redirect('/login');
 }
-$plan = Auth::plan($acct);
+$plan = Auth::effectivePlan($cfg, $acct);
 
 // Pannello amministratore (solo per le email elencate in config.php → admin_emails).
 if ($path === '/admin') {
@@ -155,14 +240,42 @@ if ($path === '/admin') {
             http_response_code(403);
             exit('Richiesta non valida: ricarica la pagina e riprova.');
         }
+        $action = (string)($_POST['azione'] ?? '');
         $target = (int)($_POST['id'] ?? 0);
+        if (str_starts_with($action, 'plan_')) {
+            if ($action === 'plan_save') {
+                $err = App\Plans::save($db, $target, $_POST);
+                if ($err === null) {
+                    $notice = $target === 0 ? 'Piano creato.' : 'Piano aggiornato.';
+                } else {
+                    $error = $err;
+                }
+            } elseif ($action === 'plan_delete' && App\Plans::delete($db, $target)) {
+                $notice = 'Piano eliminato. I negozi che lo avevano già ricevuto restano attivi fino alla loro scadenza.';
+            } else {
+                $error = 'Operazione non riuscita.';
+            }
+            goto render_admin;
+        }
         $row = Auth::account($db, $target);
         $name = Pages::h((string)($row['business_name'] ?? ''));
-        $action = (string)($_POST['azione'] ?? '');
         if ($row === null) {
             $error = 'Negozio non trovato.';
+        } elseif ($action === 'approve') {
+            if (Admin::approve($db, $cfg, $target)) {
+                $notice = "<b>$name</b> approvato: parte la prova gratuita e gli abbiamo scritto una email.";
+            } else {
+                $error = 'Questo negozio è già approvato.';
+            }
         } elseif ($action === 'extend' && Admin::extend($db, $target, (int)($_POST['days'] ?? 0))) {
             $notice = "Prova prolungata per <b>$name</b>.";
+        } elseif ($action === 'assign') {
+            $planRow = App\Plans::find($db, (int)($_POST['plan_id'] ?? 0));
+            if ($planRow !== null && App\Plans::assign($db, $target, $planRow['id'])) {
+                $notice = 'Piano <b>' . Pages::h($planRow['name']) . "</b> assegnato a <b>$name</b>.";
+            } else {
+                $error = 'Scegli un piano valido.';
+            }
         } elseif ($action === 'activate' && Admin::activate($db, $target, (string)($_POST['until'] ?? ''))) {
             $notice = "<b>$name</b> attivato fino al " . Pages::h(date('d/m/Y', (int)strtotime((string)$_POST['until']))) . '.';
         } elseif ($action === 'suspend') {
@@ -187,7 +300,8 @@ if ($path === '/admin') {
             $error = 'Operazione non riuscita: controlla i valori inseriti.';
         }
     }
-    $all = Admin::rows($db);
+    render_admin:
+    $all = Admin::rows($db, null, $cfg);
     $stats = Admin::stats($all);
     $q = trim((string)($_GET['q'] ?? ''));
     $state = (string)($_GET['stato'] ?? '');
@@ -208,8 +322,14 @@ if ($path === '/admin') {
         Admin::csrfToken(),
         $accountId,
         $notice,
-        $error
+        $error,
+        App\Plans::all($db)
     );
+    exit;
+}
+
+if ($plan['state'] === 'pending' && !Auth::isAdmin($cfg, $acct) && $path !== '/admin') {
+    echo Pages::pending($cfg, $acct);
     exit;
 }
 
@@ -222,6 +342,13 @@ if ($path === '/abbonamento' || $path === '/abbonamento/acquista' || $path === '
                 throw new RuntimeException('Pagamenti non configurati');
             }
             if ($path === '/abbonamento/acquista') {
+                $chosen = ctype_digit((string)($_POST['piano'] ?? '')) ? App\Plans::find($db, (int)$_POST['piano']) : null;
+                if ($chosen !== null) {
+                    if (!$chosen['active'] || $chosen['stripe_price_id'] === '') {
+                        throw new RuntimeException('Piano non acquistabile online');
+                    }
+                    redirect(Billing::checkoutUrlForPrice($cfg, $acct, $chosen['stripe_price_id'], baseUrl($cfg)));
+                }
                 $piano = ($_POST['piano'] ?? '') === 'annuale' ? 'annuale' : 'mensile';
                 redirect(Billing::checkoutUrl($cfg, $acct, $piano, baseUrl($cfg)));
             }
@@ -242,7 +369,12 @@ if ($path === '/abbonamento' || $path === '/abbonamento/acquista' || $path === '
     } elseif (($_GET['esito'] ?? '') === 'annullato') {
         $error = 'Pagamento annullato: non è stato addebitato nulla.';
     }
-    echo Pages::billing($cfg, $acct, $plan, $notice, $error);
+    echo Pages::billing($cfg, $acct, $plan, $notice, $error, App\Plans::active($db));
+    exit;
+}
+
+if ($plan['state'] === 'pending' && !Auth::isAdmin($cfg, $acct)) {
+    echo Pages::pending($cfg, $acct);
     exit;
 }
 

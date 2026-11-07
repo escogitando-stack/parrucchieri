@@ -14,7 +14,7 @@ namespace App;
  */
 final class Schema
 {
-    public const VERSION = 4;
+    public const VERSION = 6;
 
     /** Tabelle i cui dati appartengono a un negozio. */
     private const OWNED = ['clients', 'staff', 'services', 'appointments', 'blocked_slots', 'products', 'working_hours'];
@@ -34,6 +34,12 @@ final class Schema
         }
         if ($version < 4) {
             self::migrateTo4($db);
+        }
+        if ($version < 5) {
+            self::migrateTo5($db);
+        }
+        if ($version < 6) {
+            self::migrateTo6($db);
         }
     }
 
@@ -74,6 +80,13 @@ final class Schema
                 booking_horizon_days $int NOT NULL DEFAULT 60,
                 shop_phone VARCHAR(64) NOT NULL DEFAULT '',
                 shop_address VARCHAR(255) NOT NULL DEFAULT '',
+                approved $int NOT NULL DEFAULT 1,
+                shop_email VARCHAR(190) NOT NULL DEFAULT '',
+                shop_whatsapp VARCHAR(64) NOT NULL DEFAULT '',
+                shop_description VARCHAR(1000) NOT NULL DEFAULT '',
+                shop_hours VARCHAR(500) NOT NULL DEFAULT '',
+                logo_mime VARCHAR(32) NOT NULL DEFAULT '',
+                logo_data MEDIUMTEXT NULL,
                 created_at $ts
             )$tail";
     }
@@ -190,6 +203,7 @@ final class Schema
                 end_time VARCHAR(5) NOT NULL,
                 FOREIGN KEY (staff_id) REFERENCES staff(id) ON DELETE CASCADE
             )$tail",
+            self::plansSql($db),
             "CREATE TABLE _meta (
                 meta_key VARCHAR(64) NOT NULL PRIMARY KEY,
                 meta_value VARCHAR(255) NOT NULL
@@ -315,6 +329,51 @@ final class Schema
         $db->metaSet('schema_version', (string)self::VERSION);
     }
 
+    /** Approvazione dei nuovi negozi e profilo pubblico (contatti, descrizione, orari, logo). */
+    private static function migrateTo5(Db $db): void
+    {
+        $int = $db->driver === 'sqlite' ? 'INTEGER' : 'INT';
+        $cols = [
+            'approved' => "$int NOT NULL DEFAULT 1",
+            'shop_email' => "VARCHAR(190) NOT NULL DEFAULT ''",
+            'shop_whatsapp' => "VARCHAR(64) NOT NULL DEFAULT ''",
+            'shop_description' => "VARCHAR(1000) NOT NULL DEFAULT ''",
+            'shop_hours' => "VARCHAR(500) NOT NULL DEFAULT ''",
+            'logo_mime' => "VARCHAR(32) NOT NULL DEFAULT ''",
+            'logo_data' => 'MEDIUMTEXT NULL',
+        ];
+        foreach ($cols as $col => $def) {
+            if (!$db->columnExists('accounts', $col)) {
+                $db->exec("ALTER TABLE accounts ADD COLUMN $col $def");
+            }
+        }
+        // I negozi già presenti restano approvati (default 1).
+        $db->metaSet('schema_version', (string)self::VERSION);
+    }
+
+    private static function plansSql(Db $db): string
+    {
+        [$pk, $int, , $tail] = self::types($db);
+        return "CREATE TABLE plans (
+                id $pk,
+                name VARCHAR(60) NOT NULL,
+                duration_days $int NOT NULL DEFAULT 30,
+                price DOUBLE NOT NULL DEFAULT 0,
+                stripe_price_id VARCHAR(64) NOT NULL DEFAULT '',
+                active $int NOT NULL DEFAULT 1,
+                sort_order $int NOT NULL DEFAULT 0
+            )$tail";
+    }
+
+    /** Piani di abbonamento modificabili dall'amministratore. */
+    private static function migrateTo6(Db $db): void
+    {
+        if (!$db->tableExists('plans')) {
+            $db->exec(self::plansSql($db));
+        }
+        $db->metaSet('schema_version', (string)self::VERSION);
+    }
+
     private static function indexExists(Db $db, string $table, string $index): bool
     {
         if ($db->driver === 'sqlite') {
@@ -372,6 +431,11 @@ final class Schema
     {
         foreach (self::OWNED as $table) {
             $db->exec("UPDATE $table SET account_id = ? WHERE account_id = 0", [$accountId]);
+        }
+        foreach ($db->all('SELECT id FROM staff WHERE account_id = ?', [$accountId]) as $st) {
+            if ($db->row('SELECT id FROM working_hours WHERE staff_id = ? LIMIT 1', [(int)$st['id']]) === null) {
+                self::defaultHours($db, $accountId, (int)$st['id']);
+            }
         }
         $legacy = (int)($db->metaGet('appointment_counter') ?? 0);
         $max = 0;

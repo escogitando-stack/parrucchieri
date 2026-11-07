@@ -82,6 +82,9 @@ final class Auth
         if (!empty($acct['suspended'])) {
             return ['state' => 'suspended', 'days_left' => 0, 'ends_at' => ''];
         }
+        if (isset($acct['approved']) && (int)$acct['approved'] === 0) {
+            return ['state' => 'pending', 'days_left' => 0, 'ends_at' => ''];
+        }
         $grace = 3 * 86400; // tolleranza se il rinnovo arriva in ritardo
         $status = (string)($acct['plan_status'] ?? 'trial');
         $paidUntil = (string)($acct['paid_until'] ?? '');
@@ -98,6 +101,20 @@ final class Auth
             }
         }
         return ['state' => 'expired', 'days_left' => 0, 'ends_at' => $status === 'active' ? $paidUntil : $trialEnd];
+    }
+
+    /**
+     * Piano da mostrare: l'amministratore non scade mai (a meno che l'account sia sospeso).
+     *
+     * @param array<string,mixed> $cfg @param array<string,mixed> $acct
+     * @return array{state:string,days_left:int,ends_at:string}
+     */
+    public static function effectivePlan(array $cfg, array $acct): array
+    {
+        if (self::isAdmin($cfg, $acct) && empty($acct['suspended'])) {
+            return ['state' => 'active', 'days_left' => 0, 'ends_at' => ''];
+        }
+        return self::plan($acct);
     }
 
     /** @param array<string,mixed> $cfg @param array<string,mixed> $acct */
@@ -145,9 +162,11 @@ final class Auth
 
         $days = max(1, (int)($cfg['trial_days'] ?? 30));
         $first = $db->row('SELECT id FROM accounts LIMIT 1') === null;
+        // Di norma un nuovo negozio deve essere approvato dall'amministratore (require_approval = false per disattivare).
+        $approved = self::isAdmin($cfg, ['email' => $email]) || ($cfg['require_approval'] ?? true) === false;
         $db->exec(
-            'INSERT INTO accounts (email, password_hash, business_name, category, plan_status, slug, trial_ends_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [$email, password_hash($password, PASSWORD_DEFAULT), $business, $category, 'trial', Booking::makeSlug($db, $business), date('Y-m-d H:i:s', time() + $days * 86400)]
+            'INSERT INTO accounts (email, password_hash, business_name, category, plan_status, approved, slug, trial_ends_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [$email, password_hash($password, PASSWORD_DEFAULT), $business, $category, 'trial', $approved ? 1 : 0, Booking::makeSlug($db, $business), date('Y-m-d H:i:s', time() + $days * 86400)]
         );
         $id = $db->lastId();
         // Il primo negozio eredita i dati inseriti prima dell'arrivo degli account.
@@ -158,6 +177,9 @@ final class Auth
         }
         self::openSession($id);
         $db->exec('UPDATE accounts SET last_login_at = ? WHERE id = ?', [date('Y-m-d H:i:s'), $id]);
+        if (!$approved) {
+            Notify::newRegistration($cfg, self::account($db, $id) ?? []);
+        }
         return ['ok' => true, 'id' => $id];
     }
 
@@ -186,7 +208,7 @@ final class Auth
             $e = strtolower(trim($email));
             $acct = $db->row('SELECT id, password_hash FROM accounts WHERE email = ?', [$e]);
             if ($acct === null) {
-                $r = self::register($db, ['allow_registration' => true, 'trial_days' => 30], 'Amministrazione', 'altro', $e, $password);
+                $r = self::register($db, array_merge($cfg, ['allow_registration' => true]), 'Amministrazione', 'altro', $e, $password);
                 return $r['ok'] ? ['ok' => true, 'id' => (int)$r['id']] : ['ok' => false];
             }
             // La password del config è quella valida: tiene allineato l'account.
