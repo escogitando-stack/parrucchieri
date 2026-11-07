@@ -759,6 +759,40 @@ $qm = \App\Qr::matrix('https://appuntamenti4me.it/salone-bella-vita');
 check('QR: matrice quadrata', is_array($qm) && count($qm) === 33 && count($qm[0]) === 33 && $qm[0][0] === true && \App\Qr::matrix(str_repeat('a', 300)) === null);
 check('QR: immagine SVG', str_starts_with((string)\App\Qr::svg('https://x.it/a'), '<svg') && \App\Qr::svg('') === null);
 
+// ── Strumenti admin: approvazione da email, recupero password, entra come negozio ──
+fwrite(STDOUT, "Admin e password\n");
+$cfgR = ['trial_days' => 30, 'base_url' => 'https://appuntamenti4me.it', 'admin_email' => 'root@example.com', 'secret' => 'prova'];
+$dbR = newDb();
+\App\Mailer::$sent = [];
+$rid = Auth::register($dbR, $cfgR, 'Da Approvare', 'parrucchiere', 'new@example.com', 'password123')['id'];
+$adm = Auth::register($dbR, $cfgR, 'Admin Shop', 'altro', 'root@example.com', 'password123')['id'];
+$mailAdm = array_values(array_filter(\App\Mailer::$sent, static fn($m) => str_contains($m['subject'], 'Nuova registrazione')));
+check('email admin con pulsante Approva ora', count($mailAdm) >= 1 && str_contains($mailAdm[0]['text'], '/approva/' . $rid . '/'));
+check('firma approvazione valida solo per quel negozio', \App\Notify::verify($cfgR, 'approva|' . $rid, \App\Notify::sign($cfgR, 'approva|' . $rid)) && !\App\Notify::verify($cfgR, 'approva|' . ($rid + 1), \App\Notify::sign($cfgR, 'approva|' . $rid)));
+check('pagina approvazione', str_contains(Pages::approveLink($cfgR, Auth::account($dbR, $rid), 'a'), 'Approva e avvia la prova') && str_contains(Pages::approveLink($cfgR, null, 'a'), 'non è corretto'));
+$rows = \App\Admin::rows($dbR, null, $cfgR);
+check('negozi da approvare in cima', (int)$rows[0]['id'] === $rid && (int)$rows[0]['approved'] === 0);
+// recupero password
+\App\Mailer::$sent = [];
+Auth::requestReset($dbR, $cfgR, 'sconosciuto@example.com');
+check('reset: email sconosciuta, nessun invio', \App\Mailer::$sent === []);
+Auth::requestReset($dbR, $cfgR, ' New@Example.com ');
+$tokR = preg_match('#/reimposta/([a-f0-9]{32})#', \App\Mailer::$sent[0]['text'] ?? '', $mt) ? $mt[1] : '';
+check('reset: email con link', $tokR !== '' && \App\Mailer::$sent[0]['to'] === 'new@example.com' && Auth::resetValid($dbR, $tokR));
+check('reset: token salvato solo come hash', $dbR->row('SELECT token_hash FROM password_resets')['token_hash'] === hash('sha256', $tokR));
+check('reset: password corta rifiutata', !Auth::resetPassword($dbR, $tokR, 'corta')['ok'] && Auth::resetValid($dbR, $tokR));
+check('reset: token scaduto', !Auth::resetValid($dbR, $tokR, time() + 7200) && !Auth::resetPassword($dbR, $tokR, 'nuovapassword1', time() + 7200)['ok']);
+check('reset: nuova password', Auth::resetPassword($dbR, $tokR, 'nuovapassword1')['ok'] && Auth::login($dbR, 'new@example.com', 'nuovapassword1', $cfgR)['ok'] === true);
+check('reset: link monouso', !Auth::resetValid($dbR, $tokR) && !Auth::resetPassword($dbR, $tokR, 'altrapassword1')['ok']);
+\App\Mailer::$sent = [];
+for ($i = 0; $i < 5; $i++) { Auth::requestReset($dbR, $cfgR, 'new@example.com'); }
+check('reset: massimo 3 richieste all\'ora', count(\App\Mailer::$sent) === 3);
+check('reset: token non valido', !Auth::resetValid($dbR, 'zzz') && !Auth::resetValid($dbR, str_repeat('0', 32)));
+check('pagine password', str_contains(Pages::forgot($cfgR), '/password-dimenticata') && str_contains(Pages::resetForm($cfgR, $tokR, true), 'Nuova password') && str_contains(Pages::resetForm($cfgR, $tokR, false), 'non è corretto') && str_contains(Pages::login($cfgR), 'Password dimenticata'));
+// entra come negozio
+check('entra come: non da non-admin', !Auth::impersonate($dbR, $cfgR, $rid, $adm));
+check('entra come: sé stesso no', !Auth::impersonate($dbR, $cfgR, $adm, $adm));
+
 // ── Piani gestiti dall'amministratore ──
 fwrite(STDOUT, "Piani\n");
 use App\Plans;

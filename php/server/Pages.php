@@ -520,10 +520,68 @@ HTML;
   <label for="password">Password</label>
   <input id="password" name="password" type="password" autocomplete="current-password" required>
   <button class="btn" type="submit">Accedi</button>
+  <p class="alt-link" style="margin-top:14px"><a href="/password-dimenticata">Password dimenticata?</a></p>
 </form>
 $reg
 HTML;
         return self::layout($cfg, 'Accedi · ' . self::name($cfg), $body, true);
+    }
+
+    /** Richiesta del link per reimpostare la password. @param array<string,mixed> $cfg */
+    public static function forgot(array $cfg, ?string $notice = null): string
+    {
+        $msg = $notice !== null ? '<p class="ok">' . self::h($notice) . '</p>' : '';
+        $body = <<<HTML
+<form class="box" method="post" action="/password-dimenticata">
+  <h1>Password dimenticata</h1>
+  <p class="sub">Scrivi la tua email: se è registrata ti mandiamo un link per sceglierne una nuova.</p>
+  $msg
+  <label for="email">Email</label>
+  <input id="email" name="email" type="email" autocomplete="email" required autofocus>
+  <button class="btn" type="submit">Invia il link</button>
+  <p class="alt-link" style="margin-top:14px"><a href="/login">Torna all'accesso</a></p>
+</form>
+HTML;
+        return self::layout($cfg, 'Password dimenticata · ' . self::name($cfg), $body, true);
+    }
+
+    /** Scelta della nuova password dal link ricevuto. @param array<string,mixed> $cfg */
+    public static function resetForm(array $cfg, string $token, bool $valid, ?string $error = null, bool $done = false): string
+    {
+        if ($done) {
+            $body = '<form class="box"><h1>Password aggiornata</h1><p class="sub">Ora puoi accedere con la nuova password.</p><a class="btn" href="/login">Vai all\'accesso</a></form>';
+        } elseif (!$valid) {
+            $body = '<form class="box"><h1>Link non valido</h1><p class="sub">Il link non è corretto o è scaduto.</p><a class="btn" href="/password-dimenticata">Richiedine uno nuovo</a></form>';
+        } else {
+            $err = $error !== null ? '<p class="err">' . self::h($error) . '</p>' : '';
+            $t = self::h($token);
+            $body = <<<HTML
+<form class="box" method="post" action="/reimposta/$t">
+  <h1>Nuova password</h1>
+  <p class="sub">Scegli una password di almeno 8 caratteri.</p>
+  $err
+  <label for="password">Nuova password</label>
+  <input id="password" name="password" type="password" autocomplete="new-password" minlength="8" required autofocus>
+  <button class="btn" type="submit">Salva la password</button>
+</form>
+HTML;
+        }
+        return self::layout($cfg, 'Nuova password · ' . self::name($cfg), $body, true);
+    }
+
+    /** Conferma dell'approvazione di un negozio dal link nell'email dell'amministratore. @param array<string,mixed> $cfg @param array<string,mixed>|null $acct */
+    public static function approveLink(array $cfg, ?array $acct, string $sig, ?string $notice = null): string
+    {
+        if ($acct === null) {
+            return self::layout($cfg, 'Link non valido', '<form class="box"><h1>Link non valido</h1><p class="sub">Il link non è corretto.</p></form>', true);
+        }
+        $pending = (int)$acct['approved'] === 0;
+        $body = '<form class="box" method="post" action="/approva/' . (int)$acct['id'] . '/' . self::h($sig) . '"><h1>Nuovo negozio</h1>'
+            . ($notice !== null ? '<p class="ok">' . self::h($notice) . '</p>' : '')
+            . '<p><b>' . self::h((string)$acct['business_name']) . '</b></p><p class="sub">' . self::h((string)$acct['email']) . '<br>' . self::h(Categories::get((string)$acct['category'])['label']) . '</p>'
+            . ($pending ? '<button class="btn" type="submit">Approva e avvia la prova</button>' : '<p>Questo negozio è già approvato.</p>')
+            . '</form>';
+        return self::layout($cfg, 'Approva negozio', $body, true);
     }
 
     /** @param array<string,mixed> $cfg @param array<string,mixed> $acct */
@@ -651,6 +709,7 @@ HTML;
                 . ($planOpts !== '' ? $form('assign', '<select name="plan_id" style="height:32px;width:auto;font-size:13px">' . $planOpts . '</select><button class="mini">Assegna piano</button>') : '')
                 . $form('activate', '<input type="date" name="until" required><button class="mini">Attiva fino al</button>')
                 . $form('suspend', '<button class="mini">' . ($r['suspended'] ? 'Riattiva account' : 'Sospendi account') . '</button>')
+                . ($id !== $selfId ? $form('impersonate', '<button class="mini">Entra come questo negozio</button>') : '')
                 . $form('reset', '<button class="mini">Nuova password</button>', 'onsubmit="return confirm(\'Generare una nuova password per questo negozio?\')"');
             if ($id !== $selfId) {
                 $menu .= $form('delete', '<button class="mini danger">Elimina account e dati</button>',

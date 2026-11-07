@@ -45,6 +45,19 @@ final class Notify
         return self::baseUrl($cfg) . '/gestisci/' . $token . '/' . self::sign($cfg, 'gestisci|' . $token);
     }
 
+    /** Link per approvare un nuovo negozio dall'email dell'amministratore. @param array<string,mixed> $cfg */
+    public static function approveUrl(array $cfg, int $accountId): string
+    {
+        return self::baseUrl($cfg) . '/approva/' . $accountId . '/' . self::sign($cfg, 'approva|' . $accountId);
+    }
+
+    /** Link per reimpostare la password. @param array<string,mixed> $cfg @param array<string,mixed> $acct */
+    public static function passwordReset(array $cfg, array $acct, string $token): bool
+    {
+        $text = "Hai chiesto di reimpostare la password. Il link vale un'ora.\n\nSe non sei stato tu, ignora questo messaggio: la tua password non cambia.";
+        return self::mail($cfg, (string)$acct['email'], 'Reimposta la tua password', $text, 'Scegli una nuova password', self::baseUrl($cfg) . '/reimposta/' . $token, Pages::contactEmail($cfg));
+    }
+
     /** @param array<string,mixed> $cfg */
     public static function icsUrl(array $cfg, string $token): string
     {
@@ -94,7 +107,8 @@ final class Notify
             . 'Tipo: ' . Categories::get((string)$acct['category'])['label'] . "\n"
             . 'Email: ' . $acct['email'] . "\n"
             . 'Indirizzo pagina: ' . self::shopUrl($cfg, $acct);
-        return self::mail($cfg, Pages::contactEmail($cfg), 'Nuova registrazione: ' . $acct['business_name'], $text, 'Apri il pannello e approva', self::baseUrl($cfg) . '/admin', (string)$acct['email']);
+        $text .= "\n\nCon il pulsante approvi subito, senza accedere. Oppure usa il pannello: " . self::baseUrl($cfg) . '/admin';
+        return self::mail($cfg, Pages::contactEmail($cfg), 'Nuova registrazione: ' . $acct['business_name'], $text, 'Approva ora', self::approveUrl($cfg, (int)$acct['id']), (string)$acct['email']);
     }
 
     /** Il cliente ha ricevuto l'approvazione. @param array<string,mixed> $cfg @param array<string,mixed> $acct */

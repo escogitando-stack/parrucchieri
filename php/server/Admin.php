@@ -40,6 +40,8 @@ final class Admin
             $r['category_label'] = Categories::get((string)$r['category'])['label'];
         }
         unset($r);
+        // I negozi da approvare stanno in cima, poi i più recenti.
+        usort($rows, static fn(array $a, array $b): int => ((int)$a['approved'] <=> (int)$b['approved']) ?: ((int)$b['id'] <=> (int)$a['id']));
         return $rows;
     }
 

@@ -141,6 +141,50 @@ if (preg_match('#^/annulla/([a-f0-9]{32})$#', $path, $mm)) {
     exit;
 }
 
+// Password dimenticata: richiesta del link e scelta della nuova password.
+if ($path === '/password-dimenticata') {
+    $notice = null;
+    if ($method === 'POST') {
+        Auth::requestReset($db, $cfg, (string)($_POST['email'] ?? ''));
+        $notice = 'Se l\'indirizzo è registrato, ti abbiamo mandato una email con il link. Controlla anche la cartella spam.';
+    }
+    echo Pages::forgot($cfg, $notice);
+    exit;
+}
+if (preg_match('#^/reimposta/([a-f0-9]{32})$#', $path, $mm)) {
+    $valid = Auth::resetValid($db, $mm[1]);
+    if ($method === 'POST' && $valid) {
+        $res = Auth::resetPassword($db, $mm[1], (string)($_POST['password'] ?? ''));
+        if ($res['ok']) {
+            echo Pages::resetForm($cfg, $mm[1], true, null, true);
+            exit;
+        }
+        http_response_code(400);
+        echo Pages::resetForm($cfg, $mm[1], true, $res['error'] ?? null);
+        exit;
+    }
+    if (!$valid) {
+        http_response_code(404);
+    }
+    echo Pages::resetForm($cfg, $mm[1], $valid);
+    exit;
+}
+
+// L'amministratore approva un nuovo negozio dal link nell'email.
+if (preg_match('#^/approva/(\d+)/([a-f0-9]{32})$#', $path, $mm)) {
+    $target = App\Notify::verify($cfg, 'approva|' . (int)$mm[1], $mm[2]) ? Auth::account($db, (int)$mm[1]) : null;
+    $notice = null;
+    if ($target !== null && $method === 'POST') {
+        $notice = App\Admin::approve($db, $cfg, (int)$target['id']) ? 'Negozio approvato: gli abbiamo scritto una email e parte la prova gratuita.' : 'Questo negozio era già approvato.';
+        $target = Auth::account($db, (int)$target['id']);
+    }
+    if ($target === null) {
+        http_response_code(404);
+    }
+    echo Pages::approveLink($cfg, $target, $mm[2], $notice);
+    exit;
+}
+
 // Il titolare approva o rifiuta una richiesta dal link firmato ricevuto per email.
 if (preg_match('#^/gestisci/([a-f0-9]{32})/([a-f0-9]{32})$#', $path, $mm)) {
     $apt = Booking::byManageLink($db, $cfg, $mm[1], $mm[2]);
@@ -328,6 +372,12 @@ if ($acct === null) {
 }
 $plan = Auth::effectivePlan($cfg, $acct);
 
+// L'amministratore esce dal negozio che stava guardando.
+if ($path === '/admin/torna') {
+    Auth::stopImpersonating($db, $cfg);
+    redirect('/admin');
+}
+
 // Pannello amministratore (solo per le email elencate in config.php → admin_emails).
 if ($path === '/admin') {
     if (!Auth::isAdmin($cfg, $acct)) {
@@ -368,6 +418,11 @@ if ($path === '/admin') {
             } else {
                 $error = 'Questo negozio è già approvato.';
             }
+        } elseif ($action === 'impersonate') {
+            if (Auth::impersonate($db, $cfg, $accountId, $target)) {
+                redirect('/');
+            }
+            $error = 'Non puoi entrare in questo negozio.';
         } elseif ($action === 'extend' && Admin::extend($db, $target, (int)($_POST['days'] ?? 0))) {
             $notice = "Prova prolungata per <b>$name</b>.";
         } elseif ($action === 'assign') {

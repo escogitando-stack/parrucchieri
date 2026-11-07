@@ -15,6 +15,7 @@ import { ServiceList } from "./components/service-list";
 import { ProductList } from "./components/product-list";
 import { Settings } from "./components/settings";
 import { ErrorBanner } from "./components/error-banner";
+import { useAccount } from "@/lib/account";
 
 export function App() {
   const isAgent = useMemo(() => {
@@ -40,6 +41,8 @@ export function App() {
     }
   }, [view, id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const account = useAccount();
+
   const renderMain = () => {
     if (view === "appointments" && id && appState.selectedAppointment) return <AppointmentDetail />;
     if (view === "clients" && id && appState.selectedClient) return <ClientDetail />;
@@ -57,6 +60,12 @@ export function App() {
 
   return (
     <AppContext.Provider value={appState}>
+      {account?.impersonating && (
+        <div className="flex items-center justify-between gap-3 bg-amber-100 px-4 py-2 text-sm text-amber-900">
+          <span>Stai guardando il negozio “{account.business_name}” come amministratore.</span>
+          <a className="font-medium underline" href="/admin/torna">Torna all'amministrazione</a>
+        </div>
+      )}
       <div className="flex h-dvh flex-col overflow-hidden md:flex-row">
         <Sidebar currentView={view} />
         <main className="min-h-0 min-w-0 flex-1 overflow-auto bg-background">

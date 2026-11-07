@@ -226,6 +226,7 @@ final class Api
             'shop_description' => $acct['shop_description'],
             'shop_hours' => $acct['shop_hours'],
             'has_logo' => ($acct['logo_mime'] ?? '') !== '',
+            'impersonating' => Auth::impersonator() !== null,
             'daily_summary' => $this->db->metaGet('nosummary_' . $this->acct) !== '1',
         ];
     }

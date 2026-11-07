@@ -246,4 +246,90 @@ final class Auth
         $db->exec('UPDATE accounts SET password_hash = ? WHERE id = ?', [password_hash($new, PASSWORD_DEFAULT), $accountId]);
         return ['ok' => true];
     }
+
+    /** Id dell'amministratore che sta guardando un negozio come se fosse il titolare (o null). */
+    public static function impersonator(): ?int
+    {
+        $id = $_SESSION['impersonator'] ?? null;
+        return is_int($id) && $id > 0 ? $id : null;
+    }
+
+    /** L'amministratore entra nel negozio indicato; ritorna false se non è consentito. @param array<string,mixed> $cfg */
+    public static function impersonate(Db $db, array $cfg, int $adminId, int $targetId): bool
+    {
+        $admin = self::account($db, $adminId);
+        $target = self::account($db, $targetId);
+        if ($admin === null || $target === null || !self::isAdmin($cfg, $admin) || self::impersonator() !== null || $adminId === $targetId) {
+            return false;
+        }
+        self::start();
+        $_SESSION['impersonator'] = $adminId;
+        $_SESSION['account_id'] = $targetId;
+        return true;
+    }
+
+    /** Torna all'account amministratore. @param array<string,mixed> $cfg */
+    public static function stopImpersonating(Db $db, array $cfg): bool
+    {
+        self::start();
+        $adminId = self::impersonator();
+        $admin = $adminId !== null ? self::account($db, $adminId) : null;
+        if ($admin === null || !self::isAdmin($cfg, $admin)) {
+            return false;
+        }
+        unset($_SESSION['impersonator']);
+        $_SESSION['account_id'] = $adminId;
+        return true;
+    }
+
+    private const RESET_TTL = 3600;
+
+    /**
+     * Password dimenticata: se l'email esiste invia un link valido un'ora (massimo 3 richieste all'ora).
+     * Non rivela mai se l'indirizzo è registrato.
+     *
+     * @param array<string,mixed> $cfg
+     */
+    public static function requestReset(Db $db, array $cfg, string $email, ?int $now = null): void
+    {
+        $now ??= time();
+        $acct = $db->row('SELECT * FROM accounts WHERE email = ?', [strtolower(trim($email))]);
+        if ($acct === null || !empty($acct['suspended'])) {
+            return;
+        }
+        $recent = (int)$db->row('SELECT COUNT(*) AS c FROM password_resets WHERE account_id = ? AND created_at >= ?', [(int)$acct['id'], date('Y-m-d H:i:s', $now - 3600)])['c'];
+        if ($recent >= 3) {
+            return;
+        }
+        $token = bin2hex(random_bytes(16));
+        $db->exec('DELETE FROM password_resets WHERE expires_at < ?', [date('Y-m-d H:i:s', $now)]);
+        $db->exec(
+            'INSERT INTO password_resets (account_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?)',
+            [(int)$acct['id'], hash('sha256', $token), date('Y-m-d H:i:s', $now + self::RESET_TTL), date('Y-m-d H:i:s', $now)]
+        );
+        Notify::passwordReset($cfg, $acct, $token);
+    }
+
+    /** Il codice del link è valido e non scaduto? */
+    public static function resetValid(Db $db, string $token, ?int $now = null): bool
+    {
+        return preg_match('/^[a-f0-9]{32}$/', $token) === 1
+            && $db->row('SELECT id FROM password_resets WHERE token_hash = ? AND expires_at >= ?', [hash('sha256', $token), date('Y-m-d H:i:s', $now ?? time())]) !== null;
+    }
+
+    /** @return array{ok:bool,error?:string} */
+    public static function resetPassword(Db $db, string $token, string $new, ?int $now = null): array
+    {
+        $now ??= time();
+        if (!self::resetValid($db, $token, $now)) {
+            return ['ok' => false, 'error' => 'Il link non è valido o è scaduto: richiedine uno nuovo.'];
+        }
+        if (strlen($new) < self::MIN_PASSWORD) {
+            return ['ok' => false, 'error' => 'La nuova password deve avere almeno ' . self::MIN_PASSWORD . ' caratteri.'];
+        }
+        $row = $db->row('SELECT account_id FROM password_resets WHERE token_hash = ?', [hash('sha256', $token)]);
+        $db->exec('UPDATE accounts SET password_hash = ? WHERE id = ?', [password_hash($new, PASSWORD_DEFAULT), (int)$row['account_id']]);
+        $db->exec('DELETE FROM password_resets WHERE account_id = ?', [(int)$row['account_id']]);
+        return ['ok' => true];
+    }
 }

@@ -191,3 +191,10 @@ Cosa invia, una volta sola per evento:
 - **Ferie e chiusure** (Impostazioni): uno o più giorni in cui la pagina non offre orari. Gli appuntamenti già presi restano, con un avviso. Vale per i collaboratori attivi al momento della chiusura.
 - **Esporta CSV**: pulsante in *Appuntamenti*; il file si apre con Excel o Fogli Google (da 90 giorni fa a un anno avanti).
 - **Riepilogo serale**: si può disattivare dalle Impostazioni.
+
+## Strumenti per l'amministratore e recupero password (gruppo 5)
+
+- **Approva dall'email**: la mail a `info@` per ogni nuova registrazione ha il pulsante "Approva ora" (link firmato, usa `secret` di `config.php`): si apre una pagina con un solo pulsante, senza accedere.
+- **Da approvare in cima**: nel pannello `/admin` i negozi in attesa stanno sempre per primi.
+- **Entra come questo negozio** (menu *Azioni*): vedi l'app come la vede il titolare, utile per assistenza. In alto compare una barra gialla con "Torna all'amministrazione". Mentre sei dentro, /admin è chiuso fino al ritorno.
+- **Password dimenticata**: dal link nella pagina di accesso. Il cliente riceve una email con un link valido 1 ora e usabile una sola volta (massimo 3 richieste all'ora per account; non si rivela se l'indirizzo esiste). Il pulsante "Nuova password" dell'admin resta disponibile.
