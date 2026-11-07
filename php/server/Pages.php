@@ -364,7 +364,7 @@ SVG;
         $body = <<<HTML
 <section class="hero">
   <h1>L'agenda degli appuntamenti per il tuo negozio</h1>
-  <p>Prenotazioni, clienti, collaboratori e incassi in un unico posto. Funziona da telefono, tablet e computer. Provalo gratis per $days giorni.</p>
+  <p>Una pagina di prenotazione tutta tua, conferme e promemoria automatici, clienti e incassi in un unico posto. Funziona da telefono, tablet e computer. Provalo gratis per $days giorni.</p>
   <a class="btn" href="/registrati">Inizia la prova gratuita</a>
   <p style="font-size:14px;margin:12px auto 0;color:#78716c">Nessuna carta di credito richiesta.</p>
   <div class="shot">$hero</div>
@@ -378,12 +378,22 @@ SVG;
     <div class="card"><div class="ico">{$i_grid}</div><h3>Tutto in un posto</h3><p>Agenda, clienti, collaboratori, servizi, prodotti e incassi: niente più quaderni, fogli e chat da incrociare.</p></div>
     <div class="card"><div class="ico">{$i_shield}</div><h3>Niente sovrapposizioni</h3><p>Se due appuntamenti si accavallano per lo stesso collaboratore, l'app ti avvisa prima di confermare.</p></div>
     <div class="card"><div class="ico">{$i_sparkles}</div><h3>Pronta per il tuo mestiere</h3><p>Scegli il tipo di attività e trovi servizi e nomi già adatti (per esempio interventi e ricambi per un'officina). Poi li modifichi come vuoi.</p></div>
-    <div class="card"><div class="ico">{$i_phone}</div><h3>Sempre con te</h3><p>Dal browser di telefono, tablet o computer, senza installare niente. Controlli la giornata anche fuori dal negozio.</p></div>
-    <div class="card"><div class="ico">{$i_users}</div><h3>Storico dei clienti</h3><p>Ogni cliente ha la sua scheda con gli appuntamenti passati e le note, per ricordare gusti, lavori e dettagli.</p></div>
-    <div class="card"><div class="ico">{$i_chart}</div><h3>Sotto controllo</h3><p>Vedi quanti appuntamenti hai oggi e in arrivo, l'incasso dei servizi completati e i prodotti in esaurimento.</p></div>
-    <div class="card"><div class="ico">{$i_chat}</div><h3>Semplice e in italiano</h3><p>Importi in euro, date e orari all'italiana, comandi chiari: si impara in pochi minuti.</p></div>
-    <div class="card"><div class="ico">{$i_calendar}</div><h3>Prenotazioni online</h3><p>Ogni negozio ha la sua pagina con logo, contatti e orari: i clienti prenotano da soli negli orari liberi e tu approvi con un tocco.</p></div>
+    <div class="card"><div class="ico">{$i_phone}</div><h3>Promemoria che non dimentichi</h3><p>Il giorno prima il cliente riceve un promemoria, la sera tu ricevi il riepilogo di domani: meno buchi e meno clienti che non si presentano.</p></div>
+    <div class="card"><div class="ico">{$i_users}</div><h3>Rispondi con un tocco</h3><p>Ogni richiesta ti arriva per email con il pulsante Approva o Rifiuta, senza nemmeno accedere. Per i servizi che vuoi, la conferma è immediata.</p></div>
+    <div class="card"><div class="ico">{$i_chart}</div><h3>Ferie e chiusure</h3><p>Chiudi i giorni di ferie in un attimo: in quel periodo la tua pagina non offre orari. Esporti gli appuntamenti in Excel quando vuoi.</p></div>
+    <div class="card"><div class="ico">{$i_chat}</div><h3>Semplice e in italiano</h3><p>Importi in euro, date e orari all'italiana, comandi chiari, da telefono, tablet o computer: si impara in pochi minuti.</p></div>
+    <div class="card"><div class="ico">{$i_calendar}</div><h3>La tua pagina di prenotazione</h3><p>Un indirizzo tutto tuo con logo, contatti e orari, più il codice QR da stampare: i clienti prenotano da soli negli orari liberi, anche di notte.</p></div>
     <div class="card"><div class="ico">{$i_euro}</div><h3>Prezzo senza sorprese</h3><p>Un solo prezzo con tutte le funzioni, senza limiti di clienti o appuntamenti. Prima provi gratis, poi scegli.</p></div>
+  </div>
+</section>
+
+<section class="blk" id="clienti">
+  <h2>Comodo anche per i tuoi clienti</h2>
+  <p class="sub">Prenotare deve richiedere pochi secondi.</p>
+  <div class="steps">
+    <div class="card"><h3>Primo orario libero</h3><p>Scelti i servizi, la pagina propone subito il primo giorno e orario disponibile. Basta un tocco.</p></div>
+    <div class="card"><h3>Telefono o email</h3><p>Niente registrazioni: bastano il nome e un recapito. Conferma, calendario e link per annullare arrivano per email.</p></div>
+    <div class="card"><h3>Sposta o annulla da solo</h3><p>Se cambia qualcosa, il cliente sposta o annulla la prenotazione dal link ricevuto, senza telefonare.</p></div>
   </div>
 </section>
 
@@ -392,7 +402,7 @@ SVG;
   <div class="steps">
     <div class="card"><h3>Ti registri</h3><p>Nome dell'attività, tipo di attività, email e password. Ci vuole un minuto e non serve la carta. Dopo l'approvazione parte la prova.</p></div>
     <div class="card"><h3>Trovi già i servizi</h3><p>L'agenda parte con servizi e collaboratore pronti. Cambi prezzi, durate e nomi, aggiungi i tuoi clienti.</p></div>
-    <div class="card"><h3>Gestisci gli appuntamenti</h3><p>Prenoti, sposti, completi e annulli dall'agenda, e approvi le richieste dei clienti dalla tua pagina. Dopo la prova scegli se continuare.</p></div>
+    <div class="card"><h3>Condividi il link</h3><p>Metti il link o il QR su WhatsApp, Instagram e in negozio. Le prenotazioni arrivano da sole; tu gestisci tutto dall'agenda. Dopo la prova scegli se continuare.</p></div>
   </div>
 </section>
 
@@ -405,7 +415,7 @@ $costs
 
 <div class="cta"><a class="btn" href="/registrati">Crea il tuo account gratis</a><p class="note">$days giorni di prova, nessuna carta di credito.</p></div>
 HTML;
-        $nav = '<a href="#vantaggi">Vantaggi</a><a href="#costi">Costi</a><a href="#faq">Domande</a><a href="/contatti">Contatti</a><a href="/login">Accedi</a><a class="btn" style="color:#fff;padding:8px 16px;margin-left:16px" href="/registrati">Prova gratis</a>';
+        $nav = '<a href="#vantaggi">Vantaggi</a><a href="#clienti">Per i clienti</a><a href="#costi">Costi</a><a href="#faq">Domande</a><a href="/contatti">Contatti</a><a href="/login">Accedi</a><a class="btn" style="color:#fff;padding:8px 16px;margin-left:16px" href="/registrati">Prova gratis</a>';
         return self::layout($cfg, $name . ' · Agenda appuntamenti per il tuo negozio', $body, false, false, $nav, $head);
     }
 
