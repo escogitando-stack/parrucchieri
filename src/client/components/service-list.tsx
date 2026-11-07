@@ -94,7 +94,7 @@ export function ServiceList() {
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="Modifica" aria-label="Modifica" onClick={() => setEditing(svc)}>
                       <Pencil className="h-3.5 w-3.5" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => deleteService(svc.id)}>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => { if (window.confirm(`Eliminare "${svc.name}"?\n\nSparirà dalle prenotazioni che lo includono. Se vuoi solo nasconderlo, disattivalo.`)) deleteService(svc.id); }}>
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </TableCell>
