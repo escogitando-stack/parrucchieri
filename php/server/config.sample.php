@@ -26,7 +26,6 @@ return [
     // Devono essere email di account già registrati. Gli amministratori non pagano l'abbonamento.
     'admin_emails' => [],   // es. ['tuaemail@esempio.it']
 
-    // false = chiude le nuove registrazioni (chi ha già un account entra normalmente).
     // Accesso amministratore diretto: con questa email e password entri da /admin.
     // L'account viene creato al primo accesso. Il file config.php non è raggiungibile dal web.
     'admin_email' => '',
@@ -41,6 +40,7 @@ return [
         'from' => 'no-reply@appuntamenti4me.it',  // deve essere un indirizzo del tuo dominio
     ],
 
+    // false = chiude le nuove registrazioni (chi ha già un account entra normalmente).
     'allow_registration' => true,
 
     // Email di contatto mostrata nel sito e nella pagina /contatti.
