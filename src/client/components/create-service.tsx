@@ -1,6 +1,7 @@
 import { useState } from "preact/hooks";
 import { useTerms } from "@/lib/account";
 import { useApp } from "../context";
+import type { Service } from "../types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,22 +10,24 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#ef4444", "#14b8a6", "#6b7280"];
 
-export function CreateService({ onClose }: { onClose: () => void }) {
+export function CreateService({ onClose, service }: { onClose: () => void; service?: Service }) {
   const t = useTerms();
-  const { addService, setError } = useApp();
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [duration, setDuration] = useState("60");
-  const [price, setPrice] = useState("0");
-  const [category, setCategory] = useState("");
-  const [color, setColor] = useState(COLORS[0]);
+  const { addService, updateService, setError } = useApp();
+  const [name, setName] = useState(service?.name ?? "");
+  const [description, setDescription] = useState(service?.description ?? "");
+  const [duration, setDuration] = useState(String(service?.duration ?? 60));
+  const [price, setPrice] = useState(String(service?.price ?? 0));
+  const [category, setCategory] = useState(service?.category ?? "");
+  const [color, setColor] = useState(service?.color || COLORS[0]);
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async () => {
     if (!name.trim()) { setError("Il nome è obbligatorio"); return; }
     setSaving(true);
     try {
-      await addService({ name: name.trim(), description, duration: parseInt(duration) || 60, price: parseFloat(price) || 0, category, color });
+      const data = { name: name.trim(), description, duration: parseInt(duration) || 60, price: parseFloat(price) || 0, category, color };
+      if (service) await updateService(service.id, data);
+      else await addService(data);
       onClose();
     } catch (err) {
       setError((err as Error).message);
@@ -37,7 +40,7 @@ export function CreateService({ onClose }: { onClose: () => void }) {
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Aggiungi {t.service}</DialogTitle>
+          <DialogTitle>{service ? `Modifica ${t.service}` : `Aggiungi ${t.service}`}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
@@ -78,7 +81,7 @@ export function CreateService({ onClose }: { onClose: () => void }) {
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Annulla</Button>
-          <Button disabled={saving} onClick={handleSubmit}>{saving ? "Salvataggio..." : `Aggiungi ${t.service}`}</Button>
+          <Button disabled={saving} onClick={handleSubmit}>{saving ? "Salvataggio..." : service ? "Salva modifiche" : `Aggiungi ${t.service}`}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
