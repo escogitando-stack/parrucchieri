@@ -71,8 +71,10 @@ if ($path === '/login') {
     }
     if ($method === 'POST') {
         $email = (string)($_POST['email'] ?? '');
-        if (Auth::login($db, $email, (string)($_POST['password'] ?? ''))['ok']) {
-            redirect('/');
+        if (Auth::login($db, $email, (string)($_POST['password'] ?? ''), $cfg)['ok']) {
+            $next = (string)($_SESSION['after_login'] ?? '');
+            unset($_SESSION['after_login']);
+            redirect($next === '/admin' ? '/admin' : '/');
         }
         http_response_code(401);
         echo Pages::login($cfg, 'Email o password non corrette.', $email);
@@ -122,6 +124,10 @@ if ($path === '/registrati' || $path === '/register') {
 }
 
 if ($accountId === null) {
+    if ($path === '/admin') {
+        $_SESSION['after_login'] = '/admin';
+        redirect('/login');
+    }
     if ($path === '/') {
         echo Pages::landing($cfg);
         exit;

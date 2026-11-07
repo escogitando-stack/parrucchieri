@@ -103,7 +103,8 @@ final class Auth
     /** @param array<string,mixed> $cfg @param array<string,mixed> $acct */
     public static function isAdmin(array $cfg, array $acct): bool
     {
-        $admins = array_map(static fn($e) => strtolower(trim((string)$e)), (array)($cfg['admin_emails'] ?? []));
+        $admins = array_map(static fn($e) => strtolower(trim((string)$e)), array_merge((array)($cfg['admin_emails'] ?? []), [(string)($cfg['admin_email'] ?? '')]));
+        $admins = array_filter($admins, static fn($e) => $e !== '');
         return in_array(strtolower((string)($acct['email'] ?? '')), $admins, true);
     }
 
@@ -160,9 +161,39 @@ final class Auth
         return ['ok' => true, 'id' => $id];
     }
 
-    /** @return array{ok:bool,id?:int} */
-    public static function login(Db $db, string $email, string $password): array
+    /**
+     * Amministratore definito in config.php (admin_email + admin_password o admin_password_hash):
+     * al primo accesso corretto l'account viene creato, poi la password del config resta valida.
+     */
+    private static function configAdminMatches(array $cfg, string $email, string $password): bool
     {
+        $adminEmail = strtolower(trim((string)($cfg['admin_email'] ?? '')));
+        if ($adminEmail === '' || strtolower(trim($email)) !== $adminEmail) {
+            return false;
+        }
+        $plain = (string)($cfg['admin_password'] ?? '');
+        $hash = (string)($cfg['admin_password_hash'] ?? '');
+        if ($plain !== '' && hash_equals($plain, $password)) {
+            return true;
+        }
+        return $hash !== '' && password_verify($password, $hash);
+    }
+
+    /** @return array{ok:bool,id?:int} */
+    public static function login(Db $db, string $email, string $password, array $cfg = []): array
+    {
+        if (self::configAdminMatches($cfg, $email, $password)) {
+            $e = strtolower(trim($email));
+            $acct = $db->row('SELECT id, password_hash FROM accounts WHERE email = ?', [$e]);
+            if ($acct === null) {
+                $r = self::register($db, ['allow_registration' => true, 'trial_days' => 30], 'Amministrazione', 'altro', $e, $password);
+                return $r['ok'] ? ['ok' => true, 'id' => (int)$r['id']] : ['ok' => false];
+            }
+            // La password del config è quella valida: tiene allineato l'account.
+            if (!password_verify($password, (string)$acct['password_hash'])) {
+                $db->exec('UPDATE accounts SET password_hash = ? WHERE id = ?', [password_hash($password, PASSWORD_DEFAULT), (int)$acct['id']]);
+            }
+        }
         $acct = $db->row('SELECT id, password_hash FROM accounts WHERE email = ?', [strtolower(trim($email))]);
         // Si verifica sempre un hash, anche se l'email non esiste, per non far capire chi è registrato.
         $hash = $acct['password_hash'] ?? '$2y$10$QtfLZrm/LZSWtIGfsvpmceT9nDJ6.nhWgsNBqAkSqQfD2TSDeMx9W';

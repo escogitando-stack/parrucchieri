@@ -494,6 +494,17 @@ check('secondo negozio parte pulito con i suoi servizi', $second['ok']
 Auth::logout();
 
 
+// ── Amministratore definito nel config ──
+fwrite(STDOUT, "Amministratore da config\n");
+$dbA = newDb();
+$cfgA = ['admin_email' => 'Info@Esempio.it', 'admin_password' => 'Segreta123!'];
+check('admin config: password sbagliata rifiutata', !Auth::login($dbA, 'info@esempio.it', 'altra', $cfgA)['ok']);
+$rA = Auth::login($dbA, 'info@esempio.it', 'Segreta123!', $cfgA);
+check('admin config: primo accesso crea l\'account', $rA['ok'] && $dbA->row('SELECT id FROM accounts WHERE email = ?', ['info@esempio.it']) !== null);
+check('admin config: è amministratore', Auth::isAdmin($cfgA, ['email' => 'info@esempio.it']));
+check('admin config: secondo accesso riusa l\'account', Auth::login($dbA, 'INFO@esempio.it', 'Segreta123!', $cfgA)['ok'] && (int)$dbA->row('SELECT COUNT(*) AS n FROM accounts')['n'] === 1);
+check('admin config: senza config nessun accesso speciale', !Auth::login(newDb(), 'info@esempio.it', 'Segreta123!', [])['ok']);
+
 // ── Pannello amministratore ──────────────────────────────────────────
 fwrite(STDOUT, "Pannello amministratore\n");
 $db = newDb();

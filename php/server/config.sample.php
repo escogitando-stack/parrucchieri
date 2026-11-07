@@ -27,6 +27,11 @@ return [
     'admin_emails' => [],   // es. ['tuaemail@esempio.it']
 
     // false = chiude le nuove registrazioni (chi ha già un account entra normalmente).
+    // Accesso amministratore diretto: con questa email e password entri da /admin.
+    // L'account viene creato al primo accesso. Il file config.php non è raggiungibile dal web.
+    'admin_email' => '',
+    'admin_password' => '',
+
     'allow_registration' => true,
 
     // Email di contatto mostrata nel sito e nella pagina /contatti.
