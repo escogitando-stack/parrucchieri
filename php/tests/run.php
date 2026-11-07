@@ -214,6 +214,16 @@ check('stato non valido → 400', $s === 400);
 [$s] = call($api, 'PUT', "/api/appointments/$aptC", [], ['status' => 'cancelled']);
 [$s, $d] = call($api, 'PUT', "/api/appointments/$aptC", [], ['status' => 'confirmed']);
 check('ripristinare un annullato in conflitto → 409', $s === 409);
+// Il titolare cambia i servizi di una prenotazione
+$aptS = call($api, 'POST', '/api/appointments', [], ['client_id' => $cid, 'scheduled_date' => date('Y-m-d', strtotime('+40 days')), 'start_time' => '14:00', 'service_ids' => [$taglio['id']], 'allow_conflict' => true])[1]['appointment']['id'];
+[$s] = call($api, 'PUT', "/api/appointments/$aptS", [], ['service_ids' => [$taglio['id'], $colore['id']], 'allow_conflict' => true]);
+$aS = call($api, 'GET', "/api/appointments/$aptS")[1]['appointment'];
+$expDur = (int)$taglio['duration'] + (int)$colore['duration'];
+check('cambio servizi (titolare): righe, fine e totale', $s === 200 && count($aS['appointment_services']) === 2 && \App\toMinutes($aS['end_time']) - \App\toMinutes($aS['start_time']) === $expDur && abs((float)$aS['total_price'] - ((float)$taglio['price'] + (float)$colore['price'])) < 0.001);
+[$s] = call($api, 'PUT', "/api/appointments/$aptS", [], ['service_ids' => []]);
+check('cambio servizi: vuoto → 400', $s === 400);
+[$s] = call($api, 'PUT', "/api/appointments/$aptS", [], ['service_ids' => [999999]]);
+check('cambio servizi: sconosciuto → 400', $s === 400 && count(call($api, 'GET', "/api/appointments/$aptS")[1]['appointment']['appointment_services']) === 2);
 [$s] = call($api, 'PUT', '/api/appointments/9999', [], ['status' => 'confirmed']);
 check('aggiornare inesistente → 404', $s === 404);
 

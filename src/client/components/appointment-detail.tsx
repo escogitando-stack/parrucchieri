@@ -16,8 +16,10 @@ export function AppointmentDetail() {
   const t = useTerms();
   const {
     selectedAppointment: apt, navigate, updateAppointment, deleteAppointment,
-    addAppointmentNote, deleteAppointmentNote, staffLookup, setError, decideAppointment,
+    addAppointmentNote, deleteAppointmentNote, staffLookup, setError, decideAppointment, services,
   } = useApp();
+  const [editingSvc, setEditingSvc] = useState(false);
+  const [svcSel, setSvcSel] = useState<number[]>([]);
   const [noteText, setNoteText] = useState("");
   const [rescheduling, setRescheduling] = useState(false);
   const [deciding, setDeciding] = useState(false);
@@ -54,6 +56,26 @@ export function AppointmentDetail() {
       if (!clashes) setError((err as Error).message);
     } finally {
       setDeciding(false);
+    }
+  };
+
+  const startEditSvc = () => {
+    setSvcSel((apt.appointment_services ?? []).map((x) => x.service_id));
+    setEditingSvc(true);
+  };
+  const toggleSvc = (id: number) => setSvcSel((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+  const saveSvc = async (allow = false) => {
+    if (svcSel.length === 0) { setError(`Scegli almeno un ${t.service}`); return; }
+    try {
+      await updateAppointment(apt.id, { service_ids: svcSel, ...(allow ? { allow_conflict: true } : {}) } as Partial<typeof apt> & { allow_conflict?: boolean });
+      setEditingSvc(false);
+    } catch (err) {
+      const clashes = conflictsFrom(err);
+      if (clashes && !allow && window.confirm(`${conflictSentence(apt.staff_name ?? "", clashes)}\n\nSalvare comunque?`)) {
+        await saveSvc(true);
+        return;
+      }
+      if (!clashes) setError((err as Error).message);
     }
   };
 
@@ -173,11 +195,29 @@ export function AppointmentDetail() {
 
         <div className="space-y-6">
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Services</CardTitle>
+            <CardHeader className="flex-row items-center justify-between pb-3">
+              <CardTitle className="text-base">Servizi</CardTitle>
+              {!editingSvc && <Button variant="outline" size="sm" className="px-2" onClick={startEditSvc}>Modifica</Button>}
             </CardHeader>
             <CardContent>
-              {(!apt.appointment_services || apt.appointment_services.length === 0) ? (
+              {editingSvc ? (
+                <div className="space-y-2">
+                  {services.filter((sv) => sv.active !== 0 || svcSel.includes(sv.id)).map((sv) => (
+                    <label key={sv.id} className="flex items-center justify-between gap-2 text-sm">
+                      <span className="flex items-center gap-2">
+                        <input type="checkbox" checked={svcSel.includes(sv.id)} onChange={() => toggleSvc(sv.id)} />
+                        {sv.name}
+                      </span>
+                      <span className="text-xs text-muted-foreground">{sv.duration}min · {formatEuro(sv.price)}</span>
+                    </label>
+                  ))}
+                  <p className="text-xs text-muted-foreground">Durata e totale si aggiornano da soli.</p>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => saveSvc()}>Salva</Button>
+                    <Button size="sm" variant="outline" onClick={() => setEditingSvc(false)}>Annulla</Button>
+                  </div>
+                </div>
+              ) : (!apt.appointment_services || apt.appointment_services.length === 0) ? (
                 <p className="text-sm text-muted-foreground">Nessun {t.service} aggiunto</p>
               ) : (
                 <div className="space-y-2">

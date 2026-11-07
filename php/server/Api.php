@@ -706,6 +706,26 @@ final class Api
         }
         $allow = ($b['allow_conflict'] ?? false) === true;
 
+        // Cambio dei servizi: ricalcola durata e totale.
+        $newServices = null;
+        if (array_key_exists('service_ids', $b)) {
+            $ids = [];
+            foreach ((is_array($b['service_ids']) ? $b['service_ids'] : []) as $sid) {
+                if (!is_int($sid)) {
+                    throw new HttpError(400, 'service_ids deve contenere numeri interi');
+                }
+                $ids[$sid] = $sid;
+            }
+            $ids = array_values($ids);
+            if ($ids === [] || count($ids) > 20) {
+                throw new HttpError(400, 'Scegli almeno un servizio');
+            }
+            $newServices = $this->db->all('SELECT id, duration, price FROM services WHERE account_id = ? AND id IN (' . implode(',', array_fill(0, count($ids), '?')) . ')', array_merge([$this->acct], $ids));
+            if (count($newServices) !== count($ids)) {
+                throw new HttpError(400, 'Servizio non trovato');
+            }
+        }
+
         $patch = [
             'client_id' => $this->optInt($b, 'client_id'),
             'status' => $this->optString($b, 'status'),
@@ -733,8 +753,26 @@ final class Api
         $startTime = $patch['start_time'] ?? $existing['start_time'];
         $endTime = $patch['end_time'] ?? $existing['end_time'];
 
+        if ($newServices !== null) {
+            $sum = array_sum(array_map(static fn($r): int => (int)$r['duration'], $newServices));
+            if ($sum <= 0) {
+                throw new HttpError(400, "L'appuntamento deve avere una durata positiva");
+            }
+            if ($patch['total_price'] === null) {
+                $patch['total_price'] = array_sum(array_map(static fn($r): float => (float)$r['price'], $newServices));
+            }
+            if ($patch['end_time'] === null) {
+                $st = toMinutes($startTime);
+                if ($st === null || $st + $sum >= 24 * 60) {
+                    throw new HttpError(400, "L'appuntamento deve iniziare e finire nello stesso giorno");
+                }
+                $endTime = addMinutes($startTime, $sum);
+                $patch['end_time'] = $endTime;
+            }
+        }
+
         // Spostare un appuntamento ne mantiene la durata.
-        if ($patch['start_time'] !== null && $patch['start_time'] !== $existing['start_time'] && $patch['end_time'] === null) {
+        if ($newServices === null && $patch['start_time'] !== null && $patch['start_time'] !== $existing['start_time'] && $patch['end_time'] === null) {
             $was = toMinutes($existing['start_time']);
             $wasEnd = toMinutes($existing['end_time']);
             $duration = ($was !== null && $wasEnd !== null) ? max($wasEnd - $was, 0) : 0;
@@ -776,6 +814,12 @@ final class Api
         $params[] = $id;
         $params[] = $this->acct;
         $this->db->exec('UPDATE appointments SET ' . implode(', ', $sets) . ' WHERE id = ? AND account_id = ?', $params);
+        if ($newServices !== null) {
+            $this->db->exec('DELETE FROM appointment_services WHERE appointment_id = ?', [$id]);
+            foreach ($newServices as $sv) {
+                $this->db->exec('INSERT INTO appointment_services (appointment_id, service_id, price, duration) VALUES (?, ?, ?, ?)', [$id, (int)$sv['id'], $sv['price'], $sv['duration']]);
+            }
+        }
         return [200, ['ok' => true]];
     }
 
