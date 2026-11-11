@@ -14,10 +14,11 @@ namespace App;
  *   5 = approvazione dei nuovi negozi e profilo pubblico
  *   6 = piani di abbonamento gestiti dall'amministratore
  *   7 = conferma automatica, promemoria, email automatiche e recupero password
+ *   8 = categorie merceologiche gestite dall'amministratore (tabella categories)
  */
 final class Schema
 {
-    public const VERSION = 7;
+    public const VERSION = 8;
 
     /** Tabelle i cui dati appartengono a un negozio. */
     private const OWNED = ['clients', 'staff', 'services', 'appointments', 'blocked_slots', 'products', 'working_hours'];
@@ -46,6 +47,9 @@ final class Schema
         }
         if ($version < 7) {
             self::migrateTo7($db);
+        }
+        if ($version < 8) {
+            self::migrateTo8($db);
         }
     }
 
@@ -216,6 +220,7 @@ final class Schema
             )$tail",
             self::plansSql($db),
             self::resetsSql($db),
+            self::categoriesSql($db),
             "CREATE TABLE _meta (
                 meta_key VARCHAR(64) NOT NULL PRIMARY KEY,
                 meta_value VARCHAR(255) NOT NULL
@@ -241,6 +246,7 @@ final class Schema
         foreach ($statements as $sql) {
             $db->exec($sql);
         }
+        Categories::seed($db);
         $db->metaSet('schema_version', (string)self::VERSION);
     }
 
@@ -419,6 +425,32 @@ final class Schema
             $db->exec(self::resetsSql($db));
             $db->exec('CREATE INDEX idx_password_resets_hash ON password_resets(token_hash)');
         }
+        $db->metaSet('schema_version', (string)self::VERSION);
+    }
+
+    private static function categoriesSql(Db $db): string
+    {
+        [$pk, $int, , $tail] = self::types($db);
+        return "CREATE TABLE categories (
+                id $pk,
+                cat_key VARCHAR(32) NOT NULL UNIQUE,
+                label VARCHAR(80) NOT NULL,
+                staff_title VARCHAR(80) NOT NULL DEFAULT '',
+                staff_hint VARCHAR(120) NOT NULL DEFAULT '',
+                terms TEXT NOT NULL,
+                services MEDIUMTEXT NOT NULL,
+                active $int NOT NULL DEFAULT 1,
+                sort_order $int NOT NULL DEFAULT 0
+            )$tail";
+    }
+
+    /** Categorie merceologiche nel database, partendo da quelle predefinite. */
+    private static function migrateTo8(Db $db): void
+    {
+        if (!$db->tableExists('categories')) {
+            $db->exec(self::categoriesSql($db));
+        }
+        Categories::seed($db);
         $db->metaSet('schema_version', (string)self::VERSION);
     }
 

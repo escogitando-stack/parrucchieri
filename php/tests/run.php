@@ -486,10 +486,10 @@ foreach ([
     $old->exec($sql);
 }
 Schema::ensure($old);
-check('migrazione: versione e tabella account', $old->metaGet('schema_version') === '7' && $old->tableExists('accounts') && $old->columnExists('clients', 'account_id'));
+check('migrazione: versione e tabella account', $old->metaGet('schema_version') === '8' && $old->tableExists('accounts') && $old->tableExists('categories') && $old->columnExists('clients', 'account_id'));
 check('migrazione: dati esistenti senza proprietario', Schema::hasUnownedData($old));
 Schema::ensure($old);
-check('migrazione ripetibile', $old->metaGet('schema_version') === '7');
+check('migrazione ripetibile', $old->metaGet('schema_version') === '8');
 $first = Auth::register($old, ['trial_days' => 30], 'Salone Giulia', 'parrucchiere', 'giulia@example.com', 'password123');
 check('primo negozio eredita i dati', $first['ok'] && !Schema::hasUnownedData($old)
     && $old->row('SELECT COUNT(*) AS c FROM clients WHERE account_id = ?', [$first['id']])['c'] === 1
@@ -932,6 +932,69 @@ check('pagina admin: elenco, azioni, token', str_contains($page, 's1@example.com
 check('pagina admin: nessuna eliminazione del proprio account', substr_count($page, 'value="delete"') === count($rows) - 1);
 check('pagina admin escapa i filtri', !str_contains($page, '"><script>'));
 Auth::logout();
+
+// ── Demo per un cliente (duplica account) ────────────────────────────
+fwrite(STDOUT, "Duplica account per demo\n");
+$db = newDb();
+$srcId = addAccount($db, 'esempio@example.com', 'parrucchiere');
+$api = new Api($db, $srcId);
+[, $cl] = call($api, 'POST', '/api/clients', [], ['name' => 'Anna Verdi', 'phone' => '333']);
+[, $svc] = call($api, 'GET', '/api/services');
+[, $st] = call($api, 'GET', '/api/staff/all');
+[$s, $apt] = call($api, 'POST', '/api/appointments', [], ['client_id' => $cl['client']['id'] ?? $cl['id'] ?? 0, 'staff_id' => $st['staff'][0]['id'], 'scheduled_date' => date('Y-m-d', strtotime('+3 days')), 'start_time' => '10:00', 'service_ids' => [$svc['services'][0]['id'], $svc['services'][1]['id']]]);
+check('demo: appuntamento di esempio creato', $s === 201 || $s === 200, (string)$s);
+$res = Admin::duplicate($db, ['trial_days' => 30, 'base_url' => 'https://www.appuntamenti4me.it'], $srcId, ['business_name' => 'Parrucchiera Giulia', 'shop_phone' => '0565 123456', 'shop_address' => 'Via Roma 1, Piombino', 'copy_data' => '1']);
+check('demo: creata con password', $res['ok'] && strlen($res['password'] ?? '') === 12);
+check('demo: email automatica', ($res['email'] ?? '') === 'demo-parrucchiera-giulia@appuntamenti4me.it', (string)($res['email'] ?? ''));
+$new = Auth::account($db, (int)$res['id']);
+check('demo: dati del nuovo cliente', $new['business_name'] === 'Parrucchiera Giulia' && $new['shop_phone'] === '0565 123456' && $new['slug'] === 'parrucchiera-giulia' && (int)$new['approved'] === 1 && $new['plan_status'] === 'trial');
+check('demo: password funzionante', password_verify($res['password'], (string)$new['password_hash']));
+$napi = new Api($db, (int)$res['id']);
+[, $ns] = call($napi, 'GET', '/api/services');
+[, $nst] = call($napi, 'GET', '/api/staff/all');
+check('demo: servizi e collaboratori copiati', count($ns['services']) === count($svc['services']) && count($nst['staff']) === 1 && $nst['staff'][0]['id'] !== $st['staff'][0]['id']);
+check('demo: orari copiati', count($db->all('SELECT id FROM working_hours WHERE account_id = ?', [(int)$res['id']])) === count($db->all('SELECT id FROM working_hours WHERE account_id = ?', [$srcId])));
+$na = $db->all('SELECT * FROM appointments WHERE account_id = ?', [(int)$res['id']]);
+check('demo: appuntamento copiato sui nuovi id', count($na) === 1 && (int)$na[0]['staff_id'] === (int)$nst['staff'][0]['id'] && $db->row('SELECT id FROM clients WHERE id = ? AND account_id = ?', [(int)$na[0]['client_id'], (int)$res['id']]) !== null);
+$nas = $db->all('SELECT service_id FROM appointment_services WHERE appointment_id = ?', [(int)$na[0]['id']]);
+check('demo: servizi dell\'appuntamento rimappati', count($nas) === 2 && $db->row('SELECT id FROM services WHERE id = ? AND account_id = ?', [(int)$nas[0]['service_id'], (int)$res['id']]) !== null);
+check('demo: originale intatto', count($db->all('SELECT id FROM appointments WHERE account_id = ?', [$srcId])) === 1);
+check('demo: niente email automatiche, marcata demo', $db->metaGet('nosummary_' . $res['id']) === '1' && Admin::isDemo($db, (int)$res['id']));
+$res2 = Admin::duplicate($db, [], $srcId, ['business_name' => 'Barbiere Marco', 'email' => 'marco@example.com', 'category' => 'barbiere']);
+check('demo senza clienti', $res2['ok'] && count($db->all('SELECT id FROM clients WHERE account_id = ?', [(int)$res2['id']])) === 0 && Auth::account($db, (int)$res2['id'])['category'] === 'barbiere');
+check('demo: email già usata rifiutata', !Admin::duplicate($db, [], $srcId, ['business_name' => 'X', 'email' => 'marco@example.com'])['ok']);
+check('demo: nome obbligatorio', !Admin::duplicate($db, [], $srcId, ['business_name' => ' '])['ok']);
+check('demo: logo non valido rifiutato', !Admin::duplicate($db, [], $srcId, ['business_name' => 'Y', 'logo' => 'x'])['ok']);
+check('consegna: cambio email', Admin::changeEmail($db, (int)$res['id'], 'giulia@example.com') === null && Auth::account($db, (int)$res['id'])['email'] === 'giulia@example.com' && !Admin::isDemo($db, (int)$res['id']));
+check('consegna: email duplicata rifiutata', Admin::changeEmail($db, (int)$res['id'], 'marco@example.com') !== null);
+
+// ── Categorie merceologiche ──────────────────────────────────────────
+fwrite(STDOUT, "Categorie merceologiche\n");
+$db = newDb();
+\App\Categories::boot($db);
+check('categorie: seminate dal predefinito', count(\App\Categories::all()) === count(\App\Categories::builtin()) && \App\Categories::all()['parrucchiere']['id'] > 0);
+check('categorie: nuova', \App\Categories::save($db, 0, ['label' => 'Fisioterapia', 'staff_title' => 'Fisioterapista', 't_staffs' => 'Terapisti', 'services' => "Seduta | Trattamento manuale | 45 | 50,5 | Trattamenti\nValutazione | | 30 | 0", 'active' => '1']) === null);
+$fis = \App\Categories::get('fisioterapia');
+check('categorie: servizi letti dal testo', $fis['label'] === 'Fisioterapia' && count($fis['services']) === 2 && $fis['services'][0][3] === 50.5 && $fis['services'][0][2] === 45 && $fis['terms']['staffs'] === 'Terapisti' && $fis['terms']['service'] === 'servizio');
+check('categorie: scelta in registrazione', isset(\App\Categories::options()['fisioterapia']) && \App\Categories::valid('fisioterapia'));
+$fid = addAccount($db, 'fisio@example.com', 'fisioterapia');
+check('categorie: il nuovo negozio riceve i servizi', count($db->all('SELECT id FROM services WHERE account_id = ?', [$fid])) === 2);
+check('categorie: riga sbagliata segnalata', str_contains((string)\App\Categories::save($db, 0, ['label' => 'Z', 'services' => "Ok | | 30 | 10\nRotto | | tanto | 5"]), 'Riga 2'));
+check('categorie: codice doppio rifiutato', \App\Categories::save($db, 0, ['label' => 'Fisioterapia']) !== null);
+check('categorie: usata, non eliminabile', \App\Categories::delete($db, $fis['id']) !== null);
+check('categorie: disattivabile', \App\Categories::save($db, $fis['id'], ['label' => 'Fisioterapia', 'services' => \App\Categories::servicesToText($fis['services'])]) === null && !\App\Categories::valid('fisioterapia') && !isset(\App\Categories::options()['fisioterapia']) && isset(\App\Categories::options('fisioterapia')['fisioterapia']));
+check('categorie: il negozio può tenere la categoria disattivata', call(new Api($db, $fid), 'PUT', '/api/account', [], ['category' => 'fisioterapia'])[0] === 200);
+check('categorie: altro sempre attiva', \App\Categories::save($db, \App\Categories::get('altro')['id'], ['label' => 'Altro']) !== null && \App\Categories::delete($db, \App\Categories::get('altro')['id']) !== null);
+\App\Categories::save($db, 0, ['label' => 'Vuota', 'active' => '1']);
+check('categorie: non usata, eliminabile', \App\Categories::delete($db, \App\Categories::get('vuota')['id']) === null && !isset(\App\Categories::all()['vuota']));
+check('categorie: testo servizi andata e ritorno', \App\Categories::parseServices(\App\Categories::servicesToText(\App\Categories::get('meccanico')['services']))[0] === \App\Categories::get('meccanico')['services']);
+Auth::start();
+$tok = Admin::csrfToken();
+$rows = Admin::rows($db);
+$page = Pages::admin([], $rows, Admin::stats($rows), ['q' => '', 'state' => '', 'page' => 1, 'pages' => 1, 'shown' => 1], $tok, 0, null, null, [], ['sources' => [$fid => 'Fisio <b>'], 'dup' => $fid, 'categories' => \App\Categories::all(), 'usage' => \App\Categories::usage($db)]);
+check('pagina admin: riquadri demo e categorie', str_contains($page, 'value="duplicate"') && str_contains($page, 'Categorie merceologiche') && str_contains($page, 'value="cat_save"') && str_contains($page, 'Duplica per una demo') && !str_contains($page, 'Fisio <b>'));
+Auth::logout();
+\App\Categories::boot(null);
 
 fwrite(STDOUT, "\n$passed ok, $failed falliti\n");
 exit($failed === 0 ? 0 : 1);

@@ -45,7 +45,8 @@ Poi fai il merge del branch su `main`. Quando l'azione è verde il branch `deplo
   separati da tutti gli altri: clienti, collaboratori, servizi, prodotti e appuntamenti.
 - Il tipo di attività (parrucchiere, barbiere, unghie, estetica, meccanico, tattoo, altro) precompila servizi e nomi
   (per esempio *Meccanici* e *Interventi* per un'officina). Si può cambiare da **Impostazioni** e ogni servizio è modificabile.
-  Per aggiungere un'attività nuova basta una voce in `php/server/Categories.php`.
+  Le categorie merceologiche si gestiscono da **/admin → Categorie merceologiche**: nome, servizi di partenza,
+  nomi usati nell'app; si possono aggiungere, disattivare (restano ai negozi che le usano) o eliminare se nessuno le usa.
 - Dopo la registrazione parte la **prova gratuita** (`trial_days`, 30 di default). Scaduta la prova, l'agenda si blocca
   e il titolare viene mandato alla pagina `/abbonamento`: i dati non si cancellano.
 - **Aggiornamento da una versione precedente**: al primo accesso il database viene aggiornato da solo. I dati già
@@ -200,3 +201,16 @@ Cosa invia, una volta sola per evento:
 - **Da approvare in cima**: nel pannello `/admin` i negozi in attesa stanno sempre per primi.
 - **Entra come questo negozio** (menu *Azioni*): vedi l'app come la vede il titolare, utile per assistenza. In alto compare una barra gialla con "Torna all'amministrazione". Mentre sei dentro, /admin è chiuso fino al ritorno.
 - **Password dimenticata**: dal link nella pagina di accesso. Il cliente riceve una email con un link valido 1 ora e usabile una sola volta (massimo 3 richieste all'ora per account; non si rivela se l'indirizzo esiste). Il pulsante "Nuova password" dell'admin resta disponibile.
+
+## Demo personalizzata per un cliente (`/admin → Crea una demo per un cliente`)
+
+Duplica un negozio già pronto (per esempio quello di esempio) con nome, logo, telefono, indirizzo e categoria
+del possibile acquirente. Vengono copiati servizi, collaboratori con gli orari, prodotti e impostazioni; con la
+casella apposita anche clienti, appuntamenti e chiusure, così l'agenda della demo è già piena.
+
+- Il negozio nasce già approvato, in prova, con il badge **Demo** e senza email automatiche.
+- Se lasci vuota l'email di accesso viene creato un indirizzo `demo-nome@appuntamenti4me.it`; la password compare a video.
+- Con **Entra e personalizza** apri subito la demo per sistemare prezzi e servizi.
+- Quando il cliente compra: *Azioni → Cambia email* con la sua email (tornano le email automatiche), poi *Nuova password*
+  e *Assegna piano*. Tutti i dati della demo restano suoi.
+

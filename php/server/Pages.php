@@ -67,6 +67,14 @@ $head<style>
   .mini{border:1px solid #e7c5d4;background:#fff;color:#be185d;border-radius:8px;padding:5px 10px;font-size:13px;font-weight:600;cursor:pointer}
   .mini.danger{border-color:#fca5a5;color:#b91c1c}
   .planrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 10px}.planrow input:not([type=checkbox]){width:auto;height:36px;font-size:14px;flex:1 1 130px}.planrow input[name=duration_days]{flex:0 0 90px}.planrow input[name=price]{flex:0 0 100px}
+  .b-demo{background:#ede9fe;color:#5b21b6}
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px 14px}
+  .grid2 label,.catform label{display:block;font-size:13px;font-weight:600;color:#57534e;margin:0}
+  .grid2 input,.grid2 select,.grid2 textarea,.catform input,.catform textarea{margin-top:4px;font-size:14px}
+  .catform textarea{width:100%;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace;min-height:170px}
+  details.cat{border:1px solid #e7e5e4;border-radius:10px;padding:8px 12px;margin:0 0 8px;background:#fff}
+  details.cat summary{cursor:pointer;font-weight:600}
+  .muted{color:#78716c;font-size:13px;font-weight:400}
   .pager{display:flex;gap:10px;justify-content:center;margin:16px 0;font-size:14px}
   code.pw{font-size:18px;background:#fff;border:1px solid #e7e5e4;border-radius:8px;padding:4px 10px}
   .btn{display:inline-block;background:#be185d;color:#fff!important;border:0;border-radius:10px;padding:13px 22px;font-size:16px;font-weight:600;text-decoration:none;cursor:pointer}
@@ -668,7 +676,7 @@ HTML;
      * @param array{total:int,trial:int,active:int,expired:int,suspended:int,new7:int} $stats
      * @param array{q:string,state:string,page:int,pages:int,shown:int} $f
      */
-    public static function admin(array $cfg, array $rows, array $stats, array $f, string $csrf, int $selfId, ?string $notice = null, ?string $error = null, array $plans = []): string
+    public static function admin(array $cfg, array $rows, array $stats, array $f, string $csrf, int $selfId, ?string $notice = null, ?string $error = null, array $plans = [], array $extra = []): string
     {
         $h = [self::class, 'h'];
         $fmt = static fn(string $d, string $format = 'd/m/Y'): string => $d === '' ? '—' : date($format, (int)strtotime($d));
@@ -715,8 +723,11 @@ HTML;
                 $menu .= $form('delete', '<button class="mini danger">Elimina account e dati</button>',
                     'onsubmit="return confirm(\'Eliminare DEFINITIVAMENTE ' . self::h(addslashes((string)$r['business_name'])) . ' e tutti i suoi dati?\')"');
             }
+            $menu = '<a class="mini" style="text-decoration:none;text-align:center" href="/admin?duplica=' . $id . '#demo">Duplica per una demo</a>'
+                . $form('email', '<input type="email" name="email" required placeholder="Nuova email di accesso" style="height:32px;width:auto;font-size:13px"><button class="mini">Cambia email</button>')
+                . $menu;
             $quick = $state === 'pending' ? $form('approve', '<button class="mini" style="background:#be185d;color:#fff">Approva</button>') : '';
-            $body .= '<tr><td><b>' . self::h((string)$r['business_name']) . '</b><br><small>' . self::h((string)$r['email']) . '</small><br><small>/' . self::h((string)$r['slug']) . '</small></td>'
+            $body .= '<tr><td><b>' . self::h((string)$r['business_name']) . '</b><br><small>' . self::h((string)$r['email']) . '</small><br><small>/' . self::h((string)$r['slug']) . '</small>' . (!empty($r['is_demo']) ? ' <span class="badge b-demo">Demo</span>' : '') . '</td>'
                 . '<td>' . self::h((string)$r['category_label']) . '</td>'
                 . '<td><span class="badge b-' . $state . '">' . $labels[$state] . '</span><br><small>' . self::h($when) . '</small></td>'
                 . '<td>' . $fmt((string)$r['created_at']) . '</td>'
@@ -758,6 +769,8 @@ HTML;
         $planBox = '<details class="card" style="margin:0 0 18px"' . ($plans === [] ? ' open' : '') . '><summary style="cursor:pointer;font-weight:700">Piani di abbonamento (' . count($plans) . ')</summary>'
             . '<p class="sub" style="text-align:left;margin:8px 0 12px;font-size:14px">Nome, durata in giorni e prezzo. I piani attivi compaiono nella home del sito e nella pagina Abbonamento; con il codice Stripe il cliente può pagare online, senza codice li assegni tu da "Azioni".</p>'
             . $planRows . '</details>';
+        $demoBox = self::adminDemoBox($csrf, $extra);
+        $catBox = self::adminCategoriesBox($csrf, $extra);
         $n = $notice ? '<p class="ok">' . $notice . '</p>' : ''; // già escapato da chi lo costruisce
         $e = $error ? '<p class="err">' . self::h($error) . '</p>' : '';
         $q = self::h($f['q']);
@@ -766,7 +779,9 @@ HTML;
 <h2 style="text-align:left;margin:10px 0 14px">Amministrazione</h2>
 $n$e
 <div class="stats">$cards</div>
+$demoBox
 $planBox
+$catBox
 <form class="filters" method="get" action="/admin">
   <input name="q" value="$q" placeholder="Cerca per nome o email">
   <select name="stato">$opts</select>
@@ -780,5 +795,108 @@ $pager
 HTML;
         return self::layout($cfg, 'Amministrazione · ' . self::name($cfg), $html, false, true,
             '<a href="/">← Torna all\'agenda</a><a href="/logout">Esci</a>');
+    }
+
+    /**
+     * Riquadro "Crea una demo per un cliente": duplica un negozio con i dati del possibile acquirente.
+     *
+     * @param array<string,mixed> $x sources (id => nome), dup (id scelto), old (valori del modulo dopo un errore)
+     */
+    private static function adminDemoBox(string $csrf, array $x): string
+    {
+        $sources = (array)($x['sources'] ?? []);
+        if ($sources === []) {
+            return '';
+        }
+        $old = (array)($x['old'] ?? []);
+        $dup = (int)($x['dup'] ?? 0);
+        $v = static fn(string $k): string => self::h((string)($old[$k] ?? ''));
+        $src = '';
+        foreach ($sources as $id => $label) {
+            $src .= '<option value="' . (int)$id . '"' . ((int)$id === $dup ? ' selected' : '') . '>' . self::h((string)$label) . '</option>';
+        }
+        $cats = '<option value="">Come il negozio copiato</option>';
+        foreach (Categories::options() as $k => $label) {
+            $cats .= '<option value="' . self::h($k) . '"' . (($old['category'] ?? '') === $k ? ' selected' : '') . '>' . self::h($label) . '</option>';
+        }
+        $open = $dup > 0 || $old !== [] ? ' open' : '';
+        $copy = ($old === [] || !empty($old['copy_data'])) ? ' checked' : '';
+        return <<<HTML
+<details class="card" id="demo" style="margin:0 0 18px"$open><summary style="cursor:pointer;font-weight:700">Crea una demo per un cliente</summary>
+<p class="sub" style="text-align:left;margin:8px 0 12px;font-size:14px">Duplica un negozio già pronto (per esempio quello di esempio) e mettici nome, logo e contatti del possibile acquirente: quando vai da lui gli mostri la sua agenda e la sua pagina di prenotazione, non una demo generica. Vengono copiati servizi, collaboratori con gli orari, prodotti e impostazioni; se vuoi anche clienti e appuntamenti, così l'agenda non è vuota.</p>
+<form method="post" action="/admin" enctype="multipart/form-data">
+<input type="hidden" name="csrf" value="{$csrf}"><input type="hidden" name="azione" value="duplicate">
+<div class="grid2">
+  <label>Negozio da copiare<select name="id" required>$src</select></label>
+  <label>Nome dell'attività *<input name="business_name" required maxlength="120" value="{$v('business_name')}" placeholder="es. Parrucchiera Giulia"></label>
+  <label>Categoria<select name="category">$cats</select></label>
+  <label>Email di accesso<input type="email" name="email" maxlength="190" value="{$v('email')}" placeholder="vuota = indirizzo demo automatico"></label>
+  <label>Telefono<input name="shop_phone" maxlength="64" value="{$v('shop_phone')}"></label>
+  <label>WhatsApp<input name="shop_whatsapp" maxlength="64" value="{$v('shop_whatsapp')}"></label>
+  <label>Email del negozio (pubblica)<input type="email" name="shop_email" maxlength="190" value="{$v('shop_email')}"></label>
+  <label>Indirizzo<input name="shop_address" maxlength="255" value="{$v('shop_address')}" placeholder="Via, numero, città"></label>
+  <label>Orari (testo per la pagina pubblica)<input name="shop_hours" maxlength="500" value="{$v('shop_hours')}" placeholder="vuoto = come il negozio copiato"></label>
+  <label>Logo (PNG, JPG, WebP, max 400 KB)<input type="file" name="logo" accept="image/png,image/jpeg,image/webp,image/gif"></label>
+</div>
+<label style="display:block;font-size:13px;font-weight:600;color:#57534e;margin:10px 0 0">Descrizione<textarea name="shop_description" maxlength="1000" rows="2" style="margin-top:4px;width:100%">{$v('shop_description')}</textarea></label>
+<label class="check"><input type="checkbox" name="copy_data" value="1"$copy>Copia anche clienti, appuntamenti e chiusure (agenda già piena per la demo)</label>
+<button class="btn" type="submit" style="margin-top:6px">Crea la demo</button>
+</form></details>
+HTML;
+    }
+
+    /**
+     * Riquadro "Categorie merceologiche": tipi di attività con servizi di partenza e nomi usati nell'app.
+     *
+     * @param array<string,mixed> $x categories (Categories::all()), usage (chiave => negozi), cat_old (modulo dopo un errore)
+     */
+    private static function adminCategoriesBox(string $csrf, array $x): string
+    {
+        $cats = (array)($x['categories'] ?? []);
+        $usage = (array)($x['usage'] ?? []);
+        $old = (array)($x['cat_old'] ?? []);
+        $oldId = isset($old['id']) ? (int)$old['id'] : -1;
+        $form = static function (string $key, array $c) use ($csrf, $usage, $old, $oldId): string {
+            $id = (int)($c['id'] ?? 0);
+            $useOld = $oldId === $id;
+            $val = static fn(string $k, string $def) => self::h($useOld ? (string)($old[$k] ?? '') : $def);
+            $t = (array)($c['terms'] ?? []) + Categories::DEFAULT_TERMS;
+            $termInputs = '';
+            foreach (['staff' => 'Collaboratore (singolare)', 'staffs' => 'Collaboratori (menu)', 'service' => 'Servizio (singolare)', 'services' => 'Servizi (menu)', 'product' => 'Prodotto (singolare)', 'products' => 'Prodotti (menu)'] as $k => $label) {
+                $termInputs .= '<label>' . $label . '<input name="t_' . $k . '" maxlength="40" value="' . $val('t_' . $k, $id === 0 ? '' : (string)$t[$k]) . '" placeholder="' . self::h(Categories::DEFAULT_TERMS[$k]) . '"></label>';
+            }
+            $active = $useOld ? !empty($old['active']) : ($id === 0 || !empty($c['active']));
+            $n = (int)($usage[$key] ?? 0);
+            $keyField = $id === 0
+                ? '<label>Codice (facoltativo)<input name="key" maxlength="32" value="' . $val('key', '') . '" placeholder="es. fisioterapia"></label>'
+                : '<label>Ordine<input name="sort_order" type="number" min="1" max="9999" value="' . $val('sort_order', (string)(int)($c['sort_order'] ?? 0)) . '"></label>';
+            $services = $val('services', $id === 0 ? '' : Categories::servicesToText((array)($c['services'] ?? [])));
+            $summary = $id === 0
+                ? '+ Nuova categoria'
+                : self::h((string)$c['label']) . ' <span class="muted">· ' . count((array)$c['services']) . ' servizi · ' . $n . ($n === 1 ? ' negozio' : ' negozi') . (empty($c['active']) ? ' · <b>disattivata</b>' : '') . '</span>';
+            $del = $id !== 0 && $key !== 'altro'
+                ? '<button class="mini danger" name="azione" value="cat_delete" onclick="return confirm(\'Eliminare questa categoria?\')">Elimina</button>' : '';
+            return '<details class="cat"' . ($useOld ? ' open' : '') . '><summary>' . $summary . '</summary>'
+                . '<form method="post" action="/admin" class="catform" style="margin-top:10px"><input type="hidden" name="csrf" value="' . self::h($csrf) . '"><input type="hidden" name="id" value="' . $id . '">'
+                . '<div class="grid2"><label>Nome della categoria *<input name="label" required maxlength="80" value="' . $val('label', (string)($c['label'] ?? '')) . '" placeholder="es. Fisioterapia"></label>'
+                . $keyField
+                . '<label>Ruolo del primo collaboratore<input name="staff_title" maxlength="80" value="' . $val('staff_title', (string)($c['staff_title'] ?? '')) . '" placeholder="es. Fisioterapista"></label>'
+                . '<label>Esempio di ruolo (suggerimento)<input name="staff_hint" maxlength="120" value="' . $val('staff_hint', (string)($c['staff_hint'] ?? '')) . '" placeholder="es. Fisioterapista senior"></label>'
+                . $termInputs . '</div>'
+                . '<label style="margin-top:10px">Servizi di partenza, uno per riga: <span class="muted">Nome | Descrizione | Minuti | Prezzo | Gruppo | Colore (facoltativo)</span>'
+                . '<textarea name="services" rows="8" placeholder="Seduta di fisioterapia | Trattamento manuale | 45 | 50 | Trattamenti">' . $services . '</textarea></label>'
+                . '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px"><label class="check" style="margin:0"><input type="checkbox" name="active" value="1"' . ($active ? ' checked' : '') . '>Attiva (compare nella registrazione e nella home)</label>'
+                . '<button class="mini" name="azione" value="cat_save">' . ($id === 0 ? 'Aggiungi categoria' : 'Salva') . '</button>' . $del . '</div>'
+                . '<p class="muted" style="margin:6px 0 0">I servizi vengono copiati nei negozi che si registrano da ora in poi; i negozi esistenti non cambiano.</p>'
+                . '</form></details>';
+        };
+        $html = '';
+        foreach ($cats as $key => $c) {
+            $html .= $form((string)$key, $c);
+        }
+        $html .= $form('', ['id' => 0]);
+        return '<details class="card" id="categorie" style="margin:0 0 18px"' . ($old !== [] ? ' open' : '') . '><summary style="cursor:pointer;font-weight:700">Categorie merceologiche (' . count($cats) . ')</summary>'
+            . '<p class="sub" style="text-align:left;margin:8px 0 12px;font-size:14px">I tipi di attività tra cui si sceglie in registrazione. Ognuno precompila i servizi del nuovo negozio e i nomi usati nell\'app (per esempio <i>Meccanici</i> e <i>Interventi</i> per un\'officina). Una categoria usata da qualche negozio si può disattivare ma non eliminare.</p>'
+            . $html . '</details>';
     }
 }

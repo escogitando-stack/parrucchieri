@@ -4,19 +4,79 @@ declare(strict_types=1);
 namespace App;
 
 /**
- * Tipi di attività: ognuno porta servizi di partenza (modificabili dal negozio)
+ * Tipi di attività (categorie merceologiche): ognuno porta servizi di partenza (modificabili dal negozio)
  * e i nomi usati nell'interfaccia (collaboratore, servizio, prodotto).
- * Per aggiungere un'attività basta aggiungere una voce qui sotto.
+ *
+ * Le categorie vivono nella tabella `categories` e si gestiscono dal pannello /admin.
+ * L'elenco qui sotto (builtin) serve a riempire la tabella la prima volta e come riserva
+ * quando il database non è ancora pronto.
  */
 final class Categories
 {
+    private static ?Db $db = null;
+    /** @var array<string,array<string,mixed>>|null */
+    private static ?array $cache = null;
+
+    /** Collega le categorie al database (chiamato all'avvio). Con null si torna all'elenco predefinito. */
+    public static function boot(?Db $db): void
+    {
+        self::$db = $db;
+        self::$cache = null;
+    }
+
     /**
-     * Servizi: [nome, descrizione, durata in minuti, prezzo in euro, colore, gruppo].
-     * I prezzi sono indicativi e si cambiano dall'app.
+     * Tutte le categorie (anche quelle disattivate), nell'ordine scelto dall'amministratore.
+     * Ogni voce: label, staff_title, staff_hint, terms, services, active, id, sort_order.
      *
      * @return array<string,array<string,mixed>>
      */
     public static function all(): array
+    {
+        if (self::$cache !== null) {
+            return self::$cache;
+        }
+        $rows = [];
+        if (self::$db !== null) {
+            try {
+                $rows = self::$db->all('SELECT * FROM categories ORDER BY sort_order, id');
+            } catch (\Throwable) {
+                $rows = [];
+            }
+        }
+        if ($rows === []) {
+            $out = [];
+            $i = 0;
+            foreach (self::builtin() as $key => $c) {
+                $out[$key] = $c + ['id' => 0, 'active' => true, 'sort_order' => ++$i];
+            }
+            return self::$db === null ? $out : (self::$cache = $out);
+        }
+        $out = [];
+        foreach ($rows as $r) {
+            $terms = json_decode((string)$r['terms'], true);
+            $services = json_decode((string)$r['services'], true);
+            $out[(string)$r['cat_key']] = [
+                'id' => (int)$r['id'],
+                'label' => (string)$r['label'],
+                'staff_title' => (string)$r['staff_title'],
+                'staff_hint' => (string)$r['staff_hint'],
+                'terms' => (is_array($terms) ? $terms : []) + self::DEFAULT_TERMS,
+                'services' => is_array($services) ? array_values($services) : [],
+                'active' => (int)$r['active'] === 1,
+                'sort_order' => (int)$r['sort_order'],
+            ];
+        }
+        return self::$cache = $out;
+    }
+
+    public const DEFAULT_TERMS = ['staff' => 'collaboratore', 'staffs' => 'Personale', 'service' => 'servizio', 'services' => 'Servizi', 'product' => 'prodotto', 'products' => 'Prodotti'];
+
+    /**
+     * Elenco di partenza. Servizi: [nome, descrizione, durata in minuti, prezzo in euro, colore, gruppo].
+     *
+     * @return array<string,array<string,mixed>>
+     */
+    public static function builtin(): array
     {
         return [
             'parrucchiere' => [
@@ -134,21 +194,200 @@ final class Categories
     public static function get(string $key): array
     {
         $all = self::all();
-        return $all[$key] ?? $all['altro'];
+        return $all[$key] ?? $all['altro'] ?? (self::builtin()['altro'] + ['id' => 0, 'active' => true, 'sort_order' => 0]);
     }
 
+    /** La categoria esiste ed è attiva (cioè si può scegliere). */
     public static function valid(string $key): bool
     {
-        return isset(self::all()[$key]);
+        $c = self::all()[$key] ?? null;
+        return $c !== null && !empty($c['active']);
     }
 
-    /** Elenco per i menu a tendina: chiave => etichetta. @return array<string,string> */
-    public static function options(): array
+    /**
+     * Elenco per i menu a tendina: chiave => etichetta, solo categorie attive.
+     * Con $keep si aggiunge anche una categoria disattivata (quella già scelta dal negozio).
+     *
+     * @return array<string,string>
+     */
+    public static function options(string $keep = ''): array
     {
         $out = [];
         foreach (self::all() as $key => $c) {
-            $out[$key] = $c['label'];
+            if (!empty($c['active']) || $key === $keep) {
+                $out[$key] = $c['label'];
+            }
         }
         return $out;
+    }
+
+    /** Riempie la tabella con l'elenco predefinito (solo se è vuota). */
+    public static function seed(Db $db): void
+    {
+        if ($db->row('SELECT id FROM categories LIMIT 1') !== null) {
+            return;
+        }
+        $i = 0;
+        foreach (self::builtin() as $key => $c) {
+            $db->exec(
+                'INSERT INTO categories (cat_key, label, staff_title, staff_hint, terms, services, active, sort_order) VALUES (?, ?, ?, ?, ?, ?, 1, ?)',
+                [$key, $c['label'], $c['staff_title'], $c['staff_hint'], json_encode($c['terms'], JSON_UNESCAPED_UNICODE), json_encode($c['services'], JSON_UNESCAPED_UNICODE), ++$i]
+            );
+        }
+        if (self::$db === $db) {
+            self::$cache = null;
+        }
+    }
+
+    /** Quanti negozi usano ogni categoria. @return array<string,int> */
+    public static function usage(Db $db): array
+    {
+        $out = [];
+        foreach ($db->all('SELECT category, COUNT(*) AS n FROM accounts GROUP BY category') as $r) {
+            $out[(string)$r['category']] = (int)$r['n'];
+        }
+        return $out;
+    }
+
+    /**
+     * Servizi in formato testo, uno per riga: Nome | Descrizione | Minuti | Prezzo | Gruppo | Colore
+     *
+     * @param array<int,array<int,mixed>> $services
+     */
+    public static function servicesToText(array $services): string
+    {
+        $lines = [];
+        foreach ($services as $s) {
+            [$name, $desc, $dur, $price, $color, $group] = array_pad(array_values($s), 6, '');
+            $p = (float)$price;
+            $lines[] = implode(' | ', [$name, $desc, (int)$dur, fmod($p, 1.0) === 0.0 ? (string)(int)$p : str_replace('.', ',', (string)$p), $group, $color]);
+        }
+        return implode("\n", $lines);
+    }
+
+    /**
+     * Legge i servizi scritti uno per riga. Restituisce [servizi, errore|null].
+     *
+     * @return array{0:array<int,array<int,mixed>>,1:?string}
+     */
+    public static function parseServices(string $text): array
+    {
+        $palette = ['#3b82f6', '#ec4899', '#10b981', '#f59e0b', '#8b5cf6', '#14b8a6', '#f43f5e', '#6b7280'];
+        $out = [];
+        $n = 0;
+        foreach (preg_split('/\r\n|\r|\n/', $text) ?: [] as $line) {
+            $n++;
+            if (trim($line) === '') {
+                continue;
+            }
+            $parts = array_map('trim', explode('|', $line));
+            [$name, $desc, $dur, $price, $group, $color] = array_pad($parts, 6, '');
+            if ($name === '' || mb_strlen($name) > 120) {
+                return [[], "Riga $n: manca il nome del servizio."];
+            }
+            $dur = $dur === '' ? 60 : $dur;
+            if (!ctype_digit($dur) || (int)$dur < 5 || (int)$dur > 720) {
+                return [[], "Riga $n: la durata deve essere in minuti (da 5 a 720)."];
+            }
+            $price = str_replace([',', '€', ' '], ['.', '', ''], $price === '' ? '0' : $price);
+            if (!is_numeric($price) || (float)$price < 0 || (float)$price > 100000) {
+                return [[], "Riga $n: il prezzo non è valido."];
+            }
+            if ($color === '' || !preg_match('/^#[0-9a-fA-F]{6}$/', $color)) {
+                $color = $palette[count($out) % count($palette)];
+            }
+            $p = round((float)$price, 2);
+            $out[] = [mb_substr($name, 0, 120), mb_substr($desc, 0, 255), (int)$dur, fmod($p, 1.0) === 0.0 ? (int)$p : $p, strtolower($color), mb_substr($group, 0, 60)];
+        }
+        if (count($out) > 60) {
+            return [[], 'Massimo 60 servizi per categoria.'];
+        }
+        return [$out, null];
+    }
+
+    /**
+     * Crea (id = 0) o aggiorna una categoria. Restituisce un messaggio di errore oppure null.
+     *
+     * @param array<string,mixed> $in key, label, staff_title, staff_hint, t_staff, t_staffs, t_service, t_services, t_product, t_products, services, active
+     */
+    public static function save(Db $db, int $id, array $in): ?string
+    {
+        $label = trim((string)($in['label'] ?? ''));
+        if ($label === '' || mb_strlen($label) > 80) {
+            return 'Dai un nome alla categoria (massimo 80 caratteri).';
+        }
+        $terms = [];
+        foreach (self::DEFAULT_TERMS as $k => $def) {
+            $v = trim((string)($in['t_' . $k] ?? ''));
+            if (mb_strlen($v) > 40) {
+                return 'I nomi usati nell\'app possono avere al massimo 40 caratteri.';
+            }
+            $terms[$k] = $v === '' ? $def : $v;
+        }
+        [$services, $err] = self::parseServices((string)($in['services'] ?? ''));
+        if ($err !== null) {
+            return $err;
+        }
+        $staffTitle = mb_substr(trim((string)($in['staff_title'] ?? '')), 0, 80);
+        $staffHint = mb_substr(trim((string)($in['staff_hint'] ?? '')), 0, 120);
+        $active = !empty($in['active']) ? 1 : 0;
+        $jsonT = json_encode($terms, JSON_UNESCAPED_UNICODE);
+        $jsonS = json_encode($services, JSON_UNESCAPED_UNICODE);
+        if ($id === 0) {
+            $key = strtolower(trim((string)($in['key'] ?? '')));
+            if ($key === '') {
+                $key = trim((string)preg_replace('/[^a-z0-9]+/', '-', strtolower(strtr($label, ['à' => 'a', 'è' => 'e', 'é' => 'e', 'ì' => 'i', 'ò' => 'o', 'ù' => 'u']))), '-');
+                $key = substr($key, 0, 32);
+            }
+            if (!preg_match('/^[a-z0-9][a-z0-9-]{1,31}$/', $key)) {
+                return 'Il codice deve avere da 2 a 32 tra lettere minuscole, numeri e trattini.';
+            }
+            if ($db->row('SELECT id FROM categories WHERE cat_key = ?', [$key]) !== null) {
+                return 'Esiste già una categoria con il codice "' . $key . '".';
+            }
+            $max = (int)($db->row('SELECT COALESCE(MAX(sort_order), 0) AS m FROM categories')['m'] ?? 0);
+            $db->exec(
+                'INSERT INTO categories (cat_key, label, staff_title, staff_hint, terms, services, active, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                [$key, $label, $staffTitle, $staffHint, $jsonT, $jsonS, $active, $max + 1]
+            );
+        } else {
+            $row = $db->row('SELECT cat_key FROM categories WHERE id = ?', [$id]);
+            if ($row === null) {
+                return 'Categoria non trovata.';
+            }
+            if ($row['cat_key'] === 'altro' && !$active) {
+                return '"Altra attività" resta sempre attiva: è la scelta di riserva.';
+            }
+            $order = (int)($in['sort_order'] ?? 0);
+            $db->exec(
+                'UPDATE categories SET label = ?, staff_title = ?, staff_hint = ?, terms = ?, services = ?, active = ?' . ($order > 0 ? ', sort_order = ' . min($order, 9999) : '') . ' WHERE id = ?',
+                [$label, $staffTitle, $staffHint, $jsonT, $jsonS, $active, $id]
+            );
+        }
+        if (self::$db === $db) {
+            self::$cache = null;
+        }
+        return null;
+    }
+
+    /** Elimina una categoria non usata da nessun negozio. Restituisce un messaggio di errore oppure null. */
+    public static function delete(Db $db, int $id): ?string
+    {
+        $row = $db->row('SELECT cat_key, label FROM categories WHERE id = ?', [$id]);
+        if ($row === null) {
+            return 'Categoria non trovata.';
+        }
+        if ($row['cat_key'] === 'altro') {
+            return '"Altra attività" non si può eliminare: è la scelta di riserva.';
+        }
+        $n = (int)($db->row('SELECT COUNT(*) AS n FROM accounts WHERE category = ?', [$row['cat_key']])['n'] ?? 0);
+        if ($n > 0) {
+            return "La usano $n negozi: disattivala invece di eliminarla (non comparirà più tra le scelte).";
+        }
+        $db->exec('DELETE FROM categories WHERE id = ?', [$id]);
+        if (self::$db === $db) {
+            self::$cache = null;
+        }
+        return null;
     }
 }

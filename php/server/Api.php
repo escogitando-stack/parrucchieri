@@ -210,7 +210,7 @@ final class Api
             'category' => $acct['category'],
             'category_label' => $preset['label'],
             'terms' => $preset['terms'] + ['staff_hint' => $preset['staff_hint']],
-            'categories' => Categories::options(),
+            'categories' => Categories::options((string)$acct['category']),
             'plan' => ['state' => $plan['state'], 'days_left' => $plan['days_left'], 'ends_at' => $plan['ends_at']],
             'is_admin' => Auth::isAdmin($this->cfg, $acct),
             'slug' => $acct['slug'],
@@ -256,7 +256,7 @@ final class Api
         if ($name !== null && (trim($name) === '' || mb_strlen(trim($name)) > 120)) {
             throw new HttpError(400, 'Il nome dell\'attività non è valido');
         }
-        if ($category !== null && !Categories::valid($category)) {
+        if ($category !== null && !Categories::valid($category) && $category !== (string)(Auth::account($this->db, $this->acct)['category'] ?? '')) {
             throw new HttpError(400, 'Tipo di attività non valido');
         }
         $slug = $this->optString($b, 'slug');

@@ -49,6 +49,7 @@ function connect(array $cfg): Db
     if ($version === null || (int)$version < Schema::VERSION) {
         Schema::ensure($db);
     }
+    Categories::boot($db);
     return $db;
 }
 

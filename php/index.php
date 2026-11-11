@@ -401,6 +401,39 @@ if ($path === '/admin') {
         }
         $action = (string)($_POST['azione'] ?? '');
         $target = (int)($_POST['id'] ?? 0);
+        if ($action === 'duplicate') {
+            $in = $_POST;
+            $up = $_FILES['logo'] ?? null;
+            if (is_array($up) && ($up['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK && is_uploaded_file((string)$up['tmp_name'])) {
+                $raw = (string)file_get_contents((string)$up['tmp_name']);
+                $info = @getimagesizefromstring($raw);
+                $in['logo'] = 'data:' . (string)($info['mime'] ?? 'application/octet-stream') . ';base64,' . base64_encode($raw);
+            } elseif (is_array($up) && ($up['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+                $in['logo'] = 'x'; // caricamento non riuscito: verrà segnalato come logo non valido
+            }
+            $res = Admin::duplicate($db, $cfg, $target, $in);
+            if ($res['ok']) {
+                $new = Auth::account($db, (int)$res['id']) ?? [];
+                $csrf = Pages::h(Admin::csrfToken());
+                $notice = 'Demo <b>' . Pages::h((string)$new['business_name']) . '</b> creata. Accesso: <b>' . Pages::h((string)$res['email']) . '</b> · password <code class="pw">' . Pages::h((string)$res['password']) . '</code>'
+                    . '<br>Pagina di prenotazione: <a href="' . Pages::h(App\Notify::shopUrl($cfg, $new)) . '" target="_blank" rel="noopener">' . Pages::h(App\Notify::shopUrl($cfg, $new)) . '</a>'
+                    . '<form method="post" action="/admin" style="margin-top:8px"><input type="hidden" name="csrf" value="' . $csrf . '"><input type="hidden" name="azione" value="impersonate"><input type="hidden" name="id" value="' . (int)$res['id'] . '"><button class="mini">Entra e personalizza servizi e prezzi →</button></form>';
+            } else {
+                $error = $res['error'] ?? 'Duplicazione non riuscita.';
+                $dupOld = $_POST;
+            }
+            goto render_admin;
+        }
+        if ($action === 'cat_save' || $action === 'cat_delete') {
+            $err = $action === 'cat_save' ? App\Categories::save($db, $target, $_POST) : App\Categories::delete($db, $target);
+            if ($err === null) {
+                $notice = $action === 'cat_delete' ? 'Categoria eliminata.' : ($target === 0 ? 'Categoria aggiunta.' : 'Categoria aggiornata.');
+            } else {
+                $error = $err;
+                $catOld = $_POST;
+            }
+            goto render_admin;
+        }
         if (str_starts_with($action, 'plan_')) {
             if ($action === 'plan_save') {
                 $err = App\Plans::save($db, $target, $_POST);
@@ -431,6 +464,13 @@ if ($path === '/admin') {
                 redirect('/');
             }
             $error = 'Non puoi entrare in questo negozio.';
+        } elseif ($action === 'email') {
+            $err = Admin::changeEmail($db, $target, (string)($_POST['email'] ?? ''));
+            if ($err === null) {
+                $notice = "Email di accesso di <b>$name</b> cambiata in <b>" . Pages::h(strtolower(trim((string)$_POST['email']))) . '</b>. Se serve, genera anche una nuova password.';
+            } else {
+                $error = $err;
+            }
         } elseif ($action === 'extend' && Admin::extend($db, $target, (int)($_POST['days'] ?? 0))) {
             $notice = "Prova prolungata per <b>$name</b>.";
         } elseif ($action === 'assign') {
@@ -487,7 +527,15 @@ if ($path === '/admin') {
         $accountId,
         $notice,
         $error,
-        App\Plans::all($db)
+        App\Plans::all($db),
+        [
+            'sources' => array_combine(array_column($all, 'id'), array_map(static fn(array $r): string => $r['business_name'] . ' (/' . $r['slug'] . ')' . (!empty($r['is_demo']) ? ' · demo' : ''), $all)),
+            'dup' => isset($dupOld) ? (int)($dupOld['id'] ?? 0) : (int)($_GET['duplica'] ?? 0),
+            'old' => $dupOld ?? [],
+            'categories' => App\Categories::all(),
+            'usage' => App\Categories::usage($db),
+            'cat_old' => $catOld ?? [],
+        ]
     );
     exit;
 }
