@@ -67,6 +67,7 @@ $head<style>
   .mini{border:1px solid #e7c5d4;background:#fff;color:#be185d;border-radius:8px;padding:5px 10px;font-size:13px;font-weight:600;cursor:pointer}
   .mini.danger{border-color:#fca5a5;color:#b91c1c}
   .planrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 10px}.planrow input:not([type=checkbox]){width:auto;height:36px;font-size:14px;flex:1 1 130px}.planrow input[name=duration_days]{flex:0 0 90px}.planrow input[name=price]{flex:0 0 100px}
+  a.site{font-weight:600;text-decoration:none}
   .b-demo{background:#ede9fe;color:#5b21b6}
   .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px 14px}
   .grid2 label,.catform label{display:block;font-size:13px;font-weight:600;color:#57534e;margin:0}
@@ -727,7 +728,7 @@ HTML;
                 . $form('email', '<input type="email" name="email" required placeholder="Nuova email di accesso" style="height:32px;width:auto;font-size:13px"><button class="mini">Cambia email</button>')
                 . $menu;
             $quick = $state === 'pending' ? $form('approve', '<button class="mini" style="background:#be185d;color:#fff">Approva</button>') : '';
-            $body .= '<tr><td><b>' . self::h((string)$r['business_name']) . '</b><br><small>' . self::h((string)$r['email']) . '</small><br><small>/' . self::h((string)$r['slug']) . '</small>' . (!empty($r['is_demo']) ? ' <span class="badge b-demo">Demo</span>' : '') . '</td>'
+            $body .= '<tr><td><b>' . self::h((string)$r['business_name']) . '</b><br><small>' . self::h((string)$r['email']) . '</small><br><small>' . (in_array($state, ['trial', 'active', 'expired'], true) ? '<a href="/' . self::h((string)$r['slug']) . '" target="_blank" rel="noopener">/' . self::h((string)$r['slug']) . '</a> · <a class="site" href="/' . self::h((string)$r['slug']) . '" target="_blank" rel="noopener">Vedi sito ↗</a>' : '/' . self::h((string)$r['slug']) . ' <span class="muted">(pagina non ancora visibile)</span>') . '</small>' . (!empty($r['is_demo']) ? ' <span class="badge b-demo">Demo</span>' : '') . '</td>'
                 . '<td>' . self::h((string)$r['category_label']) . '</td>'
                 . '<td><span class="badge b-' . $state . '">' . $labels[$state] . '</span><br><small>' . self::h($when) . '</small></td>'
                 . '<td>' . $fmt((string)$r['created_at']) . '</td>'

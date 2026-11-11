@@ -930,6 +930,7 @@ $rows = Admin::rows($db);
 $page = Pages::admin([], $rows, Admin::stats($rows), ['q' => '"><script>', 'state' => '', 'page' => 1, 'pages' => 1, 'shown' => 2], $tok, $boss, null, null);
 check('pagina admin: elenco, azioni, token', str_contains($page, 's1@example.com') && str_contains($page, 'value="' . $tok . '"') && str_contains($page, 'name="azione"') && str_contains($page, 'Elimina account e dati'));
 check('pagina admin: nessuna eliminazione del proprio account', substr_count($page, 'value="delete"') === count($rows) - 1);
+check('pagina admin: link al sito del negozio', str_contains($page, 'Vedi sito'));
 check('pagina admin escapa i filtri', !str_contains($page, '"><script>'));
 Auth::logout();
 
