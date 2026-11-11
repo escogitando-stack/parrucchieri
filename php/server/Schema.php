@@ -15,10 +15,11 @@ namespace App;
  *   6 = piani di abbonamento gestiti dall'amministratore
  *   7 = conferma automatica, promemoria, email automatiche e recupero password
  *   8 = categorie merceologiche gestite dall'amministratore (tabella categories)
+ *   9 = 15 nuove categorie (dentista, veterinario, gommista, idraulico, autoscuola...)
  */
 final class Schema
 {
-    public const VERSION = 8;
+    public const VERSION = 9;
 
     /** Tabelle i cui dati appartengono a un negozio. */
     private const OWNED = ['clients', 'staff', 'services', 'appointments', 'blocked_slots', 'products', 'working_hours'];
@@ -50,6 +51,10 @@ final class Schema
         }
         if ($version < 8) {
             self::migrateTo8($db);
+        }
+        if ($version < 9) {
+            Categories::addMissing($db, Categories::ADDED_V9);
+            $db->metaSet('schema_version', (string)self::VERSION);
         }
     }
 

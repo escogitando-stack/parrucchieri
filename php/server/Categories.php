@@ -177,6 +177,243 @@ final class Categories
                     ['Piercing', 'Foratura con gioiello incluso', 30, 40, '#14b8a6', 'Piercing'],
                 ],
             ],
+            'dentista' => [
+                'label' => 'Studio dentistico',
+                'staff_title' => 'Dentista',
+                'staff_hint' => 'es. Odontoiatra, Igienista dentale',
+                'terms' => ['staff' => 'professionista', 'staffs' => 'Professionisti', 'service' => 'prestazione', 'services' => 'Prestazioni', 'product' => 'materiale', 'products' => 'Materiali'],
+                'services' => [
+                    ['Prima visita', 'Visita e piano di cura', 30, 50, '#3b82f6', 'Visite'],
+                    ['Visita di controllo', 'Controllo periodico', 20, 40, '#3b82f6', 'Visite'],
+                    ['Igiene orale', 'Pulizia professionale e lucidatura', 45, 80, '#10b981', 'Igiene'],
+                    ['Sbiancamento', 'Sbiancamento professionale in studio', 60, 250, '#14b8a6', 'Estetica'],
+                    ['Otturazione', 'Cura della carie con ricostruzione', 45, 100, '#f59e0b', 'Conservativa'],
+                    ['Devitalizzazione', 'Cura canalare', 90, 250, '#ef4444', 'Endodonzia'],
+                    ['Estrazione', 'Estrazione semplice', 30, 100, '#6b7280', 'Chirurgia'],
+                    ['Visita ortodontica', 'Valutazione apparecchio o allineatori', 30, 60, '#8b5cf6', 'Ortodonzia'],
+                    ['Urgenza', 'Visita per dolore o urgenza', 30, 60, '#f43f5e', 'Visite'],
+                ],
+            ],
+            'veterinario' => [
+                'label' => 'Ambulatorio veterinario',
+                'staff_title' => 'Veterinario',
+                'staff_hint' => 'es. Medico veterinario',
+                'terms' => ['staff' => 'veterinario', 'staffs' => 'Veterinari', 'service' => 'prestazione', 'services' => 'Prestazioni', 'product' => 'prodotto', 'products' => 'Prodotti'],
+                'services' => [
+                    ['Visita clinica', 'Visita generale cane o gatto', 30, 45, '#3b82f6', 'Visite'],
+                    ['Vaccinazione', 'Vaccino annuale con visita', 20, 50, '#10b981', 'Prevenzione'],
+                    ['Microchip e iscrizione anagrafe', 'Applicazione microchip', 15, 40, '#14b8a6', 'Prevenzione'],
+                    ['Visita di controllo', 'Controllo dopo terapia o intervento', 20, 30, '#3b82f6', 'Visite'],
+                    ['Ecografia', 'Ecografia addominale', 30, 70, '#8b5cf6', 'Diagnostica'],
+                    ['Esami del sangue', 'Prelievo ed emocromo', 15, 60, '#f59e0b', 'Diagnostica'],
+                    ['Pulizia dei denti', 'Detartrasi in sedazione', 60, 150, '#ec4899', 'Chirurgia'],
+                    ['Sterilizzazione', 'Intervento di sterilizzazione', 90, 200, '#ef4444', 'Chirurgia'],
+                    ['Visita animali esotici', 'Conigli, rettili, uccelli', 30, 50, '#6b7280', 'Visite'],
+                ],
+            ],
+            'gommista' => [
+                'label' => 'Gommista',
+                'staff_title' => 'Gommista',
+                'staff_hint' => 'es. Gommista, Addetto officina',
+                'terms' => ['staff' => 'operatore', 'staffs' => 'Operatori', 'service' => 'intervento', 'services' => 'Interventi', 'product' => 'pneumatico', 'products' => 'Pneumatici'],
+                'services' => [
+                    ['Cambio gomme stagionale', 'Smontaggio, montaggio ed equilibratura 4 ruote', 45, 50, '#3b82f6', 'Gomme'],
+                    ['Montaggio pneumatici nuovi', 'Montaggio ed equilibratura 4 pneumatici', 60, 60, '#3b82f6', 'Gomme'],
+                    ['Equilibratura', 'Equilibratura delle 4 ruote', 30, 30, '#10b981', 'Gomme'],
+                    ['Convergenza', 'Controllo e regolazione assetto', 45, 50, '#8b5cf6', 'Assetto'],
+                    ['Riparazione foratura', 'Riparazione pneumatico forato', 20, 20, '#f59e0b', 'Riparazioni'],
+                    ['Deposito pneumatici', 'Custodia stagionale del treno di gomme', 15, 40, '#6b7280', 'Servizi'],
+                    ['Controllo pressione e usura', 'Verifica gratuita', 10, 0, '#14b8a6', 'Servizi'],
+                    ['Cambio gomme moto', 'Smontaggio e montaggio pneumatico moto', 45, 35, '#ec4899', 'Gomme'],
+                ],
+            ],
+            'toelettatura' => [
+                'label' => 'Toelettatura cani',
+                'staff_title' => 'Toelettatore',
+                'staff_hint' => 'es. Toelettatrice',
+                'terms' => ['staff' => 'toelettatore', 'staffs' => 'Toelettatori', 'service' => 'servizio', 'services' => 'Servizi', 'product' => 'prodotto', 'products' => 'Prodotti'],
+                'services' => [
+                    ['Bagno taglia piccola', 'Bagno, asciugatura e spazzolatura', 60, 30, '#3b82f6', 'Bagno'],
+                    ['Bagno taglia media', 'Bagno, asciugatura e spazzolatura', 75, 40, '#3b82f6', 'Bagno'],
+                    ['Bagno taglia grande', 'Bagno, asciugatura e spazzolatura', 90, 55, '#3b82f6', 'Bagno'],
+                    ['Toelettatura completa', 'Bagno, taglio e rifinitura', 120, 60, '#ec4899', 'Taglio'],
+                    ['Stripping', 'Rimozione manuale del pelo morto', 120, 70, '#8b5cf6', 'Taglio'],
+                    ['Taglio unghie', 'Taglio e limatura', 15, 10, '#6b7280', 'Extra'],
+                    ['Pulizia orecchie', 'Pulizia delicata', 15, 8, '#14b8a6', 'Extra'],
+                    ['Trattamento antiparassitario', 'Bagno con prodotto specifico', 30, 15, '#10b981', 'Extra'],
+                    ['Bagno gatto', 'Bagno e asciugatura', 60, 45, '#f59e0b', 'Bagno'],
+                ],
+            ],
+            'addestratore' => [
+                'label' => 'Addestratore cani',
+                'staff_title' => 'Educatore cinofilo',
+                'staff_hint' => 'es. Addestratore, Educatore cinofilo',
+                'terms' => ['staff' => 'educatore', 'staffs' => 'Educatori', 'service' => 'lezione', 'services' => 'Lezioni', 'product' => 'prodotto', 'products' => 'Prodotti'],
+                'services' => [
+                    ['Primo incontro conoscitivo', 'Valutazione del cane e degli obiettivi', 60, 0, '#6b7280', 'Consulenza'],
+                    ['Lezione individuale', 'Educazione di base', 60, 40, '#3b82f6', 'Lezioni'],
+                    ['Educazione cucciolo', 'Prime regole e socializzazione', 60, 35, '#10b981', 'Lezioni'],
+                    ['Lezione di gruppo', 'Lezione in piccolo gruppo', 60, 20, '#14b8a6', 'Lezioni'],
+                    ['Lezione a domicilio', 'Lezione a casa del cliente', 75, 55, '#8b5cf6', 'Lezioni'],
+                    ['Problemi comportamentali', 'Consulenza su aggressività, ansia, tirare al guinzaglio', 90, 70, '#f43f5e', 'Consulenza'],
+                    ['Pacchetto 5 lezioni', 'Percorso di educazione base', 60, 180, '#f59e0b', 'Pacchetti'],
+                ],
+            ],
+            'idraulico' => [
+                'label' => 'Idraulico',
+                'staff_title' => 'Idraulico',
+                'staff_hint' => 'es. Idraulico, Tecnico caldaie',
+                'terms' => ['staff' => 'tecnico', 'staffs' => 'Tecnici', 'service' => 'intervento', 'services' => 'Interventi', 'product' => 'materiale', 'products' => 'Materiali'],
+                'services' => [
+                    ['Sopralluogo e preventivo', 'Valutazione del lavoro', 30, 0, '#6b7280', 'Preventivi'],
+                    ['Riparazione perdita', 'Ricerca e riparazione perdita', 60, 80, '#3b82f6', 'Riparazioni'],
+                    ['Disostruzione scarico', 'Lavandino, wc o doccia', 60, 70, '#10b981', 'Riparazioni'],
+                    ['Sostituzione rubinetto', 'Fornitura esclusa', 45, 50, '#14b8a6', 'Installazioni'],
+                    ['Manutenzione caldaia', 'Pulizia e controllo annuale', 60, 90, '#f59e0b', 'Caldaie'],
+                    ['Installazione scaldabagno', 'Montaggio e collegamento', 120, 150, '#8b5cf6', 'Installazioni'],
+                    ['Sostituzione sanitari', 'Wc, bidet o lavabo', 120, 150, '#ec4899', 'Installazioni'],
+                    ['Intervento urgente', 'Uscita in giornata', 60, 100, '#ef4444', 'Urgenze'],
+                ],
+            ],
+            'elettricista' => [
+                'label' => 'Elettricista',
+                'staff_title' => 'Elettricista',
+                'staff_hint' => 'es. Elettricista, Tecnico',
+                'terms' => ['staff' => 'tecnico', 'staffs' => 'Tecnici', 'service' => 'intervento', 'services' => 'Interventi', 'product' => 'materiale', 'products' => 'Materiali'],
+                'services' => [
+                    ['Sopralluogo e preventivo', 'Valutazione del lavoro', 30, 0, '#6b7280', 'Preventivi'],
+                    ['Ricerca guasto', 'Individuazione e riparazione del guasto', 60, 70, '#ef4444', 'Riparazioni'],
+                    ['Installazione punto luce o presa', 'Nuovo punto luce o presa', 60, 60, '#3b82f6', 'Installazioni'],
+                    ['Installazione lampadari', 'Montaggio e collegamento', 45, 40, '#f59e0b', 'Installazioni'],
+                    ['Sostituzione quadro elettrico', 'Nuovo quadro con salvavita', 180, 350, '#8b5cf6', 'Impianti'],
+                    ['Installazione climatizzatore', 'Montaggio split', 180, 300, '#14b8a6', 'Impianti'],
+                    ['Certificazione impianto', 'Verifica e dichiarazione di conformità', 90, 150, '#10b981', 'Certificazioni'],
+                    ['Videocitofono o antenna', 'Installazione o riparazione', 90, 120, '#ec4899', 'Installazioni'],
+                ],
+            ],
+            'fisioterapista' => [
+                'label' => 'Fisioterapista',
+                'staff_title' => 'Fisioterapista',
+                'staff_hint' => 'es. Fisioterapista, Osteopata',
+                'terms' => ['staff' => 'terapista', 'staffs' => 'Terapisti', 'service' => 'trattamento', 'services' => 'Trattamenti', 'product' => 'prodotto', 'products' => 'Prodotti'],
+                'services' => [
+                    ['Prima valutazione', 'Anamnesi, test e piano di trattamento', 60, 60, '#3b82f6', 'Valutazione'],
+                    ['Seduta di fisioterapia', 'Terapia manuale ed esercizi', 45, 50, '#10b981', 'Trattamenti'],
+                    ['Massaggio decontratturante', 'Massaggio terapeutico', 45, 45, '#14b8a6', 'Trattamenti'],
+                    ['Riabilitazione post-operatoria', 'Recupero dopo intervento', 60, 55, '#8b5cf6', 'Riabilitazione'],
+                    ['Tecarterapia', 'Seduta di tecar', 30, 40, '#f59e0b', 'Terapie fisiche'],
+                    ['Onde d\'urto', 'Seduta di onde d\'urto', 20, 50, '#ef4444', 'Terapie fisiche'],
+                    ['Linfodrenaggio', 'Drenaggio linfatico manuale', 60, 55, '#ec4899', 'Trattamenti'],
+                    ['Pacchetto 5 sedute', 'Ciclo di trattamento', 45, 220, '#6b7280', 'Pacchetti'],
+                ],
+            ],
+            'psicologo' => [
+                'label' => 'Psicologo',
+                'staff_title' => 'Psicologo',
+                'staff_hint' => 'es. Psicologo, Psicoterapeuta',
+                'terms' => ['staff' => 'professionista', 'staffs' => 'Professionisti', 'service' => 'seduta', 'services' => 'Sedute', 'product' => 'materiale', 'products' => 'Materiali'],
+                'services' => [
+                    ['Primo colloquio', 'Conoscenza e definizione degli obiettivi', 50, 60, '#3b82f6', 'Colloqui'],
+                    ['Seduta individuale', 'Colloquio di sostegno o psicoterapia', 50, 60, '#10b981', 'Sedute'],
+                    ['Seduta online', 'Videochiamata', 50, 55, '#14b8a6', 'Sedute'],
+                    ['Terapia di coppia', 'Seduta di coppia', 60, 80, '#ec4899', 'Sedute'],
+                    ['Sostegno genitoriale', 'Colloquio con i genitori', 50, 60, '#f59e0b', 'Sedute'],
+                    ['Valutazione psicologica', 'Somministrazione test e restituzione', 90, 120, '#8b5cf6', 'Valutazioni'],
+                ],
+            ],
+            'avvocato' => [
+                'label' => 'Studio legale',
+                'staff_title' => 'Avvocato',
+                'staff_hint' => 'es. Avvocato, Praticante',
+                'terms' => ['staff' => 'professionista', 'staffs' => 'Professionisti', 'service' => 'consulenza', 'services' => 'Consulenze', 'product' => 'documento', 'products' => 'Documenti'],
+                'services' => [
+                    ['Prima consulenza', 'Analisi del caso e possibili soluzioni', 45, 80, '#3b82f6', 'Consulenze'],
+                    ['Consulenza online', 'Videochiamata', 45, 70, '#14b8a6', 'Consulenze'],
+                    ['Consulenza diritto di famiglia', 'Separazioni, divorzi, affidamento', 60, 100, '#ec4899', 'Civile'],
+                    ['Consulenza lavoro', 'Licenziamenti, contratti, vertenze', 60, 100, '#f59e0b', 'Lavoro'],
+                    ['Recupero crediti', 'Valutazione della pratica', 45, 80, '#10b981', 'Civile'],
+                    ['Successioni ed eredità', 'Consulenza su testamenti ed eredità', 60, 100, '#8b5cf6', 'Civile'],
+                    ['Revisione contratto', 'Lettura e parere su un contratto', 60, 120, '#6b7280', 'Contratti'],
+                ],
+            ],
+            'commercialista' => [
+                'label' => 'Commercialista',
+                'staff_title' => 'Commercialista',
+                'staff_hint' => 'es. Commercialista, Consulente fiscale',
+                'terms' => ['staff' => 'consulente', 'staffs' => 'Consulenti', 'service' => 'servizio', 'services' => 'Servizi', 'product' => 'documento', 'products' => 'Documenti'],
+                'services' => [
+                    ['Prima consulenza', 'Analisi della situazione fiscale', 45, 60, '#3b82f6', 'Consulenze'],
+                    ['Dichiarazione dei redditi (730)', 'Compilazione e invio', 45, 60, '#10b981', 'Dichiarazioni'],
+                    ['Modello Redditi persone fisiche', 'Compilazione e invio', 60, 120, '#10b981', 'Dichiarazioni'],
+                    ['Apertura partita IVA', 'Scelta del regime e apertura', 60, 150, '#f59e0b', 'Imprese'],
+                    ['Consulenza regime forfettario', 'Requisiti, tasse e adempimenti', 45, 60, '#14b8a6', 'Consulenze'],
+                    ['ISEE', 'Compilazione DSU', 30, 30, '#8b5cf6', 'Pratiche'],
+                    ['Successione', 'Dichiarazione di successione', 60, 300, '#6b7280', 'Pratiche'],
+                    ['Incontro periodico', 'Consegna documenti e aggiornamento', 30, 0, '#ec4899', 'Clienti'],
+                ],
+            ],
+            'consulente-finanziario' => [
+                'label' => 'Consulente finanziario',
+                'staff_title' => 'Consulente finanziario',
+                'staff_hint' => 'es. Consulente finanziario, Private banker',
+                'terms' => ['staff' => 'consulente', 'staffs' => 'Consulenti', 'service' => 'consulenza', 'services' => 'Consulenze', 'product' => 'documento', 'products' => 'Documenti'],
+                'services' => [
+                    ['Primo incontro', 'Conoscenza e analisi degli obiettivi', 60, 0, '#3b82f6', 'Incontri'],
+                    ['Analisi del portafoglio', 'Verifica degli investimenti attuali', 60, 0, '#10b981', 'Investimenti'],
+                    ['Pianificazione previdenziale', 'Pensione e fondi pensione', 60, 0, '#f59e0b', 'Pianificazione'],
+                    ['Protezione e assicurazioni', 'Polizze vita, salute, casa', 45, 0, '#8b5cf6', 'Protezione'],
+                    ['Pianificazione successoria', 'Passaggio generazionale del patrimonio', 60, 0, '#6b7280', 'Pianificazione'],
+                    ['Consulenza mutuo', 'Confronto e scelta del mutuo', 45, 0, '#14b8a6', 'Finanziamenti'],
+                    ['Revisione periodica', 'Aggiornamento del piano', 45, 0, '#ec4899', 'Incontri'],
+                ],
+            ],
+            'immobiliare' => [
+                'label' => 'Agenzia immobiliare',
+                'staff_title' => 'Agente immobiliare',
+                'staff_hint' => 'es. Agente immobiliare',
+                'terms' => ['staff' => 'agente', 'staffs' => 'Agenti', 'service' => 'appuntamento', 'services' => 'Tipi di appuntamento', 'product' => 'immobile', 'products' => 'Immobili'],
+                'services' => [
+                    ['Visita immobile', 'Visita accompagnata a un immobile', 45, 0, '#3b82f6', 'Visite'],
+                    ['Valutazione gratuita', 'Stima del valore del tuo immobile', 60, 0, '#10b981', 'Vendita'],
+                    ['Incontro in agenzia', 'Ricerca casa e richieste', 30, 0, '#14b8a6', 'Incontri'],
+                    ['Consulenza affitto', 'Per proprietari che vogliono affittare', 45, 0, '#f59e0b', 'Affitti'],
+                    ['Consulenza mutuo', 'Con il consulente creditizio', 45, 0, '#8b5cf6', 'Finanziamenti'],
+                    ['Firma proposta / compromesso', 'Appuntamento per la firma', 60, 0, '#ec4899', 'Trattative'],
+                    ['Servizio fotografico immobile', 'Foto e planimetria per l\'annuncio', 60, 0, '#6b7280', 'Vendita'],
+                ],
+            ],
+            'campi-sportivi' => [
+                'label' => 'Campi da gioco / centro sportivo',
+                'staff_title' => 'Campo',
+                'staff_hint' => 'es. Campo 1, Campo padel, Calcetto',
+                'terms' => ['staff' => 'campo', 'staffs' => 'Campi', 'service' => 'prenotazione', 'services' => 'Attività', 'product' => 'articolo', 'products' => 'Noleggi e articoli'],
+                'services' => [
+                    ['Padel 1 ora', 'Campo da padel, 4 giocatori', 60, 40, '#3b82f6', 'Padel'],
+                    ['Padel 1 ora e mezza', 'Campo da padel, 4 giocatori', 90, 56, '#3b82f6', 'Padel'],
+                    ['Tennis 1 ora', 'Campo da tennis', 60, 20, '#10b981', 'Tennis'],
+                    ['Calcetto 1 ora', 'Campo da calcio a 5', 60, 70, '#f59e0b', 'Calcio'],
+                    ['Calcio a 8 1 ora', 'Campo da calcio a 8', 60, 100, '#f59e0b', 'Calcio'],
+                    ['Beach volley 1 ora', 'Campo da beach volley', 60, 30, '#14b8a6', 'Beach'],
+                    ['Lezione con maestro', 'Lezione individuale', 60, 40, '#8b5cf6', 'Lezioni'],
+                    ['Noleggio racchette', 'Racchette e palline', 60, 5, '#6b7280', 'Noleggi'],
+                ],
+            ],
+            'autoscuola' => [
+                'label' => 'Autoscuola',
+                'staff_title' => 'Istruttore',
+                'staff_hint' => 'es. Istruttore di guida',
+                'terms' => ['staff' => 'istruttore', 'staffs' => 'Istruttori', 'service' => 'lezione', 'services' => 'Lezioni', 'product' => 'materiale', 'products' => 'Materiali'],
+                'services' => [
+                    ['Guida auto (patente B)', 'Lezione di guida', 30, 30, '#3b82f6', 'Guide'],
+                    ['Guida auto doppia', 'Lezione di guida di un\'ora', 60, 55, '#3b82f6', 'Guide'],
+                    ['Guida in autostrada / notturna', 'Guida obbligatoria', 60, 60, '#8b5cf6', 'Guide'],
+                    ['Guida moto (A1/A2/A)', 'Lezione di guida moto', 30, 35, '#f59e0b', 'Guide'],
+                    ['Lezione di teoria', 'Lezione in aula', 60, 0, '#10b981', 'Teoria'],
+                    ['Iscrizione e pratica', 'Iscrizione al corso e documenti', 30, 0, '#6b7280', 'Segreteria'],
+                    ['Rinnovo patente', 'Visita medica e pratica', 20, 80, '#14b8a6', 'Segreteria'],
+                    ['Esame di guida', 'Accompagnamento all\'esame', 60, 80, '#ef4444', 'Esami'],
+                ],
+            ],
             'altro' => [
                 'label' => 'Altra attività',
                 'staff_title' => '',
@@ -219,6 +456,33 @@ final class Categories
             }
         }
         return $out;
+    }
+
+    /** Categorie aggiunte con lo schema 9 (inserite anche nei database già esistenti). */
+    public const ADDED_V9 = ['dentista', 'veterinario', 'gommista', 'toelettatura', 'addestratore', 'idraulico', 'elettricista', 'fisioterapista', 'psicologo', 'avvocato', 'commercialista', 'consulente-finanziario', 'immobiliare', 'campi-sportivi', 'autoscuola'];
+
+    /** Aggiunge le categorie predefinite indicate se mancano (prima di "Altra attività"). @param array<int,string> $keys */
+    public static function addMissing(Db $db, array $keys): void
+    {
+        $builtin = self::builtin();
+        $altro = $db->row("SELECT sort_order FROM categories WHERE cat_key = 'altro'");
+        $order = (int)($db->row('SELECT COALESCE(MAX(sort_order), 0) AS m FROM categories' . ($altro !== null ? " WHERE cat_key <> 'altro'" : ''))['m'] ?? 0);
+        foreach ($keys as $key) {
+            if (!isset($builtin[$key]) || $db->row('SELECT id FROM categories WHERE cat_key = ?', [$key]) !== null) {
+                continue;
+            }
+            $c = $builtin[$key];
+            $db->exec(
+                'INSERT INTO categories (cat_key, label, staff_title, staff_hint, terms, services, active, sort_order) VALUES (?, ?, ?, ?, ?, ?, 1, ?)',
+                [$key, $c['label'], $c['staff_title'], $c['staff_hint'], json_encode($c['terms'], JSON_UNESCAPED_UNICODE), json_encode($c['services'], JSON_UNESCAPED_UNICODE), ++$order]
+            );
+        }
+        if ($altro !== null) {
+            $db->exec("UPDATE categories SET sort_order = ? WHERE cat_key = 'altro'", [$order + 1]);
+        }
+        if (self::$db === $db) {
+            self::$cache = null;
+        }
     }
 
     /** Riempie la tabella con l'elenco predefinito (solo se è vuota). */

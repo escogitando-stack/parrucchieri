@@ -486,10 +486,10 @@ foreach ([
     $old->exec($sql);
 }
 Schema::ensure($old);
-check('migrazione: versione e tabella account', $old->metaGet('schema_version') === '8' && $old->tableExists('accounts') && $old->tableExists('categories') && $old->columnExists('clients', 'account_id'));
+check('migrazione: versione e tabella account', $old->metaGet('schema_version') === '9' && $old->tableExists('accounts') && $old->tableExists('categories') && $old->columnExists('clients', 'account_id'));
 check('migrazione: dati esistenti senza proprietario', Schema::hasUnownedData($old));
 Schema::ensure($old);
-check('migrazione ripetibile', $old->metaGet('schema_version') === '8');
+check('migrazione ripetibile', $old->metaGet('schema_version') === '9');
 $first = Auth::register($old, ['trial_days' => 30], 'Salone Giulia', 'parrucchiere', 'giulia@example.com', 'password123');
 check('primo negozio eredita i dati', $first['ok'] && !Schema::hasUnownedData($old)
     && $old->row('SELECT COUNT(*) AS c FROM clients WHERE account_id = ?', [$first['id']])['c'] === 1
@@ -973,6 +973,13 @@ fwrite(STDOUT, "Categorie merceologiche\n");
 $db = newDb();
 \App\Categories::boot($db);
 check('categorie: seminate dal predefinito', count(\App\Categories::all()) === count(\App\Categories::builtin()) && \App\Categories::all()['parrucchiere']['id'] > 0);
+check('categorie: 22 predefinite con servizi', count(\App\Categories::all()) === 22 && min(array_map(static fn($c) => count($c['services']), \App\Categories::all())) >= 3 && array_key_last(\App\Categories::all()) === 'altro');
+$old8 = newDb();
+$old8->exec("DELETE FROM categories WHERE cat_key IN ('dentista', 'autoscuola')");
+$old8->exec("UPDATE categories SET label = 'Dentista mio' WHERE cat_key = 'veterinario'");
+$old8->metaSet('schema_version', '8');
+Schema::ensure($old8);
+check('migrazione 9: aggiunge solo le mancanti', $old8->metaGet('schema_version') === '9' && $old8->row("SELECT id FROM categories WHERE cat_key = 'autoscuola'") !== null && $old8->row("SELECT label FROM categories WHERE cat_key = 'veterinario'")['label'] === 'Dentista mio' && (int)$old8->row("SELECT COUNT(*) AS n FROM categories")['n'] === 22 && (int)$old8->row("SELECT sort_order AS s FROM categories WHERE cat_key = 'altro'")['s'] === (int)$old8->row("SELECT MAX(sort_order) AS s FROM categories")['s']);
 check('categorie: nuova', \App\Categories::save($db, 0, ['label' => 'Fisioterapia', 'staff_title' => 'Fisioterapista', 't_staffs' => 'Terapisti', 'services' => "Seduta | Trattamento manuale | 45 | 50,5 | Trattamenti\nValutazione | | 30 | 0", 'active' => '1']) === null);
 $fis = \App\Categories::get('fisioterapia');
 check('categorie: servizi letti dal testo', $fis['label'] === 'Fisioterapia' && count($fis['services']) === 2 && $fis['services'][0][3] === 50.5 && $fis['services'][0][2] === 45 && $fis['terms']['staffs'] === 'Terapisti' && $fis['terms']['service'] === 'servizio');
