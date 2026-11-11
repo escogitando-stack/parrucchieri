@@ -425,7 +425,7 @@ if ($path === '/admin') {
             goto render_admin;
         }
         if ($action === 'cat_save' || $action === 'cat_delete') {
-            $err = $action === 'cat_save' ? App\Categories::save($db, $target, $_POST) : App\Categories::delete($db, $target);
+            $err = $action === 'cat_save' ? App\Categories::save($db, $target, $_POST) : App\Categories::delete($db, $target, (string)($_POST['move_to'] ?? ''));
             if ($err === null) {
                 $notice = $action === 'cat_delete' ? 'Categoria eliminata.' : ($target === 0 ? 'Categoria aggiunta.' : 'Categoria aggiornata.');
             } else {

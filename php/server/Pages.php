@@ -856,7 +856,8 @@ HTML;
         $usage = (array)($x['usage'] ?? []);
         $old = (array)($x['cat_old'] ?? []);
         $oldId = isset($old['id']) ? (int)$old['id'] : -1;
-        $form = static function (string $key, array $c) use ($csrf, $usage, $old, $oldId): string {
+        $allCats = $cats;
+        $form = static function (string $key, array $c) use ($csrf, $usage, $old, $oldId, $allCats): string {
             $id = (int)($c['id'] ?? 0);
             $useOld = $oldId === $id;
             $val = static fn(string $k, string $def) => self::h($useOld ? (string)($old[$k] ?? '') : $def);
@@ -874,8 +875,20 @@ HTML;
             $summary = $id === 0
                 ? '+ Nuova categoria'
                 : self::h((string)$c['label']) . ' <span class="muted">· ' . count((array)$c['services']) . ' servizi · ' . $n . ($n === 1 ? ' negozio' : ' negozi') . (empty($c['active']) ? ' · <b>disattivata</b>' : '') . '</span>';
-            $del = $id !== 0 && $key !== 'altro'
-                ? '<button class="mini danger" name="azione" value="cat_delete" onclick="return confirm(\'Eliminare questa categoria?\')">Elimina</button>' : '';
+            $del = '';
+            if ($id !== 0) {
+                $move = '';
+                if ($n > 0) {
+                    foreach ($allCats as $k2 => $c2) {
+                        if ($k2 !== $key) {
+                            $move .= '<option value="' . self::h((string)$k2) . '"' . ($k2 === 'altro' ? ' selected' : '') . '>' . self::h((string)$c2['label']) . '</option>';
+                        }
+                    }
+                    $move = '<label style="display:flex;gap:6px;align-items:center;margin:0;font-weight:400">e sposta i ' . $n . ($n === 1 ? ' negozio' : ' negozi') . ' in <select name="move_to" style="height:32px;width:auto;font-size:13px;margin:0">' . $move . '</select></label>';
+                }
+                $msg = $n > 0 ? 'Eliminare questa categoria e spostare i suoi negozi nella categoria scelta?' : 'Eliminare questa categoria?';
+                $del = '<button class="mini danger" name="azione" value="cat_delete" formnovalidate onclick="return confirm(\'' . $msg . '\')">Elimina</button>' . $move;
+            }
             return '<details class="cat"' . ($useOld ? ' open' : '') . '><summary>' . $summary . '</summary>'
                 . '<form method="post" action="/admin" class="catform" style="margin-top:10px"><input type="hidden" name="csrf" value="' . self::h($csrf) . '"><input type="hidden" name="id" value="' . $id . '">'
                 . '<div class="grid2"><label>Nome della categoria *<input name="label" required maxlength="80" value="' . $val('label', (string)($c['label'] ?? '')) . '" placeholder="es. Fisioterapia"></label>'
@@ -896,7 +909,7 @@ HTML;
         }
         $html .= $form('', ['id' => 0]);
         return '<details class="card" id="categorie" style="margin:0 0 18px"' . ($old !== [] ? ' open' : '') . '><summary style="cursor:pointer;font-weight:700">Categorie merceologiche (' . count($cats) . ')</summary>'
-            . '<p class="sub" style="text-align:left;margin:8px 0 12px;font-size:14px">I tipi di attività tra cui si sceglie in registrazione. Ognuno precompila i servizi del nuovo negozio e i nomi usati nell\'app (per esempio <i>Meccanici</i> e <i>Interventi</i> per un\'officina). Una categoria usata da qualche negozio si può disattivare ma non eliminare.</p>'
+            . '<p class="sub" style="text-align:left;margin:8px 0 12px;font-size:14px">I tipi di attività tra cui si sceglie in registrazione. Ognuno precompila i servizi del nuovo negozio e i nomi usati nell\'app (per esempio <i>Meccanici</i> e <i>Interventi</i> per un\'officina). Una categoria disattivata sparisce dalle scelte ma resta ai negozi che la usano; se la elimini, scegli in quale categoria spostare i suoi negozi (servizi e dati non cambiano).</p>'
             . $html . '</details>';
     }
 }

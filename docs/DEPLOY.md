@@ -46,7 +46,7 @@ Poi fai il merge del branch su `main`. Quando l'azione è verde il branch `deplo
 - Il tipo di attività (parrucchiere, barbiere, unghie, estetica, meccanico, tattoo, altro) precompila servizi e nomi
   (per esempio *Meccanici* e *Interventi* per un'officina). Si può cambiare da **Impostazioni** e ogni servizio è modificabile.
   Le categorie merceologiche si gestiscono da **/admin → Categorie merceologiche**: nome, servizi di partenza,
-  nomi usati nell'app; si possono aggiungere, disattivare (restano ai negozi che le usano) o eliminare se nessuno le usa.
+  nomi usati nell'app; si possono aggiungere, disattivare (restano ai negozi che le usano) o eliminare (i negozi che la usano passano alla categoria che scegli).
 - Dopo la registrazione parte la **prova gratuita** (`trial_days`, 30 di default). Scaduta la prova, l'agenda si blocca
   e il titolare viene mandato alla pagina `/abbonamento`: i dati non si cancellano.
 - **Aggiornamento da una versione precedente**: al primo accesso il database viene aggiornato da solo. I dati già

@@ -370,19 +370,26 @@ final class Categories
         return null;
     }
 
-    /** Elimina una categoria non usata da nessun negozio. Restituisce un messaggio di errore oppure null. */
-    public static function delete(Db $db, int $id): ?string
+    /**
+     * Elimina una categoria. Se qualche negozio la usa, i suoi negozi passano alla categoria $moveTo
+     * (i loro servizi e dati non cambiano). Restituisce un messaggio di errore oppure null.
+     */
+    public static function delete(Db $db, int $id, string $moveTo = ''): ?string
     {
         $row = $db->row('SELECT cat_key, label FROM categories WHERE id = ?', [$id]);
         if ($row === null) {
             return 'Categoria non trovata.';
         }
-        if ($row['cat_key'] === 'altro') {
-            return '"Altra attività" non si può eliminare: è la scelta di riserva.';
+        if ((int)($db->row('SELECT COUNT(*) AS n FROM categories')['n'] ?? 0) <= 1) {
+            return 'Deve restare almeno una categoria.';
         }
-        $n = (int)($db->row('SELECT COUNT(*) AS n FROM accounts WHERE category = ?', [$row['cat_key']])['n'] ?? 0);
+        $key = (string)$row['cat_key'];
+        $n = (int)($db->row('SELECT COUNT(*) AS n FROM accounts WHERE category = ?', [$key])['n'] ?? 0);
         if ($n > 0) {
-            return "La usano $n negozi: disattivala invece di eliminarla (non comparirà più tra le scelte).";
+            if ($moveTo === '' || $moveTo === $key || $db->row('SELECT id FROM categories WHERE cat_key = ?', [$moveTo]) === null) {
+                return "La usano $n negozi: scegli a quale categoria spostarli.";
+            }
+            $db->exec('UPDATE accounts SET category = ? WHERE category = ?', [$moveTo, $key]);
         }
         $db->exec('DELETE FROM categories WHERE id = ?', [$id]);
         if (self::$db === $db) {
