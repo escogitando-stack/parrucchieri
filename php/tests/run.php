@@ -486,10 +486,10 @@ foreach ([
     $old->exec($sql);
 }
 Schema::ensure($old);
-check('migrazione: versione e tabella account', $old->metaGet('schema_version') === '9' && $old->tableExists('accounts') && $old->tableExists('categories') && $old->columnExists('clients', 'account_id'));
+check('migrazione: versione e tabella account', $old->metaGet('schema_version') === '10' && $old->tableExists('accounts') && $old->tableExists('categories') && $old->columnExists('clients', 'account_id'));
 check('migrazione: dati esistenti senza proprietario', Schema::hasUnownedData($old));
 Schema::ensure($old);
-check('migrazione ripetibile', $old->metaGet('schema_version') === '9');
+check('migrazione ripetibile', $old->metaGet('schema_version') === '10');
 $first = Auth::register($old, ['trial_days' => 30], 'Salone Giulia', 'parrucchiere', 'giulia@example.com', 'password123');
 check('primo negozio eredita i dati', $first['ok'] && !Schema::hasUnownedData($old)
     && $old->row('SELECT COUNT(*) AS c FROM clients WHERE account_id = ?', [$first['id']])['c'] === 1
@@ -979,7 +979,7 @@ $old8->exec("DELETE FROM categories WHERE cat_key IN ('dentista', 'autoscuola')"
 $old8->exec("UPDATE categories SET label = 'Dentista mio' WHERE cat_key = 'veterinario'");
 $old8->metaSet('schema_version', '8');
 Schema::ensure($old8);
-check('migrazione 9: aggiunge solo le mancanti', $old8->metaGet('schema_version') === '9' && $old8->row("SELECT id FROM categories WHERE cat_key = 'autoscuola'") !== null && $old8->row("SELECT label FROM categories WHERE cat_key = 'veterinario'")['label'] === 'Dentista mio' && (int)$old8->row("SELECT COUNT(*) AS n FROM categories")['n'] === 22 && (int)$old8->row("SELECT sort_order AS s FROM categories WHERE cat_key = 'altro'")['s'] === (int)$old8->row("SELECT MAX(sort_order) AS s FROM categories")['s']);
+check('migrazione 9: aggiunge solo le mancanti', $old8->metaGet('schema_version') === '10' && $old8->row("SELECT id FROM categories WHERE cat_key = 'autoscuola'") !== null && $old8->row("SELECT label FROM categories WHERE cat_key = 'veterinario'")['label'] === 'Dentista mio' && (int)$old8->row("SELECT COUNT(*) AS n FROM categories")['n'] === 22 && (int)$old8->row("SELECT sort_order AS s FROM categories WHERE cat_key = 'altro'")['s'] === (int)$old8->row("SELECT MAX(sort_order) AS s FROM categories")['s']);
 check('categorie: nuova', \App\Categories::save($db, 0, ['label' => 'Fisioterapia', 'staff_title' => 'Fisioterapista', 't_staffs' => 'Terapisti', 'services' => "Seduta | Trattamento manuale | 45 | 50,5 | Trattamenti\nValutazione | | 30 | 0", 'active' => '1']) === null);
 $fis = \App\Categories::get('fisioterapia');
 check('categorie: servizi letti dal testo', $fis['label'] === 'Fisioterapia' && count($fis['services']) === 2 && $fis['services'][0][3] === 50.5 && $fis['services'][0][2] === 45 && $fis['terms']['staffs'] === 'Terapisti' && $fis['terms']['service'] === 'servizio');
@@ -1005,6 +1005,40 @@ $rows = Admin::rows($db);
 $page = Pages::admin([], $rows, Admin::stats($rows), ['q' => '', 'state' => '', 'page' => 1, 'pages' => 1, 'shown' => 1], $tok, 0, null, null, [], ['sources' => [$fid => 'Fisio <b>'], 'dup' => $fid, 'categories' => \App\Categories::all(), 'usage' => \App\Categories::usage($db)]);
 check('pagina admin: riquadri demo e categorie', str_contains($page, 'value="duplicate"') && str_contains($page, 'Categorie merceologiche') && str_contains($page, 'value="cat_save"') && str_contains($page, 'Duplica per una demo') && !str_contains($page, 'Fisio <b>'));
 Auth::logout();
+\App\Categories::boot(null);
+
+// ── Pagina pubblica a template ───────────────────────────────────────
+fwrite(STDOUT, "Template pagina pubblica\n");
+$db = newDb();
+\App\Categories::boot($db);
+foreach (array_keys(\App\Categories::all()) as $k) {
+    $tpl = \App\Themes::forCategory($k, \App\Categories::get($k));
+    if (!str_contains(\App\Themes::headlineHtml($tpl['headline']), '<em>') || count($tpl['points']) !== 3) {
+        check("template $k", false);
+    }
+}
+check('template: ogni categoria ha titolo con corsivo e 3 punti', true);
+check('template: stile predefinito per categoria', \App\Themes::forCategory('estetica', \App\Categories::get('estetica'))['style_key'] === 'cipria' && \App\Themes::forCategory('barbiere', \App\Categories::get('barbiere'))['style_key'] === 'notte');
+check('template: stile indovinato per categorie nuove', \App\Themes::guessStyle('Osteopata e fisioterapia') === 'menta' && \App\Themes::guessStyle('Scuola di cucina') === 'neutro');
+check('template: titolo escapato', \App\Themes::headlineHtml('<b>x</b> *ok*') === '&lt;b&gt;x&lt;/b&gt; <em>ok</em>');
+$eid = addAccount($db, 'bella@example.com', 'estetica');
+$db->exec("UPDATE accounts SET business_name = 'Bella <Vita>', shop_whatsapp = '333 1234567', shop_address = 'Via Roma 1' WHERE id = ?", [$eid]);
+$ea = Auth::account($db, $eid);
+$html = \App\Shop::page([], $ea, \App\Availability::services($db, $eid), \App\Availability::staff($db, $eid), true);
+check('pagina: hero, punti, servizi e prenotazione', str_contains($html, 'tp-hero') && substr_count($html, 'class="tp-num"') === 3 && str_contains($html, 'tp-menu') && str_contains($html, 'id="book"') && str_contains($html, '<em>bellezza</em>'));
+check('pagina: colori dello stile cipria', str_contains($html, '--bg:#f7ebe7') && str_contains($html, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 500"'));
+check('pagina: nome escapato', str_contains($html, 'Bella &lt;Vita&gt;') && !str_contains($html, 'Bella <Vita>'));
+\App\Categories::save($db, \App\Categories::get('estetica')['id'], ['label' => 'Centro estetico', 'theme' => 'menta', 'image_url' => 'https://images.example.com/a.jpg', 'headline' => 'Ciao *mondo*', 'active' => '1', 'services' => \App\Categories::servicesToText(\App\Categories::get('estetica')['services'])]);
+$html = \App\Shop::page([], $ea, [], [], true);
+check('pagina: stile, immagine e titolo scelti in admin', str_contains($html, '--bg:#e8f3f0') && str_contains($html, 'src="https://images.example.com/a.jpg"') && str_contains($html, 'Ciao <em>mondo</em>'));
+check('admin: immagine categoria solo https', \App\Categories::save($db, \App\Categories::get('estetica')['id'], ['label' => 'X', 'image_url' => 'javascript:alert(1)']) !== null && \App\Categories::save($db, \App\Categories::get('estetica')['id'], ['label' => 'X', 'theme' => 'boh']) !== null);
+$png = 'data:image/png;base64,' . base64_encode((string)base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='));
+[$s1] = call(new Api($db, $eid), 'PUT', '/api/account', [], ['cover' => $png]);
+$ea = Auth::account($db, $eid);
+check('copertina: caricata dal negozio', $s1 === 200 && \App\Shop::cover($ea) !== null && str_contains(\App\Shop::page([], $ea, [], [], true), '/copertina?v='));
+[, $acc] = call(new Api($db, $eid), 'PUT', '/api/account', [], ['remove_cover' => true]);
+check('copertina: rimossa', $acc['account']['has_cover'] === false);
+check('copertina: immagine non valida rifiutata', call(new Api($db, $eid), 'PUT', '/api/account', [], ['cover' => 'data:image/png;base64,AAAA'])[0] === 400);
 \App\Categories::boot(null);
 
 fwrite(STDOUT, "\n$passed ok, $failed falliti\n");

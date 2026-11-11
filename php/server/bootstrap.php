@@ -8,6 +8,7 @@ require_once __DIR__ . '/Schema.php';
 require_once __DIR__ . '/Api.php';
 require_once __DIR__ . '/Auth.php';
 require_once __DIR__ . '/Categories.php';
+require_once __DIR__ . '/Themes.php';
 require_once __DIR__ . '/Booking.php';
 require_once __DIR__ . '/Availability.php';
 require_once __DIR__ . '/Shop.php';

@@ -269,7 +269,7 @@ if (preg_match('#^/calendario/([a-f0-9]{32})\.ics$#', $path, $mm)) {
 }
 
 // Pagina pubblica del negozio: /nome, con logo, orari e prenotazione online.
-if (preg_match('#^/([a-z0-9][a-z0-9-]{1,78}[a-z0-9])(?:/(logo|giorni|orari|prenota|privacy|primo|qr\.svg))?$#', $path, $mm)) {
+if (preg_match('#^/([a-z0-9][a-z0-9-]{1,78}[a-z0-9])(?:/(logo|copertina|giorni|orari|prenota|privacy|primo|qr\.svg))?$#', $path, $mm)) {
     $shopAcct = Booking::accountBySlug($db, $mm[1]);
     if ($shopAcct !== null) {
         $sub = $mm[2] ?? '';
@@ -298,8 +298,8 @@ if (preg_match('#^/([a-z0-9][a-z0-9-]{1,78}[a-z0-9])(?:/(logo|giorni|orari|preno
             echo Shop::privacyPage($cfg, $shopAcct);
             exit;
         }
-        if ($sub === 'logo') {
-            $img = Shop::logo($shopAcct);
+        if ($sub === 'logo' || $sub === 'copertina') {
+            $img = $sub === 'logo' ? Shop::logo($shopAcct) : Shop::cover($shopAcct);
             if ($img === null) {
                 http_response_code(404);
                 exit;
@@ -410,6 +410,14 @@ if ($path === '/admin') {
                 $in['logo'] = 'data:' . (string)($info['mime'] ?? 'application/octet-stream') . ';base64,' . base64_encode($raw);
             } elseif (is_array($up) && ($up['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
                 $in['logo'] = 'x'; // caricamento non riuscito: verrà segnalato come logo non valido
+            }
+            $upc = $_FILES['cover'] ?? null;
+            if (is_array($upc) && ($upc['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK && is_uploaded_file((string)$upc['tmp_name'])) {
+                $raw = (string)file_get_contents((string)$upc['tmp_name']);
+                $info = @getimagesizefromstring($raw);
+                $in['cover'] = 'data:' . (string)($info['mime'] ?? 'application/octet-stream') . ';base64,' . base64_encode($raw);
+            } elseif (is_array($upc) && ($upc['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+                $in['cover'] = 'x';
             }
             $res = Admin::duplicate($db, $cfg, $target, $in);
             if ($res['ok']) {

@@ -64,6 +64,9 @@ final class Categories
                 'services' => is_array($services) ? array_values($services) : [],
                 'active' => (int)$r['active'] === 1,
                 'sort_order' => (int)$r['sort_order'],
+                'theme' => (string)($r['theme'] ?? ''),
+                'image_url' => (string)($r['image_url'] ?? ''),
+                'headline' => (string)($r['headline'] ?? ''),
             ];
         }
         return self::$cache = $out;
@@ -595,6 +598,15 @@ final class Categories
         $staffTitle = mb_substr(trim((string)($in['staff_title'] ?? '')), 0, 80);
         $staffHint = mb_substr(trim((string)($in['staff_hint'] ?? '')), 0, 120);
         $active = !empty($in['active']) ? 1 : 0;
+        $theme = (string)($in['theme'] ?? '');
+        if ($theme !== '' && !isset(Themes::styles()[$theme])) {
+            return 'Stile grafico non valido.';
+        }
+        $image = trim((string)($in['image_url'] ?? ''));
+        if ($image !== '' && (!preg_match('#^https://[^\s"\'<>]+$#i', $image) || strlen($image) > 500)) {
+            return 'L\'immagine deve essere un indirizzo che inizia con https:// (massimo 500 caratteri).';
+        }
+        $headline = mb_substr(trim((string)($in['headline'] ?? '')), 0, 160);
         $jsonT = json_encode($terms, JSON_UNESCAPED_UNICODE);
         $jsonS = json_encode($services, JSON_UNESCAPED_UNICODE);
         if ($id === 0) {
@@ -611,8 +623,8 @@ final class Categories
             }
             $max = (int)($db->row('SELECT COALESCE(MAX(sort_order), 0) AS m FROM categories')['m'] ?? 0);
             $db->exec(
-                'INSERT INTO categories (cat_key, label, staff_title, staff_hint, terms, services, active, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                [$key, $label, $staffTitle, $staffHint, $jsonT, $jsonS, $active, $max + 1]
+                'INSERT INTO categories (cat_key, label, staff_title, staff_hint, terms, services, active, sort_order, theme, image_url, headline) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [$key, $label, $staffTitle, $staffHint, $jsonT, $jsonS, $active, $max + 1, $theme, $image, $headline]
             );
         } else {
             $row = $db->row('SELECT cat_key FROM categories WHERE id = ?', [$id]);
@@ -624,8 +636,8 @@ final class Categories
             }
             $order = (int)($in['sort_order'] ?? 0);
             $db->exec(
-                'UPDATE categories SET label = ?, staff_title = ?, staff_hint = ?, terms = ?, services = ?, active = ?' . ($order > 0 ? ', sort_order = ' . min($order, 9999) : '') . ' WHERE id = ?',
-                [$label, $staffTitle, $staffHint, $jsonT, $jsonS, $active, $id]
+                'UPDATE categories SET label = ?, staff_title = ?, staff_hint = ?, terms = ?, services = ?, active = ?, theme = ?, image_url = ?, headline = ?' . ($order > 0 ? ', sort_order = ' . min($order, 9999) : '') . ' WHERE id = ?',
+                [$label, $staffTitle, $staffHint, $jsonT, $jsonS, $active, $theme, $image, $headline, $id]
             );
         }
         if (self::$db === $db) {

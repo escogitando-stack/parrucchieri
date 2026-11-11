@@ -197,6 +197,14 @@ final class Admin
                 return ['ok' => false, 'error' => 'Logo non valido: usa un\'immagine PNG, JPEG, WebP o GIF fino a 400 KB.'];
             }
         }
+        $cover = null;
+        $coverUrl = (string)($in['cover'] ?? '');
+        if ($coverUrl !== '') {
+            $cover = Shop::parseImage($coverUrl, 1500);
+            if ($cover === null) {
+                return ['ok' => false, 'error' => 'Foto di copertina non valida: usa un\'immagine PNG, JPEG o WebP fino a 1,5 MB.'];
+            }
+        }
         $field = static fn(string $k, int $max): string => mb_substr(trim((string)($in[$k] ?? '')), 0, $max);
         $hours = $field('shop_hours', 500);
         $copyData = !empty($in['copy_data']);
@@ -209,14 +217,14 @@ final class Admin
                 'INSERT INTO accounts (email, password_hash, business_name, category, plan_status, trial_ends_at, approved, slug,
                     booking_enabled, slot_minutes, booking_notice_hours, booking_horizon_days,
                     shop_phone, shop_whatsapp, shop_email, shop_address, shop_description, shop_hours,
-                    logo_mime, logo_data, appointment_counter, last_login_at, trial_mail_stage, onboard_mail)
-                 VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 9, 1)',
+                    logo_mime, logo_data, cover_mime, cover_data, appointment_counter, last_login_at, trial_mail_stage, onboard_mail)
+                 VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 9, 1)',
                 [
                     $email, password_hash($password, PASSWORD_DEFAULT), $name, $category, 'trial', date('Y-m-d H:i:s', $now + $days * 86400), $slug,
                     (int)$src['booking_enabled'], (int)$src['slot_minutes'], (int)$src['booking_notice_hours'], (int)$src['booking_horizon_days'],
                     $field('shop_phone', 64), $field('shop_whatsapp', 64), $shopEmail, $field('shop_address', 255), $field('shop_description', 1000),
                     $hours !== '' ? $hours : (string)$src['shop_hours'],
-                    $logo['mime'] ?? '', $logo['data'] ?? null, $copyData ? (int)$src['appointment_counter'] : 0, '',
+                    $logo['mime'] ?? '', $logo['data'] ?? null, $cover['mime'] ?? '', $cover['data'] ?? null, $copyData ? (int)$src['appointment_counter'] : 0, '',
                 ]
             );
             $id = $db->lastId();

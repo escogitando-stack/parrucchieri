@@ -11,6 +11,14 @@ final class Shop
         return Pages::h($s);
     }
 
+    /** La foto di copertina caricata dal negozio (o null). @param array<string,mixed> $acct @return array{mime:string,data:string}|null */
+    public static function cover(array $acct): ?array
+    {
+        $mime = (string)($acct['cover_mime'] ?? '');
+        $data = base64_decode((string)($acct['cover_data'] ?? ''), true);
+        return $mime === '' || $data === false || $data === '' ? null : ['mime' => $mime, 'data' => $data];
+    }
+
     /** Il logo caricato, come immagine da servire (o null). @param array<string,mixed> $acct @return array{mime:string,data:string}|null */
     public static function logo(array $acct): ?array
     {
@@ -29,11 +37,17 @@ final class Shop
      */
     public static function parseLogo(string $dataUrl): ?array
     {
+        return self::parseImage($dataUrl, 400);
+    }
+
+    /** Come parseLogo, con un limite di peso a scelta (in KB). @return array{mime:string,data:string}|null */
+    public static function parseImage(string $dataUrl, int $maxKb): ?array
+    {
         if (!preg_match('#^data:(image/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/=\s]+)$#', $dataUrl, $m)) {
             return null;
         }
         $raw = base64_decode(preg_replace('/\s+/', '', $m[2]) ?? '', true);
-        if ($raw === false || $raw === '' || strlen($raw) > 400 * 1024) {
+        if ($raw === false || $raw === '' || strlen($raw) > $maxKb * 1024) {
             return null;
         }
         $info = @getimagesizeFromString($raw);
@@ -63,8 +77,14 @@ final class Shop
         $url = Notify::shopUrl($cfg, $acct);
         $hasLogo = ($acct['logo_mime'] ?? '') !== '';
         $logo = $hasLogo
-            ? '<img class="logo" src="/' . self::h($slug) . '/logo?v=' . substr(md5((string)$acct['logo_data']), 0, 8) . '" alt="Logo ' . self::h($name) . '">'
-            : '<div class="logo ph">' . self::h(mb_strtoupper(mb_substr($name, 0, 1))) . '</div>';
+            ? '<img class="tp-logo" src="/' . self::h($slug) . '/logo?v=' . substr(md5((string)$acct['logo_data']), 0, 8) . '" alt="Logo ' . self::h($name) . '">'
+            : '<div class="tp-logo ph">' . self::h(mb_strtoupper(mb_substr($name, 0, 1))) . '</div>';
+
+        $catKey = (string)$acct['category'];
+        $cat = Categories::get($catKey);
+        $tpl = Themes::forCategory($catKey, $cat);
+        $st = $tpl['style'];
+        $dark = $st['bg'] === '#1a1716';
 
         $rows = '';
         $phone = trim((string)($acct['shop_phone'] ?? ''));
@@ -88,15 +108,74 @@ final class Shop
             $rows .= '<li><span class="ico">' . Pages::icon('clock') . '</span><span>' . nl2br(self::h($hours)) . '</span></li>';
         }
         $desc = trim((string)($acct['shop_description'] ?? ''));
-        $contacts = $rows !== '' ? '<div class="card"><ul class="contact-list">' . $rows . '</ul></div>' : '';
+        $contacts = $rows !== '' ? '<div class="card"><h3 class="tp-h3">Dove e quando</h3><ul class="contact-list">' . $rows . '</ul></div>' : '';
+
+        // Immagine dell'arco: foto del negozio, poi immagine della categoria, poi illustrazione.
+        $hasCover = ($acct['cover_mime'] ?? '') !== '';
+        if ($hasCover) {
+            $art = '<img src="/' . self::h($slug) . '/copertina?v=' . substr(md5((string)$acct['cover_data']), 0, 8) . '" alt="' . self::h($name) . '">';
+            $ogImage = $url . '/copertina';
+        } elseif ($tpl['image'] !== '') {
+            $art = '<img src="' . self::h($tpl['image']) . '" alt="" referrerpolicy="no-referrer">';
+            $ogImage = $tpl['image'];
+        } else {
+            $art = Themes::illustration($st, $tpl['icon']);
+            $ogImage = $hasLogo ? $url . '/logo' : '';
+        }
+
+        $vars = '--bg:' . $st['bg'] . ';--surface:' . $st['surface'] . ';--ink:' . $st['ink'] . ';--muted:' . $st['muted'] . ';--acc:' . $st['acc'] . ';--acc2:' . $st['acc2'] . ';--soft:' . $st['soft']
+            . ';--on-acc:' . ($dark ? '#1a1716' : '#ffffff') . ';--line:' . ($dark ? 'rgba(255,255,255,.12)' : 'rgba(0,0,0,.09)')
+            . ';--font-h:' . ($st['font'] === 'serif' ? '"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif' : 'system-ui,-apple-system,"Segoe UI",Roboto,sans-serif');
 
         $head = '<meta name="description" content="' . self::h(($desc !== '' ? mb_substr($desc, 0, 150) : 'Prenota online da ' . $name)) . '">' . "\n"
             . '<meta property="og:title" content="' . self::h($name) . '">' . "\n"
-            . ($hasLogo ? '<meta property="og:image" content="' . self::h($url) . '/logo">' . "\n" : '')
-            . '<style>' . self::css() . '</style>' . "\n";
+            . ($ogImage !== '' ? '<meta property="og:image" content="' . self::h($ogImage) . '">' . "\n" : '')
+            . '<meta name="theme-color" content="' . $st['bg'] . '">' . "\n"
+            . '<style>:root{' . $vars . '}' . self::css() . self::themeCss() . '</style>' . "\n";
 
-        $head_html = '<section class="shop-head">' . $logo . '<div><h1>' . self::h($name) . '</h1><p class="cat">' . self::h(Categories::get((string)$acct['category'])['label']) . '</p></div></section>'
-            . ($desc !== '' ? '<p class="desc">' . nl2br(self::h($desc)) . '</p>' : '');
+        // Pulsanti principali
+        $cta = '<a class="btn" href="#book">Prenota ora</a>';
+        if ($wa !== '') {
+            $cta .= '<a class="btn alt" href="https://wa.me/' . self::h($wa) . '" rel="noopener">WhatsApp</a>';
+        } elseif ($phone !== '') {
+            $cta .= '<a class="btn alt" href="tel:' . self::h((string)preg_replace('/[^0-9+]/', '', $phone)) . '">Chiama</a>';
+        }
+        $count = count($services);
+        $facts = '<ul class="tp-facts">'
+            . ($count > 0 ? '<li><b>' . $count . '</b> ' . self::h(mb_strtolower((string)$cat['terms']['services'])) . ' prenotabili</li>' : '')
+            . '<li><b>24/7</b> prenotazione online</li>'
+            . ($addr !== '' ? '<li>' . Pages::icon('pin') . ' ' . self::h(mb_strimwidth($addr, 0, 48, '…')) . '</li>' : '')
+            . '</ul>';
+
+        $hero = '<section class="tp-hero">'
+            . '<div class="tp-txt">'
+            . '<div class="tp-who">' . $logo . '<div><b>' . self::h($name) . '</b><span>' . self::h((string)$cat['label']) . '</span></div></div>'
+            . '<h1 class="tp-title">' . Themes::headlineHtml($tpl['headline']) . '</h1>'
+            . '<p class="tp-lead">' . nl2br(self::h($desc !== '' ? $desc : $tpl['intro'])) . '</p>'
+            . '<div class="tp-cta">' . $cta . '</div>'
+            . $facts
+            . '</div>'
+            . '<div class="tp-art"><div class="tp-arch">' . $art . '</div>'
+            . '<div class="tp-badge"><span class="tp-badge-ico">' . Themes::icon($tpl['icon'], 22) . '</span><div><b>Prenota online</b><small>Scegli giorno e orario</small></div></div>'
+            . '<div class="tp-ring" aria-hidden="true"></div></div>'
+            . '</section>';
+
+        $points = '';
+        foreach ($tpl['points'] as $i => [$t, $txt]) {
+            $points .= '<div class="tp-point"><span class="tp-num">' . sprintf('%02d', $i + 1) . '</span><h3>' . self::h($t) . '</h3><p>' . self::h($txt) . '</p></div>';
+        }
+        $points = '<section class="tp-points">' . $points . '</section>';
+
+        // Vetrina dei servizi (i primi 8)
+        $menu = '';
+        foreach (array_slice($services, 0, 8) as $sv) {
+            $price = (float)$sv['price'] > 0 ? number_format((float)$sv['price'], (fmod((float)$sv['price'], 1.0) === 0.0 ? 0 : 2), ',', '.') . ' €' : '';
+            $menu .= '<li><div><b>' . self::h((string)$sv['name']) . '</b><small>' . (int)$sv['duration'] . ' min</small></div><span class="tp-dots"></span><em>' . $price . '</em></li>';
+        }
+        $menu = $menu !== '' ? '<section class="tp-menu"><p class="tp-kicker">' . self::h((string)$cat['terms']['services']) . '</p><h2 class="tp-h2">Scegli il tuo <em>momento</em></h2><ul>' . $menu . '</ul>'
+            . ($count > 8 ? '<p class="tp-more">e altri ' . ($count - 8) . ' nella prenotazione qui sotto</p>' : '') . '</section>' : '';
+
+        $head_html = $hero . $points . $menu;
 
         if (!$open || $services === []) {
             $msg = !$open ? 'Le prenotazioni online non sono attive al momento.' : 'Non ci sono ancora servizi prenotabili online.';
@@ -110,7 +189,7 @@ final class Shop
 
         $brand = '<a class="brand" href="/' . self::h($slug) . '">' . self::h($name) . '</a>';
         $footer = 'Prenotazioni gestite con <a href="/">' . self::h((string)($cfg['site_name'] ?? 'Appuntamenti4me')) . '</a>';
-        $body = '<div class="shop">' . $head_html . '<div class="shop-grid"><div>' . $book . '</div><div>' . $contacts . '</div></div></div>' . $script;
+        $body = '<div class="shop tp">' . $head_html . '<div class="shop-grid" id="prenota"><div>' . $book . '</div><div>' . $contacts . '</div></div></div>' . $script;
         return Pages::layout($cfg, $name, $body, false, false, '', $head, $brand, $footer);
     }
 
@@ -178,7 +257,7 @@ HTML;
 .shop-head h1{margin:0;font-size:clamp(24px,4vw,34px);letter-spacing:-.01em}
 .shop-head .cat{margin:2px 0 0;color:#78716c;font-size:14px}
 .logo{width:72px;height:72px;border-radius:16px;object-fit:contain;background:#fff;border:1px solid #e7e5e4;flex:none}
-.logo.ph{display:flex;align-items:center;justify-content:center;background:#fce7f3;color:#be185d;font-size:32px;font-weight:700;border-color:#f9a8d4}
+.logo.ph{display:flex;align-items:center;justify-content:center;background:var(--soft);color:var(--acc);font-size:32px;font-weight:700;border-color:var(--acc2)}
 .desc{color:#44403c;margin:10px 0 0;max-width:720px}
 .shop-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:18px;margin-top:18px;align-items:start}
 @media(max-width:820px){.shop-grid{grid-template-columns:1fr}}
@@ -186,7 +265,7 @@ HTML;
 .step{margin:18px 0 0}.step>b{display:block;margin-bottom:8px;font-size:14px;color:#44403c}
 .svcs{display:grid;gap:8px}
 label.svc{display:flex;gap:10px;align-items:center;border:1px solid #e7e5e4;border-radius:10px;padding:10px 12px;margin:0;font-weight:400;cursor:pointer}
-label.svc:has(input:checked){border-color:#be185d;background:#fdf2f8}
+label.svc:has(input:checked){border-color:var(--acc);background:var(--soft)}
 label.svc input{margin:0}label.svc span{display:flex;flex-direction:column}label.svc small{color:#78716c;font-size:12px}
 .cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;text-transform:capitalize;font-weight:600}
 .cal-head button{border:1px solid #e7e5e4;background:#fff;border-radius:8px;width:36px;height:34px;font-size:20px;cursor:pointer}
@@ -194,15 +273,15 @@ label.svc input{margin:0}label.svc span{display:flex;flex-direction:column}label
 .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center}
 .cal .dow{font-size:11px;color:#a8a29e;padding:4px 0;text-transform:uppercase}
 .cal button,.cal span.d{height:38px;border-radius:8px;border:0;background:transparent;font-size:14px;color:#d6d3d1}
-.cal button.free{background:#fdf2f8;color:#9d174d;font-weight:700;cursor:pointer;border:1px solid #fbcfe8}
-.cal button.sel{background:#be185d;color:#fff;border-color:#be185d}
+.cal button.free{background:var(--soft);color:var(--acc);font-weight:700;cursor:pointer;border:1px solid var(--acc2)}
+.cal button.sel{background:var(--acc);color:#fff;border-color:var(--acc)}
 .slots{display:flex;flex-wrap:wrap;gap:8px}
 .slots button{border:1px solid #e7e5e4;background:#fff;border-radius:8px;padding:8px 14px;font-size:15px;cursor:pointer}
-.slots button.sel{background:#be185d;color:#fff;border-color:#be185d}
+.slots button.sel{background:var(--acc);color:#fff;border-color:var(--acc)}
 .free{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:2px 12px 12px;margin-top:8px}
 .chosen{background:#f5f5f4;border-radius:8px;padding:8px 12px;margin:0 0 4px;font-size:14px}
 #s4 .btn{width:100%;margin-top:16px}
-a{color:#be185d}
+a{color:var(--acc)}
 .first{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:14px}
 .btn.small{padding:7px 12px;font-size:13px}
 div.box{background:#fff;border:1px solid #e7e5e4;border-radius:14px;padding:26px;margin:24px 0}div.box h1{margin:0 0 4px;font-size:22px}div.box p.sub{margin:0 0 14px;font-size:14px;color:#78716c}div.legal p{line-height:1.5}
@@ -210,6 +289,75 @@ div.box{background:#fff;border:1px solid #e7e5e4;border-radius:14px;padding:26px
 .bar{display:none}
 @media(max-width:820px){.bar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:20;gap:10px;align-items:center;justify-content:space-between;background:#fff;border-top:1px solid #e7e5e4;padding:10px 14px;box-shadow:0 -4px 14px rgba(0,0,0,.08)}.bar span{font-size:14px;font-weight:600}.bar .btn{white-space:nowrap}.shop{padding-bottom:70px}}
 .consent{display:flex;gap:8px;align-items:flex-start;font-size:13px;color:#57534e;margin-top:12px;font-weight:400}.consent input{margin-top:3px;flex:none}
+CSS;
+    }
+
+    /** Aspetto a template della pagina pubblica (colori dalle variabili dello stile). */
+    private static function themeCss(): string
+    {
+        return <<<'CSS'
+html body{background:var(--bg);color:var(--ink)}
+html body header.top .brand,html body header.top nav a{color:var(--ink)}
+html body footer,html body footer a{color:var(--muted)}
+.tp a{color:var(--acc)}
+.tp .btn{background:var(--acc);color:var(--on-acc)!important;border-radius:999px;padding:14px 26px;box-shadow:0 10px 24px -12px var(--acc)}
+.tp .btn:hover{filter:brightness(1.08);background:var(--acc)}
+.tp .btn.alt{background:transparent;color:var(--ink)!important;border:1.5px solid var(--ink);box-shadow:none}
+.tp .card{background:var(--surface);border-color:var(--line);color:var(--ink);border-radius:20px}
+.tp .card p,.tp .hint,.tp label.svc small,.tp .contact-list small{color:var(--muted)}
+.tp .ico{background:var(--soft);color:var(--acc)}
+.tp .contact-list li{border-color:var(--line)}
+.tp input,.tp select,.tp textarea{background:var(--surface);color:var(--ink);border-color:var(--line)}
+.tp label.svc,.tp .slots button,.tp .cal-head button{background:var(--surface);color:var(--ink);border-color:var(--line)}
+.tp .slots button.sel{background:var(--acc);color:var(--on-acc);border-color:var(--acc)}
+.tp .cal button.free{color:var(--ink)}
+.tp .cal button.sel{color:var(--on-acc)}
+.tp .chosen{background:var(--soft);color:var(--ink)}
+.tp .step>b{color:var(--ink)}
+.tp-hero{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:40px;align-items:center;padding:18px 0 36px}
+.tp-who{display:flex;gap:12px;align-items:center;margin-bottom:22px}
+.tp-who b{display:block;font-size:17px}.tp-who span{display:block;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.tp-logo{width:52px;height:52px;border-radius:14px;object-fit:contain;background:var(--surface);border:1px solid var(--line);flex:none}
+.tp-logo.ph{display:flex;align-items:center;justify-content:center;background:var(--acc);color:var(--on-acc);font:600 24px var(--font-h);border:0}
+.tp-title{font-family:var(--font-h);font-weight:500;font-size:clamp(36px,5.4vw,62px);line-height:1.04;letter-spacing:-.02em;margin:0 0 18px;color:var(--ink)}
+.tp-title em,.tp-h2 em{font-style:italic;color:var(--acc)}
+.tp-lead{font-size:18px;line-height:1.6;color:var(--muted);max-width:520px;margin:0 0 26px}
+.tp-cta{display:flex;flex-wrap:wrap;gap:12px}
+.tp-facts{list-style:none;display:flex;flex-wrap:wrap;gap:8px 22px;padding:0;margin:26px 0 0;font-size:14px;color:var(--muted)}
+.tp-facts li{display:flex;align-items:center;gap:6px}.tp-facts b{color:var(--ink);font-size:16px}.tp-facts svg{width:16px;height:16px}
+.tp-art{position:relative;max-width:440px;width:100%;justify-self:center}
+.tp-arch{position:relative;z-index:1;aspect-ratio:4/5;border-radius:999px 999px 28px 28px;overflow:hidden;background:var(--soft);box-shadow:0 30px 60px -30px rgba(0,0,0,.35)}
+.tp-arch img,.tp-arch svg{display:block;width:100%;height:100%;object-fit:cover}
+.tp-ring{position:absolute;z-index:0;right:-22px;top:-22px;width:100%;height:100%;border:1.5px solid var(--acc);border-radius:999px 999px 28px 28px;opacity:.35}
+.tp-badge{position:absolute;z-index:2;left:-26px;bottom:42px;display:flex;gap:12px;align-items:center;background:var(--surface);color:var(--ink);border-radius:18px;padding:12px 16px;box-shadow:0 18px 40px -18px rgba(0,0,0,.35)}
+.tp-badge b{display:block;font-size:14px}.tp-badge small{font-size:12px;color:var(--muted)}
+.tp-badge-ico{width:40px;height:40px;border-radius:12px;background:var(--soft);color:var(--acc);display:flex;align-items:center;justify-content:center}
+.tp-points{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:10px 0 40px}
+.tp-point{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:22px}
+.tp-num{display:inline-block;font:italic 500 30px/1 var(--font-h);color:var(--acc);margin-bottom:12px}
+.tp-point h3{margin:0 0 6px;font-size:17px}.tp-point p{margin:0;color:var(--muted);font-size:15px;line-height:1.5}
+.tp-kicker{margin:0 0 6px;font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--acc);font-weight:700}
+.tp-h2{font-family:var(--font-h);font-weight:500;font-size:clamp(28px,3.6vw,40px);margin:0 0 18px;text-align:left;letter-spacing:-.01em}
+.tp-menu{background:var(--surface);border:1px solid var(--line);border-radius:24px;padding:28px;margin:0 0 30px}
+.tp-menu ul{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 34px}
+.tp-menu li{display:flex;align-items:flex-end;gap:10px;padding:10px 0;border-bottom:1px dashed var(--line)}
+.tp-menu li b{display:block;font-size:16px}.tp-menu li small{color:var(--muted);font-size:13px}
+.tp-dots{flex:1}.tp-menu li em{font-style:normal;font-weight:700;color:var(--acc);white-space:nowrap}
+.tp-more{margin:14px 0 0;color:var(--muted);font-size:14px}
+.tp-h3{margin:0 0 6px;font-size:18px;font-family:var(--font-h);font-weight:600}
+.tp .book h3{font-family:var(--font-h);font-weight:600;font-size:24px}
+.shop-grid{scroll-margin-top:12px}#book{scroll-margin-top:12px}
+html body .bar{background:var(--surface);color:var(--ink);border-color:var(--line)}html body .bar .btn{background:var(--acc);color:var(--on-acc)!important;border-radius:999px}
+@media(max-width:820px){
+  .tp-hero{grid-template-columns:1fr;gap:34px;padding-top:4px}
+  .tp-art{max-width:250px}
+  .tp-title{font-size:clamp(32px,9vw,44px)}
+  .tp-badge{left:-8px;bottom:22px}
+  .tp-ring{right:-12px;top:-12px}
+  .tp-points{grid-template-columns:1fr}
+  .tp-menu ul{grid-template-columns:1fr}
+  .tp-menu{padding:20px}
+}
 CSS;
     }
 

@@ -226,6 +226,7 @@ final class Api
             'shop_description' => $acct['shop_description'],
             'shop_hours' => $acct['shop_hours'],
             'has_logo' => ($acct['logo_mime'] ?? '') !== '',
+            'has_cover' => ($acct['cover_mime'] ?? '') !== '',
             'impersonating' => Auth::impersonator() !== null,
             'daily_summary' => $this->db->metaGet('nosummary_' . $this->acct) !== '1',
         ];
@@ -316,6 +317,28 @@ final class Api
             }
             $values['logo_mime'] = $logo['mime'];
             $values['logo_data'] = $logo['data'];
+        }
+        if (($b['remove_cover'] ?? false) === true) {
+            $this->db->exec("UPDATE accounts SET cover_mime = '', cover_data = NULL WHERE id = ?", [$this->acct]);
+        }
+        $coverUrl = $this->optString($b, 'cover');
+        if ($coverUrl !== null && $coverUrl !== '') {
+            $cover = Shop::parseImage($coverUrl, 1500);
+            if ($cover === null) {
+                throw new HttpError(400, 'Foto non valida: usa un\'immagine PNG, JPEG o WebP fino a 1,5 MB.');
+            }
+            $this->db->exec('UPDATE accounts SET cover_mime = ?, cover_data = ? WHERE id = ?', [$cover['mime'], $cover['data'], $this->acct]);
+        }
+        if (($b['remove_cover'] ?? false) === true) {
+            $this->db->exec("UPDATE accounts SET cover_mime = '', cover_data = NULL WHERE id = ?", [$this->acct]);
+        }
+        $coverUrl = $this->optString($b, 'cover');
+        if ($coverUrl !== null && $coverUrl !== '') {
+            $cover = Shop::parseImage($coverUrl, 1500);
+            if ($cover === null) {
+                throw new HttpError(400, 'Foto non valida: usa un\'immagine PNG, JPEG o WebP fino a 1,5 MB.');
+            }
+            $this->db->exec('UPDATE accounts SET cover_mime = ?, cover_data = ? WHERE id = ?', [$cover['mime'], $cover['data'], $this->acct]);
         }
         $sets = [];
         $params = [];

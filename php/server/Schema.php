@@ -15,11 +15,12 @@ namespace App;
  *   6 = piani di abbonamento gestiti dall'amministratore
  *   7 = conferma automatica, promemoria, email automatiche e recupero password
  *   8 = categorie merceologiche gestite dall'amministratore (tabella categories)
+ *   10 = pagina pubblica a template: copertina del negozio, stile/immagine/titolo della categoria
  *   9 = 15 nuove categorie (dentista, veterinario, gommista, idraulico, autoscuola...)
  */
 final class Schema
 {
-    public const VERSION = 9;
+    public const VERSION = 10;
 
     /** Tabelle i cui dati appartengono a un negozio. */
     private const OWNED = ['clients', 'staff', 'services', 'appointments', 'blocked_slots', 'products', 'working_hours'];
@@ -54,7 +55,10 @@ final class Schema
         }
         if ($version < 9) {
             Categories::addMissing($db, Categories::ADDED_V9);
-            $db->metaSet('schema_version', (string)self::VERSION);
+            $db->metaSet('schema_version', '9');
+        }
+        if ($version < 10) {
+            self::migrateTo10($db);
         }
     }
 
@@ -102,6 +106,8 @@ final class Schema
                 shop_hours VARCHAR(500) NOT NULL DEFAULT '',
                 logo_mime VARCHAR(32) NOT NULL DEFAULT '',
                 logo_data MEDIUMTEXT NULL,
+                cover_mime VARCHAR(32) NOT NULL DEFAULT '',
+                cover_data MEDIUMTEXT NULL,
                 trial_mail_stage $int NOT NULL DEFAULT 0,
                 onboard_mail $int NOT NULL DEFAULT 0,
                 created_at $ts
@@ -445,8 +451,28 @@ final class Schema
                 terms TEXT NOT NULL,
                 services MEDIUMTEXT NOT NULL,
                 active $int NOT NULL DEFAULT 1,
-                sort_order $int NOT NULL DEFAULT 0
+                sort_order $int NOT NULL DEFAULT 0,
+                theme VARCHAR(24) NOT NULL DEFAULT '',
+                image_url VARCHAR(500) NOT NULL DEFAULT '',
+                headline VARCHAR(160) NOT NULL DEFAULT ''
             )$tail";
+    }
+
+    /** Copertina del negozio e aspetto della pagina pubblica per categoria. */
+    private static function migrateTo10(Db $db): void
+    {
+        $cols = [
+            'accounts' => ['cover_mime' => "VARCHAR(32) NOT NULL DEFAULT ''", 'cover_data' => 'MEDIUMTEXT NULL'],
+            'categories' => ['theme' => "VARCHAR(24) NOT NULL DEFAULT ''", 'image_url' => "VARCHAR(500) NOT NULL DEFAULT ''", 'headline' => "VARCHAR(160) NOT NULL DEFAULT ''"],
+        ];
+        foreach ($cols as $table => $defs) {
+            foreach ($defs as $col => $def) {
+                if (!$db->columnExists($table, $col)) {
+                    $db->exec("ALTER TABLE $table ADD COLUMN $col $def");
+                }
+            }
+        }
+        $db->metaSet('schema_version', (string)self::VERSION);
     }
 
     /** Categorie merceologiche nel database, partendo da quelle predefinite. */

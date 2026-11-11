@@ -12,17 +12,31 @@ const MAX_LOGO_SIDE = 320;
 
 /** Ridimensiona il logo nel browser, così resta leggero (massimo 320 px). */
 function logoToDataUrl(file: File): Promise<string> {
+  return resizeToDataUrl(file, MAX_LOGO_SIDE, "image/png");
+}
+
+/** Ridimensiona la foto di copertina (massimo 1400 px, JPEG) per tenerla sotto 1,5 MB. */
+function coverToDataUrl(file: File): Promise<string> {
+  return resizeToDataUrl(file, 1400, "image/jpeg", 0.82);
+}
+
+function resizeToDataUrl(file: File, maxSide: number, type: string, quality?: number): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
     img.onload = () => {
-      const scale = Math.min(1, MAX_LOGO_SIDE / Math.max(img.width, img.height));
+      const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
       const canvas = document.createElement("canvas");
       canvas.width = Math.max(1, Math.round(img.width * scale));
       canvas.height = Math.max(1, Math.round(img.height * scale));
-      canvas.getContext("2d")?.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const ctx = canvas.getContext("2d");
+      if (ctx && type === "image/jpeg") {
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+      ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
       URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL("image/png"));
+      resolve(canvas.toDataURL(type, quality));
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Immagine non leggibile")); };
     img.src = url;
@@ -38,6 +52,8 @@ export function ShopSettings() {
   const [saved, setSaved] = useState(false);
   const [logoBusy, setLogoBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [coverBusy, setCoverBusy] = useState(false);
+  const coverRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!account) return;
@@ -103,6 +119,33 @@ export function ShopSettings() {
     }
   };
 
+  const uploadCover = async (file: File | undefined) => {
+    if (!file) return;
+    setCoverBusy(true);
+    try {
+      const cover = await coverToDataUrl(file);
+      const data = await api<{ account: AccountInfo }>("PUT", "/api/account", { cover });
+      setAccount(data.account);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setCoverBusy(false);
+      if (coverRef.current) coverRef.current.value = "";
+    }
+  };
+
+  const removeCover = async () => {
+    setCoverBusy(true);
+    try {
+      const data = await api<{ account: AccountInfo }>("PUT", "/api/account", { remove_cover: true });
+      setAccount(data.account);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setCoverBusy(false);
+    }
+  };
+
   return (
     <>
       <Card>
@@ -122,6 +165,21 @@ export function ShopSettings() {
               <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={(e) => uploadLogo((e.target as HTMLInputElement).files?.[0])} />
               <Button variant="outline" size="sm" disabled={logoBusy} onClick={() => fileRef.current?.click()}>{account.has_logo ? "Cambia logo" : "Carica logo"}</Button>
               {account.has_logo && <Button variant="ghost" size="sm" disabled={logoBusy} onClick={removeLogo}>Rimuovi</Button>}
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            {account.has_cover ? (
+              <img src={`/${account.slug}/copertina?v=${Date.now()}`} alt="Copertina" className="h-20 w-16 rounded-t-full rounded-b-md border bg-white object-cover" />
+            ) : (
+              <div className="flex h-20 w-16 items-center justify-center rounded-t-full rounded-b-md border bg-muted px-1 text-center text-[10px] text-muted-foreground">Nessuna foto</div>
+            )}
+            <div className="space-y-1">
+              <div className="flex flex-wrap gap-2">
+                <input ref={coverRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => uploadCover((e.target as HTMLInputElement).files?.[0])} />
+                <Button variant="outline" size="sm" disabled={coverBusy} onClick={() => coverRef.current?.click()}>{account.has_cover ? "Cambia foto di copertina" : "Carica foto di copertina"}</Button>
+                {account.has_cover && <Button variant="ghost" size="sm" disabled={coverBusy} onClick={removeCover}>Rimuovi</Button>}
+              </div>
+              <p className="text-xs text-muted-foreground">Compare in alto nella tua pagina, nella cornice ad arco. Meglio una foto verticale del negozio o di un tuo lavoro.</p>
             </div>
           </div>
           <div className="space-y-1.5">

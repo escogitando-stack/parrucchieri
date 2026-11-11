@@ -837,6 +837,7 @@ HTML;
   <label>Indirizzo<input name="shop_address" maxlength="255" value="{$v('shop_address')}" placeholder="Via, numero, città"></label>
   <label>Orari (testo per la pagina pubblica)<input name="shop_hours" maxlength="500" value="{$v('shop_hours')}" placeholder="vuoto = come il negozio copiato"></label>
   <label>Logo (PNG, JPG, WebP, max 400 KB)<input type="file" name="logo" accept="image/png,image/jpeg,image/webp,image/gif"></label>
+  <label>Foto di copertina (max 1,5 MB, verticale)<input type="file" name="cover" accept="image/png,image/jpeg,image/webp"></label>
 </div>
 <label style="display:block;font-size:13px;font-weight:600;color:#57534e;margin:10px 0 0">Descrizione<textarea name="shop_description" maxlength="1000" rows="2" style="margin-top:4px;width:100%">{$v('shop_description')}</textarea></label>
 <label class="check"><input type="checkbox" name="copy_data" value="1"$copy>Copia anche clienti, appuntamenti e chiusure (agenda già piena per la demo)</label>
@@ -871,6 +872,11 @@ HTML;
             $keyField = $id === 0
                 ? '<label>Codice (facoltativo)<input name="key" maxlength="32" value="' . $val('key', '') . '" placeholder="es. fisioterapia"></label>'
                 : '<label>Ordine<input name="sort_order" type="number" min="1" max="9999" value="' . $val('sort_order', (string)(int)($c['sort_order'] ?? 0)) . '"></label>';
+            $curTheme = $useOld ? (string)($old['theme'] ?? '') : (string)($c['theme'] ?? '');
+            $themeOpts = '<option value="">Automatico (' . self::h(\App\Themes::styles()[\App\Themes::forCategory($key, ['theme' => ''] + $c)['style_key']]['label']) . ')</option>';
+            foreach (\App\Themes::options() as $tk => $tl) {
+                $themeOpts .= '<option value="' . $tk . '"' . ($curTheme === $tk ? ' selected' : '') . '>' . self::h($tl) . '</option>';
+            }
             $services = $val('services', $id === 0 ? '' : Categories::servicesToText((array)($c['services'] ?? [])));
             $summary = $id === 0
                 ? '+ Nuova categoria'
@@ -896,6 +902,9 @@ HTML;
                 . '<label>Ruolo del primo collaboratore<input name="staff_title" maxlength="80" value="' . $val('staff_title', (string)($c['staff_title'] ?? '')) . '" placeholder="es. Fisioterapista"></label>'
                 . '<label>Esempio di ruolo (suggerimento)<input name="staff_hint" maxlength="120" value="' . $val('staff_hint', (string)($c['staff_hint'] ?? '')) . '" placeholder="es. Fisioterapista senior"></label>'
                 . $termInputs . '</div>'
+                . '<div class="grid2" style="margin-top:10px"><label>Stile grafico della pagina pubblica<select name="theme">' . $themeOpts . '</select></label>'
+                . '<label>Immagine della categoria (link https, facoltativa)<input name="image_url" maxlength="500" value="' . $val('image_url', (string)($c['image_url'] ?? '')) . '" placeholder="https://images.unsplash.com/..."></label>'
+                . '<label style="grid-column:1/-1">Titolo della pagina <span class="muted">(metti *tra asterischi* la parola in corsivo; vuoto = titolo predefinito)</span><input name="headline" maxlength="160" value="' . $val('headline', (string)($c['headline'] ?? '')) . '" placeholder="' . self::h(\App\Themes::forCategory($key, $c)['headline']) . '"></label></div>'
                 . '<label style="margin-top:10px">Servizi di partenza, uno per riga: <span class="muted">Nome | Descrizione | Minuti | Prezzo | Gruppo | Colore (facoltativo)</span>'
                 . '<textarea name="services" rows="8" placeholder="Seduta di fisioterapia | Trattamento manuale | 45 | 50 | Trattamenti">' . $services . '</textarea></label>'
                 . '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px"><label class="check" style="margin:0"><input type="checkbox" name="active" value="1"' . ($active ? ' checked' : '') . '>Attiva (compare nella registrazione e nella home)</label>'
