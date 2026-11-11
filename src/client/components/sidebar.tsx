@@ -1,7 +1,7 @@
 import { AppNav, embedded } from "@clawnify/app/client";
 import { useEffect, useState } from "preact/hooks";
 import { useApp } from "../context";
-import { Menu, LayoutDashboard, CalendarDays, Clock, Users, UserCog, Sparkles, Package, LogOut, Settings, ShieldCheck } from "lucide-preact";
+import { Menu, LayoutDashboard, CalendarDays, Clock, Users, UserCog, Sparkles, Package, LogOut, Settings, ShieldCheck, DollarSign, Check } from "lucide-preact";
 import { useAccount, useTerms } from "@/lib/account";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -29,6 +29,23 @@ function useNavItems() {
       : item.view === "services" ? { ...item, label: t.services }
       : item.view === "products" ? { ...item, label: t.products }
       : item
+  );
+}
+
+/** Pagine del sito (fuori dall'app): statistiche e pacchetti. */
+function ExtraLinks() {
+  const cls = "flex min-h-11 w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-0";
+  return (
+    <>
+      <a href="/statistiche" className={cls}>
+        <DollarSign className="h-4 w-4" />
+        Statistiche
+      </a>
+      <a href="/pacchetti" className={cls}>
+        <Check className="h-4 w-4" />
+        Pacchetti e carnet
+      </a>
+    </>
   );
 }
 
@@ -102,6 +119,7 @@ function SidebarContent({ currentView, onNavigate }: { currentView: View; onNavi
             )}
           </button>
         ))}
+        <ExtraLinks />
       </nav>
       <Separator />
       <div className="flex items-center justify-around px-4 py-4">

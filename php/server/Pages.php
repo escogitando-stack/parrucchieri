@@ -1120,4 +1120,178 @@ CSS . '</style>';
             . '<form method="post" action="/admin/backup" style="margin:12px 0 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><input type="hidden" name="csrf" value="' . self::h($csrf) . '"><button class="mini">Scarica il backup del database</button><span class="muted">File .sql con tutti i dati: conservalo in un posto sicuro (contiene dati dei clienti).</span></form>'
             . '<h3 style="margin:16px 0 0;font-size:15px">Ultime azioni nel pannello</h3>' . $table . '</details>';
     }
+
+    private static function ownerNav(string $active): string
+    {
+        $l = static fn(string $href, string $label) => '<a href="' . $href . '"' . ($active === $href ? ' style="text-decoration:underline"' : '') . '>' . $label . '</a>';
+        return '<a href="/">← Agenda</a>' . $l('/statistiche', 'Statistiche') . $l('/pacchetti', 'Pacchetti');
+    }
+
+    private static function euro(float $v): string
+    {
+        return number_format($v, (fmod($v, 1.0) === 0.0 ? 0 : 2), ',', '.') . ' €';
+    }
+
+    private static function ownerCss(): string
+    {
+        return '<style>.ow h2{text-align:left;margin:28px 0 10px;font-size:22px}.ow .card{margin-bottom:16px}.ow .sub{text-align:left}'
+            . '.bars{display:flex;align-items:flex-end;gap:8px;height:180px;padding:10px 0 0}.bars div{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;font-size:11px;color:#78716c}'
+            . '.bars i{display:block;width:100%;max-width:46px;background:linear-gradient(#ec4899,#be185d);border-radius:8px 8px 3px 3px;min-height:2px}.bars b{font-size:11px;color:#1c1917;font-weight:600;margin-bottom:4px;white-space:nowrap}'
+            . '.heat td,.heat th{padding:4px;text-align:center;font-size:12px;border:0}.heat td span{display:block;border-radius:6px;height:26px;line-height:26px}'
+            . '.cols2{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media(max-width:800px){.cols2{grid-template-columns:1fr}}'
+            . '.meter{height:8px;background:#f5f5f4;border-radius:99px;overflow:hidden}.meter i{display:block;height:100%;background:#be185d}'
+            . '.pk-left{font-size:22px;font-weight:700}.pk-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.pk-row input,.pk-row select{width:auto;height:38px;font-size:14px}'
+            . '.b-done{background:#e7e5e4;color:#44403c}</style>';
+    }
+
+    /**
+     * Pagina Statistiche del titolare.
+     *
+     * @param array<string,mixed> $cfg
+     * @param array<string,mixed> $acct
+     * @param array<string,mixed> $st Owner::stats()
+     */
+    public static function ownerStats(array $cfg, array $acct, array $st, int $days): string
+    {
+        $terms = Categories::get((string)$acct['category'])['terms'];
+        $k = $st['kpi'];
+        $periods = '';
+        foreach ([30 => '30 giorni', 90 => '3 mesi', 365 => '12 mesi'] as $d => $l) {
+            $periods .= '<a class="mini" style="text-decoration:none;' . ($d === $days ? 'background:#be185d;color:#fff' : '') . '" href="/statistiche?giorni=' . $d . '">' . $l . '</a> ';
+        }
+        $pct = static fn(int $a, int $b): string => $b > 0 ? (string)round($a * 100 / $b) . '%' : '—';
+        $cards = '';
+        foreach ([
+            [self::euro((float)$k['revenue']), 'Incassato (' . mb_strtolower((string)$terms['services']) . ' completati)'],
+            [(string)$k['completed'], 'Appuntamenti completati'],
+            [self::euro((float)$k['avg_ticket']), 'Scontrino medio'],
+            [(string)$k['new_clients'], 'Nuovi clienti'],
+            [$pct((int)$k['online'], (int)$k['all']), 'Prenotati online'],
+            [$pct((int)$k['lost'], (int)$k['all']), 'Annullati o non presentati'],
+        ] as [$v, $l]) {
+            $cards .= '<div class="stat"><b>' . self::h($v) . '</b><span>' . self::h($l) . '</span></div>';
+        }
+        $max = max(1.0, ...array_values($st['months']));
+        $mn = ['01' => 'gen', '02' => 'feb', '03' => 'mar', '04' => 'apr', '05' => 'mag', '06' => 'giu', '07' => 'lug', '08' => 'ago', '09' => 'set', '10' => 'ott', '11' => 'nov', '12' => 'dic'];
+        $bars = '';
+        foreach ($st['months'] as $m => $v) {
+            $bars .= '<div title="' . self::h(self::euro((float)$v)) . '"><b>' . ($v > 0 ? self::h(number_format((float)$v, 0, ',', '.')) : '') . '</b><i style="height:' . round((float)$v / $max * 100, 1) . '%"></i><span>' . $mn[substr($m, 5, 2)] . '</span></div>';
+        }
+        $svcRows = '';
+        $topN = max(1, (int)($st['services'][0]['n'] ?? 1));
+        foreach ($st['services'] as $r) {
+            $svcRows .= '<tr><td>' . self::h((string)$r['name']) . '<div class="meter"><i style="width:' . round((int)$r['n'] / $topN * 100) . '%"></i></div></td><td style="text-align:right">' . (int)$r['n'] . '</td><td style="text-align:right">' . self::h(self::euro((float)$r['revenue'])) . '</td></tr>';
+        }
+        $staffRows = '';
+        foreach ($st['staff'] as $r) {
+            $staffRows .= '<tr><td>' . self::h((string)$r['name']) . '</td><td style="text-align:right">' . (int)$r['n'] . '</td><td style="text-align:right">' . self::h(self::euro((float)$r['revenue'])) . '</td></tr>';
+        }
+        $heatMax = 1;
+        foreach ($st['heat'] as $row) {
+            $heatMax = max($heatMax, ...array_values($row));
+        }
+        $hours = range(8, 20);
+        $heat = '<tr><th></th>';
+        foreach ($hours as $h) {
+            $heat .= '<th>' . $h . '</th>';
+        }
+        $heat .= '</tr>';
+        foreach ([1 => 'Lun', 2 => 'Mar', 3 => 'Mer', 4 => 'Gio', 5 => 'Ven', 6 => 'Sab', 7 => 'Dom'] as $d => $dl) {
+            $heat .= '<tr><th>' . $dl . '</th>';
+            foreach ($hours as $h) {
+                $n = (int)($st['heat'][$d][$h] ?? 0);
+                $a = $n > 0 ? 0.12 + 0.88 * $n / $heatMax : 0;
+                $heat .= '<td><span style="background:rgba(190,24,93,' . round($a, 2) . ');color:' . ($a > .55 ? '#fff' : '#57534e') . '">' . ($n ?: '') . '</span></td>';
+            }
+            $heat .= '</tr>';
+        }
+        $lapsed = '';
+        foreach ($st['lapsed'] as $c) {
+            $wa = Notify::digits((string)$c['phone']);
+            $msg = 'Ciao ' . $c['name'] . ', è da un po\' che non ci vediamo da ' . $acct['business_name'] . '! Se vuoi prenotare il prossimo appuntamento puoi farlo qui: ' . Notify::shopUrl($cfg, $acct);
+            $lapsed .= '<tr><td><a href="/clients/' . (int)$c['id'] . '">' . self::h((string)$c['name']) . '</a><br><small>' . (int)$c['visits'] . ' visite</small></td><td>' . self::h(date('d/m/Y', (int)strtotime((string)$c['last_visit']))) . '</td><td style="white-space:nowrap">'
+                . (strlen($wa) >= 8 ? '<a class="mini" style="text-decoration:none;background:#dcfce7;border-color:#86efac;color:#166534" target="_blank" rel="noopener" href="https://wa.me/' . self::h($wa) . '?text=' . self::h(rawurlencode($msg)) . '">WhatsApp</a> ' : '')
+                . ((string)$c['email'] !== '' ? '<a class="mini" style="text-decoration:none" href="mailto:' . self::h((string)$c['email']) . '?subject=' . self::h(rawurlencode('Ti aspettiamo da ' . $acct['business_name'])) . '&amp;body=' . self::h(rawurlencode($msg)) . '">Email</a>' : '')
+                . '</td></tr>';
+        }
+        $empty = '<p class="muted" style="margin:6px 0">Ancora nessun dato in questo periodo: le statistiche si riempiono man mano che segni gli appuntamenti come completati.</p>';
+        $body = self::ownerCss() . '<div class="ow"><h1 style="margin:10px 0 4px">Statistiche</h1><p class="sub" style="margin:0 0 12px">Periodo: ' . $periods . '</p>'
+            . '<div class="stats">' . $cards . '</div>'
+            . '<div class="card"><h3>Incassi degli ultimi 12 mesi</h3><div class="bars">' . $bars . '</div></div>'
+            . '<div class="cols2"><div class="card"><h3>' . self::h((string)$terms['services']) . ' più richiesti</h3>' . ($svcRows !== '' ? '<table>' . $svcRows . '</table>' : $empty) . '</div>'
+            . '<div class="card"><h3>Per ' . self::h(mb_strtolower((string)$terms['staff'])) . '</h3>' . ($staffRows !== '' ? '<table><tr><th>Nome</th><th style="text-align:right">App.</th><th style="text-align:right">Incasso</th></tr>' . $staffRows . '</table>' : $empty) . '</div></div>'
+            . '<div class="card"><h3>Giorni e orari più richiesti</h3><p style="margin:0 0 8px">Più è scuro, più appuntamenti in quella fascia: utile per decidere aperture, turni e promozioni negli orari vuoti.</p><div style="overflow-x:auto"><table class="heat">' . $heat . '</table></div></div>'
+            . '<div class="card"><h3>Clienti da richiamare (' . count($st['lapsed']) . ')</h3><p style="margin:0 0 8px">Non tornano da più di 60 giorni e non hanno appuntamenti in programma. Un messaggio spesso basta per riportarli.</p>'
+            . ($lapsed !== '' ? '<table><tr><th>Cliente</th><th>Ultima visita</th><th></th></tr>' . $lapsed . '</table>' : '<p class="muted">Nessuno: ottimo lavoro!</p>') . '</div></div>';
+        return self::layout($cfg, 'Statistiche · ' . (string)$acct['business_name'], $body, false, true, self::ownerNav('/statistiche'));
+    }
+
+    /**
+     * Pagina Pacchetti e carnet.
+     *
+     * @param array<string,mixed> $cfg
+     * @param array<string,mixed> $acct
+     */
+    public static function ownerPackages(array $cfg, array $acct, array $packages, array $sold, array $clients, array $services, string $csrf, ?string $notice, ?string $error, string $search): string
+    {
+        $hid = '<input type="hidden" name="csrf" value="' . self::h($csrf) . '">';
+        $n = $notice ? '<p class="ok">' . self::h($notice) . '</p>' : '';
+        $e = $error ? '<p class="err">' . self::h($error) . '</p>' : '';
+        $svcOpts = static function (int $sel) use ($services): string {
+            $o = '<option value="0">Qualsiasi servizio</option>';
+            foreach ($services as $sv) {
+                $o .= '<option value="' . (int)$sv['id'] . '"' . ((int)$sv['id'] === $sel ? ' selected' : '') . '>' . self::h((string)$sv['name']) . '</option>';
+            }
+            return $o;
+        };
+        $pkForm = static function (array $p) use ($hid, $svcOpts): string {
+            $id = (int)($p['id'] ?? 0);
+            return '<form method="post" action="/pacchetti" class="pk-row" style="margin:0 0 8px">' . $hid . '<input type="hidden" name="id" value="' . $id . '">'
+                . '<input name="name" required maxlength="80" placeholder="Nome (es. 10 sedute fisioterapia)" value="' . self::h((string)($p['name'] ?? '')) . '" style="flex:1 1 200px">'
+                . '<select name="service_id" style="max-width:200px">' . $svcOpts((int)($p['service_id'] ?? 0)) . '</select>'
+                . '<input name="sessions" type="number" min="1" max="200" required value="' . (int)($p['sessions'] ?? 10) . '" title="Sedute" style="width:80px"> sedute'
+                . '<input name="price" inputmode="decimal" placeholder="Prezzo €" value="' . ($id ? self::h(number_format((float)$p['price'], 2, ',', '')) : '') . '" style="width:100px">'
+                . '<input name="valid_days" type="number" min="0" max="3650" value="' . (int)($p['valid_days'] ?? 365) . '" title="Validità in giorni (0 = senza scadenza)" style="width:90px"> giorni'
+                . ($id ? '<label class="check" style="margin:0"><input type="checkbox" name="active" value="1"' . (!empty($p['active']) ? ' checked' : '') . '>In vendita</label>' : '')
+                . '<button class="mini" name="azione" value="pk_save">' . ($id ? 'Salva' : 'Aggiungi') . '</button></form>';
+        };
+        $pkRows = '';
+        $sellOpts = '';
+        foreach ($packages as $p) {
+            $pkRows .= $pkForm($p);
+            if (!empty($p['active'])) {
+                $sellOpts .= '<option value="' . (int)$p['id'] . '">' . self::h((string)$p['name']) . ' · ' . (int)$p['sessions'] . ' sedute · ' . self::h(self::euro((float)$p['price'])) . '</option>';
+            }
+        }
+        $clientOpts = '';
+        foreach ($clients as $c) {
+            $clientOpts .= '<option value="' . (int)$c['id'] . '">' . self::h((string)$c['name']) . ((string)($c['phone'] ?? '') !== '' ? ' · ' . self::h((string)$c['phone']) : '') . '</option>';
+        }
+        $sell = $sellOpts !== '' && $clientOpts !== ''
+            ? '<form method="post" action="/pacchetti" class="pk-row">' . $hid . '<select name="package_id" required>' . $sellOpts . '</select><select name="client_id" required><option value="">Scegli il cliente…</option>' . $clientOpts . '</select><input name="note" maxlength="255" placeholder="Nota (es. pagato in contanti)" style="flex:1 1 180px"><button class="btn" name="azione" value="sell" style="padding:9px 18px;font-size:15px">Vendi</button></form>'
+            : '<p class="muted">' . ($sellOpts === '' ? 'Crea prima un pacchetto qui sotto.' : 'Aggiungi prima i clienti dall\'agenda.') . '</p>';
+        $labels = ['active' => ['b-active', 'Attivo'], 'expired' => ['b-expired', 'Scaduto'], 'done' => ['b-done', 'Esaurito']];
+        $soldRows = '';
+        foreach ($sold as $r) {
+            [$cls, $lab] = $labels[$r['state']];
+            $id = (int)$r['id'];
+            $f = static fn(string $act, string $btn, string $extra = '') => '<form method="post" action="/pacchetti" style="display:inline;margin:0">' . $hid . '<input type="hidden" name="id" value="' . $id . '"><button class="mini" name="azione" value="' . $act . '" ' . $extra . '>' . $btn . '</button></form>';
+            $soldRows .= '<tr><td><a href="/clients/' . (int)$r['client_id'] . '"><b>' . self::h((string)$r['client_name']) . '</b></a><br><small>' . self::h((string)$r['name']) . ((string)$r['note'] !== '' ? ' · ' . self::h((string)$r['note']) : '') . '</small></td>'
+                . '<td><span class="pk-left">' . max(0, (int)$r['left']) . '</span> <small>di ' . (int)$r['sessions_total'] . '</small><div class="meter" style="max-width:140px"><i style="width:' . round((int)$r['sessions_used'] / max(1, (int)$r['sessions_total']) * 100) . '%"></i></div></td>'
+                . '<td><span class="badge ' . $cls . '">' . $lab . '</span><br><small>' . ((string)$r['expires_at'] !== '' ? 'scade il ' . self::h(date('d/m/Y', (int)strtotime((string)$r['expires_at']))) : 'senza scadenza') . '</small></td>'
+                . '<td><small>venduto il ' . self::h(date('d/m/Y', (int)strtotime((string)$r['purchased_at']))) . '<br>' . self::h(self::euro((float)$r['price'])) . ((string)$r['last_used_at'] !== '' ? '<br>ultima seduta ' . self::h(date('d/m/Y', (int)strtotime((string)$r['last_used_at']))) : '') . '</small></td>'
+                . '<td style="white-space:nowrap">' . ($r['state'] === 'active' ? $f('use', 'Segna una seduta', 'style="background:#be185d;color:#fff"') . ' ' : '')
+                . ((int)$r['sessions_used'] > 0 ? $f('unuse', 'Annulla ultima') . ' ' : '')
+                . $f('del', 'Elimina', 'class="mini danger" onclick="return confirm(\'Eliminare questo carnet?\')"') . '</td></tr>';
+        }
+        $q = self::h($search);
+        $body = self::ownerCss() . '<div class="ow"><h1 style="margin:10px 0 4px">Pacchetti e carnet</h1><p class="sub" style="margin:0 0 14px">Vendi pacchetti di più sedute (es. 10 sedute, 5 guide, abbonamento mensile) e segna ogni seduta usata: vedi sempre quante ne restano.</p>'
+            . $n . $e
+            . '<div class="card"><h3>Vendi un pacchetto</h3>' . $sell . '</div>'
+            . '<div class="card"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><h3 style="margin:0">Carnet dei clienti (' . count($sold) . ')</h3>'
+            . '<form method="get" action="/pacchetti" class="pk-row"><input name="q" value="' . $q . '" placeholder="Cerca cliente"><button class="mini">Cerca</button></form></div>'
+            . ($soldRows !== '' ? '<div style="overflow-x:auto;margin-top:10px"><table>' . $soldRows . '</table></div>' : '<p class="muted">Nessun carnet venduto' . ($search !== '' ? ' per questa ricerca' : '') . '.</p>') . '</div>'
+            . '<div class="card"><h3>I tuoi pacchetti</h3><p style="margin:0 0 10px">Nome, servizio (facoltativo), numero di sedute, prezzo e validità in giorni (0 = senza scadenza).</p>' . $pkRows . $pkForm(['id' => 0]) . '</div></div>';
+        return self::layout($cfg, 'Pacchetti · ' . (string)$acct['business_name'], $body, false, true, self::ownerNav('/pacchetti'));
+    }
 }

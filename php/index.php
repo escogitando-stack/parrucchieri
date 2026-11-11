@@ -720,6 +720,48 @@ if ($path === '/export/appuntamenti.csv') {
     exit;
 }
 
+// Statistiche del titolare
+if ($path === '/statistiche') {
+    $days = in_array((int)($_GET['giorni'] ?? 90), [30, 90, 365], true) ? (int)($_GET['giorni'] ?? 90) : 90;
+    echo Pages::ownerStats($cfg, $acct, App\Owner::stats($db, $accountId, $days), $days);
+    exit;
+}
+
+// Pacchetti e carnet
+if ($path === '/pacchetti') {
+    $notice = null;
+    $error = null;
+    if ($method === 'POST') {
+        if (!Admin::checkCsrf((string)($_POST['csrf'] ?? ''))) {
+            http_response_code(403);
+            exit('Richiesta non valida: ricarica la pagina e riprova.');
+        }
+        $id = (int)($_POST['id'] ?? 0);
+        $act = (string)($_POST['azione'] ?? '');
+        $err = match ($act) {
+            'pk_save' => App\Owner::savePackage($db, $accountId, $id, $_POST),
+            'sell' => App\Owner::sell($db, $accountId, (int)($_POST['package_id'] ?? 0), (int)($_POST['client_id'] ?? 0), (string)($_POST['note'] ?? '')),
+            'use' => App\Owner::useSession($db, $accountId, $id, 1),
+            'unuse' => App\Owner::useSession($db, $accountId, $id, -1),
+            'del' => App\Owner::deleteClientPackage($db, $accountId, $id) ? null : 'Carnet non trovato.',
+            default => 'Operazione non riconosciuta.',
+        };
+        if ($err === null) {
+            $notice = ['pk_save' => 'Pacchetto salvato.', 'sell' => 'Pacchetto venduto.', 'use' => 'Seduta segnata.', 'unuse' => 'Ultima seduta annullata.', 'del' => 'Carnet eliminato.'][$act];
+        } else {
+            $error = $err;
+        }
+    }
+    $search = trim((string)($_GET['q'] ?? ''));
+    echo Pages::ownerPackages(
+        $cfg, $acct, App\Owner::packages($db, $accountId), App\Owner::clientPackages($db, $accountId, $search),
+        $db->all('SELECT id, name, phone FROM clients WHERE account_id = ? ORDER BY name LIMIT 3000', [$accountId]),
+        $db->all('SELECT id, name FROM services WHERE account_id = ? AND active = 1 ORDER BY name', [$accountId]),
+        Admin::csrfToken(), $notice, $error, $search
+    );
+    exit;
+}
+
 $app = __DIR__ . '/app.html';
 if (!is_file($app)) {
     http_response_code(500);

@@ -486,10 +486,10 @@ foreach ([
     $old->exec($sql);
 }
 Schema::ensure($old);
-check('migrazione: versione e tabella account', $old->metaGet('schema_version') === '12' && $old->tableExists('accounts') && $old->tableExists('categories') && $old->columnExists('clients', 'account_id'));
+check('migrazione: versione e tabella account', $old->metaGet('schema_version') === '13' && $old->tableExists('accounts') && $old->tableExists('categories') && $old->columnExists('clients', 'account_id'));
 check('migrazione: dati esistenti senza proprietario', Schema::hasUnownedData($old));
 Schema::ensure($old);
-check('migrazione ripetibile', $old->metaGet('schema_version') === '12');
+check('migrazione ripetibile', $old->metaGet('schema_version') === '13');
 $first = Auth::register($old, ['trial_days' => 30], 'Salone Giulia', 'parrucchiere', 'giulia@example.com', 'password123');
 check('primo negozio eredita i dati', $first['ok'] && !Schema::hasUnownedData($old)
     && $old->row('SELECT COUNT(*) AS c FROM clients WHERE account_id = ?', [$first['id']])['c'] === 1
@@ -980,7 +980,7 @@ $old8->exec("DELETE FROM categories WHERE cat_key IN ('dentista', 'autoscuola')"
 $old8->exec("UPDATE categories SET label = 'Dentista mio' WHERE cat_key = 'veterinario'");
 $old8->metaSet('schema_version', '8');
 Schema::ensure($old8);
-check('migrazione 9: aggiunge solo le mancanti', $old8->metaGet('schema_version') === '12' && $old8->row("SELECT id FROM categories WHERE cat_key = 'autoscuola'") !== null && $old8->row("SELECT label FROM categories WHERE cat_key = 'veterinario'")['label'] === 'Dentista mio' && (int)$old8->row("SELECT COUNT(*) AS n FROM categories")['n'] === 22 && (int)$old8->row("SELECT sort_order AS s FROM categories WHERE cat_key = 'altro'")['s'] === (int)$old8->row("SELECT MAX(sort_order) AS s FROM categories")['s']);
+check('migrazione 9: aggiunge solo le mancanti', $old8->metaGet('schema_version') === '13' && $old8->row("SELECT id FROM categories WHERE cat_key = 'autoscuola'") !== null && $old8->row("SELECT label FROM categories WHERE cat_key = 'veterinario'")['label'] === 'Dentista mio' && (int)$old8->row("SELECT COUNT(*) AS n FROM categories")['n'] === 22 && (int)$old8->row("SELECT sort_order AS s FROM categories WHERE cat_key = 'altro'")['s'] === (int)$old8->row("SELECT MAX(sort_order) AS s FROM categories")['s']);
 check('categorie: nuova', \App\Categories::save($db, 0, ['label' => 'Fisioterapia', 'staff_title' => 'Fisioterapista', 't_staffs' => 'Terapisti', 'services' => "Seduta | Trattamento manuale | 45 | 50,5 | Trattamenti\nValutazione | | 30 | 0", 'active' => '1']) === null);
 $fis = \App\Categories::get('fisioterapia');
 check('categorie: servizi letti dal testo', $fis['label'] === 'Fisioterapia' && count($fis['services']) === 2 && $fis['services'][0][3] === 50.5 && $fis['services'][0][2] === 45 && $fis['terms']['staffs'] === 'Terapisti' && $fis['terms']['service'] === 'servizio');
@@ -1206,6 +1206,52 @@ $restore = Db::connect(['driver' => 'sqlite', 'path' => ':memory:']);
 $okRestore = true;
 try { foreach (array_filter(array_map('trim', preg_split("/;\n/", $dump))) as $stmt) { if (!str_starts_with($stmt, '--')) { $restore->exec($stmt); } } } catch (Throwable $e) { $okRestore = false; }
 check('backup: si reimporta', $okRestore && (int)$restore->row('SELECT COUNT(*) AS c FROM accounts')['c'] === 1 && (int)$restore->row('SELECT COUNT(*) AS c FROM services')['c'] === 8);
+
+// ── Statistiche e pacchetti del titolare ─────────────────────────────
+fwrite(STDOUT, "Statistiche e pacchetti\n");
+$db = newDb();
+$oid = addAccount($db, 'own@example.com');
+$other = addAccount($db, 'other@example.com');
+$oapi = new Api($db, $oid);
+[, $ca] = call($oapi, 'POST', '/api/clients', [], ['name' => 'Carla', 'phone' => '333 1110000']);
+[, $cb] = call($oapi, 'POST', '/api/clients', [], ['name' => 'Dino']);
+$ca = $ca['client']['id'] ?? $ca['id']; $cb = $cb['client']['id'] ?? $cb['id'];
+$svc = $db->row('SELECT id, price FROM services WHERE account_id = ? ORDER BY id LIMIT 1', [$oid]);
+$ins = static function (int $cid, string $date, string $status, float $price, string $src = 'owner') use ($db, $oid, $svc): void {
+    static $n = 0; $n++;
+    $db->exec("INSERT INTO appointments (account_id, identifier, client_id, status, scheduled_date, start_time, end_time, total_price, notes, source) VALUES (?, ?, ?, ?, ?, '10:00', '11:00', ?, '', ?)", [$oid, 'S-' . $n, $cid, $status, $date, $price, $src]);
+    $db->exec('INSERT INTO appointment_services (appointment_id, service_id, price, duration) VALUES (?, ?, ?, 60)', [$db->lastId(), (int)$svc['id'], $price]);
+};
+$ins($ca, date('Y-m-d', strtotime('-100 days')), 'completed', 40);
+$ins($ca, date('Y-m-d', strtotime('-10 days')), 'completed', 45, 'online');
+$ins($cb, date('Y-m-d', strtotime('-5 days')), 'no_show', 30);
+$ins($cb, date('Y-m-d', strtotime('-70 days')), 'completed', 20);
+$st = \App\Owner::stats($db, $oid, 30);
+check('statistiche: incasso e conteggi del periodo', abs($st['kpi']['revenue'] - 45) < 0.01 && $st['kpi']['completed'] === 1 && $st['kpi']['lost'] === 1 && $st['kpi']['online'] === 1);
+check('statistiche: 12 mesi e servizi', count($st['months']) === 12 && abs(array_sum($st['months']) - 105) < 0.01 && (int)$st['services'][0]['n'] === 1);
+check('statistiche: clienti da richiamare', count($st['lapsed']) === 1 && $st['lapsed'][0]['name'] === 'Dino');
+check('statistiche: dati di altri negozi esclusi', \App\Owner::stats($db, $other, 365)['kpi']['completed'] === 0);
+$sp = Pages::ownerStats([], Auth::account($db, $oid), \App\Owner::stats($db, $oid, 365), 365);
+check('pagina statistiche', str_contains($sp, 'Incassi degli ultimi 12 mesi') && str_contains($sp, 'Dino') && str_contains($sp, 'class="heat"'));
+// pacchetti
+check('pacchetti: dati non validi rifiutati', \App\Owner::savePackage($db, $oid, 0, ['name' => '', 'sessions' => 10]) !== null && \App\Owner::savePackage($db, $oid, 0, ['name' => 'X', 'sessions' => 0]) !== null);
+check('pacchetti: creato', \App\Owner::savePackage($db, $oid, 0, ['name' => '5 pieghe', 'sessions' => 5, 'price' => '100,00', 'valid_days' => 90, 'service_id' => (int)$svc['id']]) === null);
+$pk = \App\Owner::packages($db, $oid)[0];
+check('pacchetti: venduto solo ai propri clienti', \App\Owner::sell($db, $other, (int)$pk['id'], $ca) !== null && \App\Owner::sell($db, $oid, (int)$pk['id'], $ca, 'contanti') === null);
+$cp = \App\Owner::clientPackages($db, $oid)[0];
+check('carnet: 5 sedute rimaste, scadenza 90 giorni', $cp['left'] === 5 && $cp['state'] === 'active' && $cp['expires_at'] === date('Y-m-d', strtotime('+90 days')));
+for ($i = 0; $i < 5; $i++) { \App\Owner::useSession($db, $oid, (int)$cp['id']); }
+$cp = \App\Owner::clientPackages($db, $oid)[0];
+check('carnet: esaurito dopo 5 sedute, non oltre', $cp['state'] === 'done' && \App\Owner::useSession($db, $oid, (int)$cp['id']) !== null);
+check('carnet: annulla ultima seduta', \App\Owner::useSession($db, $oid, (int)$cp['id'], -1) === null && \App\Owner::clientPackages($db, $oid)[0]['left'] === 1);
+check('carnet: altri negozi non possono toccarlo', \App\Owner::useSession($db, $other, (int)$cp['id']) !== null && !\App\Owner::deleteClientPackage($db, $other, (int)$cp['id']));
+$db->exec("UPDATE client_packages SET expires_at = '2000-01-01' WHERE id = ?", [(int)$cp['id']]);
+check('carnet: scaduto', \App\Owner::clientPackages($db, $oid)[0]['state'] === 'expired');
+Auth::start();
+$pp = Pages::ownerPackages([], Auth::account($db, $oid), \App\Owner::packages($db, $oid), \App\Owner::clientPackages($db, $oid), [['id' => $ca, 'name' => 'Carla <x>', 'phone' => '']], [], Admin::csrfToken(), null, null, '');
+check('pagina pacchetti', str_contains($pp, '5 pieghe') && str_contains($pp, 'Scaduto') && str_contains($pp, 'Carla &lt;x&gt;') && str_contains($pp, 'value="sell"'));
+Auth::logout();
+check('elimina account: anche pacchetti e carnet', Admin::delete($db, $oid) && (int)$db->row('SELECT COUNT(*) AS c FROM client_packages')['c'] === 0 && (int)$db->row('SELECT COUNT(*) AS c FROM packages')['c'] === 0);
 
 fwrite(STDOUT, "\n$passed ok, $failed falliti\n");
 exit($failed === 0 ? 0 : 1);

@@ -238,3 +238,14 @@ casella apposita anche clienti, appuntamenti e chiusure, così l'agenda della de
   si blocca per 15 minuti.
 - **/admin → Sicurezza e backup**: registro delle ultime azioni nel pannello e pulsante per scaricare il backup
   completo del database (.sql, si reimporta da phpMyAdmin → Importa).
+
+## Statistiche e pacchetti (per il titolare)
+
+Nel menu dell'app ci sono due voci nuove, che aprono pagine del sito:
+
+- **Statistiche** (`/statistiche`): incassato, appuntamenti completati, scontrino medio, nuovi clienti, % prenotati online,
+  % annullati o non presentati (30 giorni, 3 mesi, 12 mesi); incassi degli ultimi 12 mesi; servizi più richiesti;
+  incasso per collaboratore; giorni e orari più richiesti; clienti che non tornano da 60 giorni con WhatsApp/email pronti.
+  Contano gli appuntamenti segnati come **completati**.
+- **Pacchetti e carnet** (`/pacchetti`): crei i pacchetti (sedute, prezzo, validità), li vendi ai clienti e segni ogni
+  seduta usata (con annullamento dell'ultima). Stato: attivo, scaduto, esaurito.

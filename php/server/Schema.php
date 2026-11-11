@@ -15,6 +15,7 @@ namespace App;
  *   6 = piani di abbonamento gestiti dall'amministratore
  *   7 = conferma automatica, promemoria, email automatiche e recupero password
  *   8 = categorie merceologiche gestite dall'amministratore (tabella categories)
+ *   13 = pacchetti e carnet dei clienti
  *   12 = registro delle azioni dell'amministratore
  *   11 = galleria foto, link recensioni e richiesta di recensione dopo l'appuntamento
  *   10 = pagina pubblica a template: copertina del negozio, stile/immagine/titolo della categoria
@@ -22,7 +23,7 @@ namespace App;
  */
 final class Schema
 {
-    public const VERSION = 12;
+    public const VERSION = 13;
 
     /** Tabelle i cui dati appartengono a un negozio. */
     private const OWNED = ['clients', 'staff', 'services', 'appointments', 'blocked_slots', 'products', 'working_hours'];
@@ -68,6 +69,14 @@ final class Schema
         if ($version < 12) {
             if (!$db->tableExists('admin_log')) {
                 $db->exec(self::adminLogSql($db));
+            }
+            $db->metaSet('schema_version', '12');
+        }
+        if ($version < 13) {
+            foreach (self::packagesSql($db) as $t => $sql) {
+                if (!$db->tableExists($t)) {
+                    $db->exec($sql);
+                }
             }
             $db->metaSet('schema_version', (string)self::VERSION);
         }
@@ -247,6 +256,7 @@ final class Schema
             self::categoriesSql($db),
             self::photosSql($db),
             self::adminLogSql($db),
+            ...array_values(self::packagesSql($db)),
             "CREATE TABLE _meta (
                 meta_key VARCHAR(64) NOT NULL PRIMARY KEY,
                 meta_value VARCHAR(255) NOT NULL
@@ -502,6 +512,40 @@ final class Schema
                 sort_order $int NOT NULL DEFAULT 0,
                 created_at $ts
             )$tail";
+    }
+
+    /** @return array<string,string> */
+    private static function packagesSql(Db $db): array
+    {
+        [$pk, $int, $ts, $tail] = self::types($db);
+        return [
+            'packages' => "CREATE TABLE packages (
+                id $pk,
+                account_id $int NOT NULL,
+                name VARCHAR(80) NOT NULL,
+                service_id $int NULL,
+                sessions $int NOT NULL DEFAULT 10,
+                price DOUBLE NOT NULL DEFAULT 0,
+                valid_days $int NOT NULL DEFAULT 0,
+                active $int NOT NULL DEFAULT 1,
+                created_at $ts
+            )$tail",
+            'client_packages' => "CREATE TABLE client_packages (
+                id $pk,
+                account_id $int NOT NULL,
+                client_id $int NOT NULL,
+                package_id $int NOT NULL DEFAULT 0,
+                name VARCHAR(80) NOT NULL,
+                sessions_total $int NOT NULL,
+                sessions_used $int NOT NULL DEFAULT 0,
+                price DOUBLE NOT NULL DEFAULT 0,
+                purchased_at VARCHAR(10) NOT NULL,
+                expires_at VARCHAR(10) NOT NULL DEFAULT '',
+                last_used_at VARCHAR(19) NOT NULL DEFAULT '',
+                note VARCHAR(255) NOT NULL DEFAULT '',
+                created_at $ts
+            )$tail",
+        ];
     }
 
     private static function adminLogSql(Db $db): string

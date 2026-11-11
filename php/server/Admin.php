@@ -172,7 +172,7 @@ final class Admin
         }
         $db->begin();
         try {
-            foreach (['appointments', 'blocked_slots', 'working_hours', 'products', 'services', 'staff', 'clients', 'shop_photos'] as $table) {
+            foreach (['appointments', 'blocked_slots', 'working_hours', 'products', 'services', 'staff', 'clients', 'shop_photos', 'client_packages', 'packages'] as $table) {
                 $db->exec("DELETE FROM $table WHERE account_id = ?", [$id]);
             }
             $db->exec('DELETE FROM accounts WHERE id = ?', [$id]);
