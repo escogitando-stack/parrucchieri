@@ -58,6 +58,23 @@ final class Notify
         return self::mail($cfg, (string)$acct['email'], 'Reimposta la tua password', $text, 'Scegli una nuova password', self::baseUrl($cfg) . '/reimposta/' . $token, Pages::contactEmail($cfg));
     }
 
+    /** Il giorno dopo un appuntamento completato: com'è andata? Lascia una recensione. */
+    public static function reviewRequest(array $cfg, array $acct, array $client): bool
+    {
+        $text = 'Ciao ' . $client['name'] . ', grazie per essere passato da ' . $acct['business_name'] . "!\n\n"
+            . "Com'è andata? Se ti sei trovato bene, una tua recensione ci aiuta tantissimo: bastano trenta secondi.";
+        return self::mail($cfg, (string)$client['email'], "Com'è andata da " . $acct['business_name'] . '?', $text, 'Lascia una recensione', (string)$acct['review_url'], self::ownerEmail($acct), (string)$acct['business_name']);
+    }
+
+    /** Consegna di una demo al cliente: il suo account è pronto, sceglie la password dal link (valido 7 giorni). */
+    public static function accountDelivered(array $cfg, array $acct, string $token): bool
+    {
+        $text = 'Ciao! L\'account di ' . $acct['business_name'] . ' è pronto: agenda, servizi e pagina di prenotazione sono già impostati.'
+            . "\n\nScegli la tua password dal pulsante qui sotto (il link vale 7 giorni), poi accedi con questa email."
+            . "\n\nLa tua pagina di prenotazione: " . self::shopUrl($cfg, $acct);
+        return self::mail($cfg, (string)$acct['email'], 'Il tuo account è pronto', $text, 'Scegli la password e accedi', self::baseUrl($cfg) . '/reimposta/' . $token, Pages::contactEmail($cfg));
+    }
+
     /** @param array<string,mixed> $cfg */
     public static function icsUrl(array $cfg, string $token): string
     {

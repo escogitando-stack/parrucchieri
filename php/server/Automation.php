@@ -22,6 +22,7 @@ final class Automation
             'summaries' => self::summaries($db, $cfg, $now),
             'trial' => self::trialMails($db, $cfg, $now),
             'onboarding' => self::onboarding($db, $cfg, $now),
+            'reviews' => self::reviewRequests($db, $cfg, $now),
         ];
     }
 
@@ -157,6 +158,43 @@ final class Automation
                 $missing[] = 'una breve descrizione';
             }
             if ($missing !== [] && Notify::onboarding($cfg, $acct, $missing)) {
+                $sent++;
+            }
+        }
+        return $sent;
+    }
+
+    /**
+     * Richiesta di recensione (dalle 10, o da 'review_hour') ai clienti con un appuntamento completato
+     * negli ultimi 3 giorni, se il negozio ha impostato il link per le recensioni. Una sola volta per appuntamento.
+     */
+    private static function reviewRequests(Db $db, array $cfg, int $now): int
+    {
+        if (!self::hourReached($cfg, 'review_hour', 10, $now)) {
+            return 0;
+        }
+        $rows = $db->all(
+            "SELECT a.id, a.account_id, a.client_id, c.name AS client_name, c.email AS client_email FROM appointments a
+             JOIN clients c ON c.id = a.client_id JOIN accounts acc ON acc.id = a.account_id
+             WHERE a.status = 'completed' AND a.review_asked = 0 AND a.scheduled_date >= ? AND a.scheduled_date <= ?
+               AND c.email <> '' AND acc.review_url <> ''
+             ORDER BY a.id LIMIT 300",
+            [date('Y-m-d', $now - 3 * 86400), date('Y-m-d', $now)]
+        );
+        $sent = 0;
+        $asked = [];
+        $accounts = [];
+        foreach ($rows as $r) {
+            $db->exec('UPDATE appointments SET review_asked = 1 WHERE id = ?', [(int)$r['id']]);
+            $aid = (int)$r['account_id'];
+            $accounts[$aid] ??= Auth::account($db, $aid);
+            $acct = $accounts[$aid];
+            // Un solo messaggio per cliente, anche se ha più appuntamenti completati.
+            if ($acct === null || !self::active($cfg, $acct) || isset($asked[(int)$r['client_id']]) || $db->metaGet('demo_of_' . $aid) !== null) {
+                continue;
+            }
+            $asked[(int)$r['client_id']] = true;
+            if (Notify::reviewRequest($cfg, $acct, ['name' => $r['client_name'], 'email' => $r['client_email']])) {
                 $sent++;
             }
         }

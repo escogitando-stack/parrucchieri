@@ -227,6 +227,8 @@ final class Api
             'shop_hours' => $acct['shop_hours'],
             'has_logo' => ($acct['logo_mime'] ?? '') !== '',
             'has_cover' => ($acct['cover_mime'] ?? '') !== '',
+            'review_url' => (string)($acct['review_url'] ?? ''),
+            'photos' => Shop::photoIds($this->db, $this->acct),
             'impersonating' => Auth::impersonator() !== null,
             'daily_summary' => $this->db->metaGet('nosummary_' . $this->acct) !== '1',
         ];
@@ -318,16 +320,23 @@ final class Api
             $values['logo_mime'] = $logo['mime'];
             $values['logo_data'] = $logo['data'];
         }
-        if (($b['remove_cover'] ?? false) === true) {
-            $this->db->exec("UPDATE accounts SET cover_mime = '', cover_data = NULL WHERE id = ?", [$this->acct]);
-        }
-        $coverUrl = $this->optString($b, 'cover');
-        if ($coverUrl !== null && $coverUrl !== '') {
-            $cover = Shop::parseImage($coverUrl, 1500);
-            if ($cover === null) {
-                throw new HttpError(400, 'Foto non valida: usa un\'immagine PNG, JPEG o WebP fino a 1,5 MB.');
+        $review = $this->text($b, 'review_url', 500);
+        if ($review !== null) {
+            if (!Shop::reviewUrlValid($review)) {
+                throw new HttpError(400, 'Il link per le recensioni deve iniziare con https://');
             }
-            $this->db->exec('UPDATE accounts SET cover_mime = ?, cover_data = ? WHERE id = ?', [$cover['mime'], $cover['data'], $this->acct]);
+            $this->db->exec('UPDATE accounts SET review_url = ? WHERE id = ?', [$review, $this->acct]);
+        }
+        $addPhoto = $this->optString($b, 'add_photo');
+        if ($addPhoto !== null && $addPhoto !== '') {
+            $err = Shop::addPhoto($this->db, $this->acct, $addPhoto);
+            if ($err !== null) {
+                throw new HttpError(400, $err);
+            }
+        }
+        $removePhoto = $this->optInt($b, 'remove_photo');
+        if ($removePhoto !== null) {
+            Shop::removePhoto($this->db, $this->acct, $removePhoto);
         }
         if (($b['remove_cover'] ?? false) === true) {
             $this->db->exec("UPDATE accounts SET cover_mime = '', cover_data = NULL WHERE id = ?", [$this->acct]);

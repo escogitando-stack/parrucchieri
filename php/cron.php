@@ -26,4 +26,4 @@ if (!$cli) {
 }
 $db = App\connect($cfg);
 $res = Automation::run($db, $cfg);
-echo date('Y-m-d H:i:s') . ' promemoria=' . $res['reminders'] . ' riepiloghi=' . $res['summaries'] . ' prova=' . $res['trial'] . ' configurazione=' . $res['onboarding'] . "\n";
+echo date('Y-m-d H:i:s') . ' promemoria=' . $res['reminders'] . ' riepiloghi=' . $res['summaries'] . ' prova=' . $res['trial'] . ' configurazione=' . $res['onboarding'] . ' recensioni=' . $res['reviews'] . "\n";

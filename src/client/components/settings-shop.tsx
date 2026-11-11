@@ -54,13 +54,15 @@ export function ShopSettings() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [coverBusy, setCoverBusy] = useState(false);
   const coverRef = useRef<HTMLInputElement>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const photoRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!account) return;
     setF({
       slug: account.slug, shop_description: account.shop_description, shop_phone: account.shop_phone,
       shop_whatsapp: account.shop_whatsapp, shop_email: account.shop_email, shop_address: account.shop_address,
-      shop_hours: account.shop_hours, slot_minutes: String(account.slot_minutes),
+      shop_hours: account.shop_hours, review_url: account.review_url ?? "", slot_minutes: String(account.slot_minutes),
       booking_notice_hours: String(account.booking_notice_hours), booking_horizon_days: String(account.booking_horizon_days),
     });
     setEnabled(!!account.booking_enabled);
@@ -78,6 +80,7 @@ export function ShopSettings() {
         slug: (f.slug || "").trim().toLowerCase(),
         shop_description: f.shop_description, shop_phone: f.shop_phone, shop_whatsapp: f.shop_whatsapp,
         shop_email: f.shop_email, shop_address: f.shop_address, shop_hours: f.shop_hours,
+        review_url: (f.review_url || "").trim(),
         slot_minutes: parseInt(f.slot_minutes) || 30,
         booking_notice_hours: Math.max(0, parseInt(f.booking_notice_hours) || 0),
         booking_horizon_days: Math.max(1, parseInt(f.booking_horizon_days) || 60),
@@ -131,6 +134,35 @@ export function ShopSettings() {
     } finally {
       setCoverBusy(false);
       if (coverRef.current) coverRef.current.value = "";
+    }
+  };
+
+  const addPhotos = async (files: FileList | null | undefined) => {
+    if (!files || files.length === 0) return;
+    setPhotoBusy(true);
+    try {
+      for (const file of Array.from(files)) {
+        const add_photo = await coverToDataUrl(file);
+        const data = await api<{ account: AccountInfo }>("PUT", "/api/account", { add_photo });
+        setAccount(data.account);
+      }
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setPhotoBusy(false);
+      if (photoRef.current) photoRef.current.value = "";
+    }
+  };
+
+  const removePhoto = async (id: number) => {
+    setPhotoBusy(true);
+    try {
+      const data = await api<{ account: AccountInfo }>("PUT", "/api/account", { remove_photo: id });
+      setAccount(data.account);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setPhotoBusy(false);
     }
   };
 
@@ -200,9 +232,33 @@ export function ShopSettings() {
             <div className="space-y-1.5"><Label htmlFor="shop-email">Email per le richieste</Label><Input id="shop-email" type="email" className="h-11 sm:h-10" placeholder={account.email} value={f.shop_email ?? ""} onInput={set("shop_email")} /></div>
             <div className="space-y-1.5"><Label htmlFor="shop-address">Indirizzo</Label><Input id="shop-address" className="h-11 sm:h-10" value={f.shop_address ?? ""} onInput={set("shop_address")} /></div>
           </div>
+          <div className="space-y-2">
+            <Label>Galleria dei tuoi lavori ({(account.photos ?? []).length}/8)</Label>
+            <div className="flex flex-wrap gap-2">
+              {(account.photos ?? []).map((id) => (
+                <div key={id} className="relative">
+                  <img src={`/${account.slug}/foto/${id}`} alt="" className="h-20 w-20 rounded-md border object-cover" />
+                  <button type="button" disabled={photoBusy} onClick={() => removePhoto(id)} className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full border bg-white text-xs shadow" aria-label="Togli la foto">✕</button>
+                </div>
+              ))}
+              {(account.photos ?? []).length < 8 && (
+                <button type="button" disabled={photoBusy} onClick={() => photoRef.current?.click()} className="flex h-20 w-20 items-center justify-center rounded-md border border-dashed text-xs text-muted-foreground">
+                  {photoBusy ? "..." : "+ Aggiungi"}
+                </button>
+              )}
+              <input ref={photoRef} type="file" multiple accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => addPhotos((e.target as HTMLInputElement).files)} />
+            </div>
+            <p className="text-xs text-muted-foreground">Fino a 8 foto del negozio o dei tuoi lavori: compaiono nella tua pagina sotto i servizi. La prima è la più grande.</p>
+          </div>
           <div className="space-y-1.5">
-            <Label htmlFor="shop-hours">Orari di apertura (testo mostrato ai clienti)</Label>
-            <textarea id="shop-hours" rows={3} maxLength={500} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={f.shop_hours ?? ""} onInput={set("shop_hours")} placeholder={"Lun-Ven 9-13 e 15-19\nSabato 9-13"} />
+            <Label htmlFor="shop-review">Link per le recensioni Google</Label>
+            <Input id="shop-review" type="url" className="h-11 sm:h-10" placeholder="https://g.page/r/..." value={f.review_url ?? ""} onInput={set("review_url")} />
+            <p className="text-xs text-muted-foreground">Lo trovi nel tuo profilo Google: "Chiedi recensioni". Compare nella tua pagina e, il giorno dopo un appuntamento segnato come completato, i clienti ricevono un'email per lasciarti una recensione.</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="shop-hours">Orari di apertura (note per i clienti)</Label>
+            <textarea id="shop-hours" rows={3} maxLength={500} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={f.shop_hours ?? ""} onInput={set("shop_hours")} placeholder={"es. Sabato pomeriggio su appuntamento"} />
+            <p className="text-xs text-muted-foreground">Nella pagina i giorni e gli orari si vedono già in automatico dagli orari di lavoro: qui scrivi solo eventuali note.</p>
           </div>
         </CardContent>
       </Card>

@@ -19,6 +19,48 @@ final class Shop
         return $mime === '' || $data === false || $data === '' ? null : ['mime' => $mime, 'data' => $data];
     }
 
+    public const MAX_PHOTOS = 8;
+
+    /** Id delle foto della galleria del negozio, in ordine. @return array<int,int> */
+    public static function photoIds(Db $db, int $accountId): array
+    {
+        return array_map(static fn(array $r): int => (int)$r['id'], $db->all('SELECT id FROM shop_photos WHERE account_id = ? ORDER BY sort_order, id', [$accountId]));
+    }
+
+    /** Aggiunge una foto (data URL, max 1,5 MB). Restituisce un errore oppure null. */
+    public static function addPhoto(Db $db, int $accountId, string $dataUrl): ?string
+    {
+        if (count(self::photoIds($db, $accountId)) >= self::MAX_PHOTOS) {
+            return 'Puoi caricare al massimo ' . self::MAX_PHOTOS . ' foto: togline una prima di aggiungerne altre.';
+        }
+        $img = self::parseImage($dataUrl, 1500);
+        if ($img === null) {
+            return 'Foto non valida: usa un\'immagine PNG, JPEG o WebP fino a 1,5 MB.';
+        }
+        $max = (int)($db->row('SELECT COALESCE(MAX(sort_order), 0) AS m FROM shop_photos WHERE account_id = ?', [$accountId])['m'] ?? 0);
+        $db->exec('INSERT INTO shop_photos (account_id, mime, data, sort_order) VALUES (?, ?, ?, ?)', [$accountId, $img['mime'], $img['data'], $max + 1]);
+        return null;
+    }
+
+    public static function removePhoto(Db $db, int $accountId, int $photoId): bool
+    {
+        return $db->exec('DELETE FROM shop_photos WHERE id = ? AND account_id = ?', [$photoId, $accountId]) > 0;
+    }
+
+    /** @return array{mime:string,data:string}|null */
+    public static function photo(Db $db, int $accountId, int $photoId): ?array
+    {
+        $r = $db->row('SELECT mime, data FROM shop_photos WHERE id = ? AND account_id = ?', [$photoId, $accountId]);
+        $data = $r !== null ? base64_decode((string)$r['data'], true) : false;
+        return $r === null || $data === false ? null : ['mime' => (string)$r['mime'], 'data' => $data];
+    }
+
+    /** Il link per lasciare una recensione è un indirizzo https valido? */
+    public static function reviewUrlValid(string $url): bool
+    {
+        return $url === '' || (strlen($url) <= 500 && preg_match('#^https://[^\s"\'<>]+$#i', $url) === 1);
+    }
+
     /** Il logo caricato, come immagine da servire (o null). @param array<string,mixed> $acct @return array{mime:string,data:string}|null */
     public static function logo(array $acct): ?array
     {
@@ -104,8 +146,18 @@ final class Shop
             $rows .= '<li><span class="ico">' . Pages::icon('pin') . '</span><a href="https://www.google.com/maps/search/?api=1&amp;query=' . rawurlencode($addr) . '" rel="noopener" target="_blank">' . self::h($addr) . '</a></li>';
         }
         $hours = trim((string)($acct['shop_hours'] ?? ''));
-        if ($hours !== '') {
-            $rows .= '<li><span class="ico">' . Pages::icon('clock') . '</span><span>' . nl2br(self::h($hours)) . '</span></li>';
+        $real = (array)($acct['_hours'] ?? []);
+        if ($real !== [] || $hours !== '') {
+            $tbl = '';
+            foreach ($real as [$days, $times]) {
+                $tbl .= '<span class="tp-hrow"><b>' . self::h((string)$days) . '</b><span>' . self::h((string)$times) . '</span></span>';
+            }
+            $rows .= '<li><span class="ico">' . Pages::icon('clock') . '</span><span class="tp-hours">' . $tbl
+                . ($hours !== '' ? '<small>' . nl2br(self::h($hours)) . '</small>' : '') . '</span></li>';
+        }
+        $review = trim((string)($acct['review_url'] ?? ''));
+        if ($review !== '') {
+            $rows .= '<li><span class="ico">' . Pages::icon('sparkles') . '</span><a href="' . self::h($review) . '" target="_blank" rel="noopener">Lasciaci una recensione</a></li>';
         }
         $desc = trim((string)($acct['shop_description'] ?? ''));
         $contacts = $rows !== '' ? '<div class="card"><h3 class="tp-h3">Dove e quando</h3><ul class="contact-list">' . $rows . '</ul></div>' : '';
@@ -127,7 +179,8 @@ final class Shop
             . ';--on-acc:' . ($dark ? '#1a1716' : '#ffffff') . ';--line:' . ($dark ? 'rgba(255,255,255,.12)' : 'rgba(0,0,0,.09)')
             . ';--font-h:' . ($st['font'] === 'serif' ? '"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif' : 'system-ui,-apple-system,"Segoe UI",Roboto,sans-serif');
 
-        $head = '<meta name="description" content="' . self::h(($desc !== '' ? mb_substr($desc, 0, 150) : 'Prenota online da ' . $name)) . '">' . "\n"
+        $head = (!empty($acct['_demo']) ? '<meta name="robots" content="noindex, nofollow">' . "\n" : '')
+            . '<meta name="description" content="' . self::h(($desc !== '' ? mb_substr($desc, 0, 150) : 'Prenota online da ' . $name)) . '">' . "\n"
             . '<meta property="og:title" content="' . self::h($name) . '">' . "\n"
             . ($ogImage !== '' ? '<meta property="og:image" content="' . self::h($ogImage) . '">' . "\n" : '')
             . '<meta name="theme-color" content="' . $st['bg'] . '">' . "\n"
@@ -175,7 +228,17 @@ final class Shop
         $menu = $menu !== '' ? '<section class="tp-menu"><p class="tp-kicker">' . self::h((string)$cat['terms']['services']) . '</p><h2 class="tp-h2">Scegli il tuo <em>momento</em></h2><ul>' . $menu . '</ul>'
             . ($count > 8 ? '<p class="tp-more">e altri ' . ($count - 8) . ' nella prenotazione qui sotto</p>' : '') . '</section>' : '';
 
-        $head_html = $hero . $points . $menu;
+        $gallery = '';
+        $photos = (array)($acct['_photos'] ?? []);
+        if ($photos !== []) {
+            $items = '';
+            foreach ($photos as $i => $pid) {
+                $src = '/' . self::h($slug) . '/foto/' . (int)$pid;
+                $items .= '<a href="' . $src . '" target="_blank" rel="noopener" class="tp-ph' . ($i === 0 ? ' big' : '') . '"><img src="' . $src . '" alt="Foto ' . ($i + 1) . ' di ' . self::h($name) . '" loading="lazy"></a>';
+            }
+            $gallery = '<section class="tp-gallery"><p class="tp-kicker">Galleria</p><h2 class="tp-h2">I nostri <em>lavori</em></h2><div class="tp-ph-grid">' . $items . '</div></section>';
+        }
+        $head_html = $hero . $points . $menu . $gallery;
 
         if (!$open || $services === []) {
             $msg = !$open ? 'Le prenotazioni online non sono attive al momento.' : 'Non ci sono ancora servizi prenotabili online.';
@@ -297,6 +360,9 @@ CSS;
     {
         return <<<'CSS'
 html body{background:var(--bg);color:var(--ink)}
+html body input[type=checkbox],html body input[type=radio]{accent-color:var(--acc)}
+html body input:focus,html body select:focus,html body textarea:focus{outline-color:var(--acc)}
+.tp-hours{display:flex;flex-direction:column;gap:2px;width:100%}.tp-hrow{display:flex;justify-content:space-between;gap:12px}.tp-hrow b{font-weight:600}.tp-hours small{margin-top:4px}
 html body header.top .brand,html body header.top nav a{color:var(--ink)}
 html body footer,html body footer a{color:var(--muted)}
 .tp a{color:var(--acc)}
@@ -344,6 +410,11 @@ html body footer,html body footer a{color:var(--muted)}
 .tp-menu li b{display:block;font-size:16px}.tp-menu li small{color:var(--muted);font-size:13px}
 .tp-dots{flex:1}.tp-menu li em{font-style:normal;font-weight:700;color:var(--acc);white-space:nowrap}
 .tp-more{margin:14px 0 0;color:var(--muted);font-size:14px}
+.tp-gallery{margin:0 0 30px}
+.tp-ph-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-auto-rows:170px;gap:10px}
+.tp-ph{border-radius:18px;overflow:hidden;background:var(--soft);display:block}
+.tp-ph.big{grid-column:span 2;grid-row:span 2}
+.tp-ph img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .3s}.tp-ph:hover img{transform:scale(1.04)}
 .tp-h3{margin:0 0 6px;font-size:18px;font-family:var(--font-h);font-weight:600}
 .tp .book h3{font-family:var(--font-h);font-weight:600;font-size:24px}
 .shop-grid{scroll-margin-top:12px}#book{scroll-margin-top:12px}
@@ -357,6 +428,7 @@ html body .bar{background:var(--surface);color:var(--ink);border-color:var(--lin
   .tp-points{grid-template-columns:1fr}
   .tp-menu ul{grid-template-columns:1fr}
   .tp-menu{padding:20px}
+  .tp-ph-grid{grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:140px}
 }
 CSS;
     }

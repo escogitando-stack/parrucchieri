@@ -26,7 +26,7 @@ final class Admin
     public static function rows(Db $db, ?int $now = null, array $cfg = []): array
     {
         $rows = $db->all(
-            'SELECT a.id, a.email, a.business_name, a.category, a.plan_status, a.trial_ends_at, a.paid_until, a.suspended,
+            'SELECT a.id, a.email, a.business_name, a.category, a.shop_phone, a.shop_whatsapp, a.plan_status, a.trial_ends_at, a.paid_until, a.suspended,
                     a.last_login_at, a.created_at, a.stripe_customer_id, a.approved, a.slug, a.shop_email,
                     (SELECT COUNT(*) FROM clients c WHERE c.account_id = a.id) AS clients,
                     (SELECT COUNT(*) FROM appointments p WHERE p.account_id = a.id) AS appointments
@@ -39,6 +39,9 @@ final class Admin
             $r['appointments'] = (int)$r['appointments'];
             $r['category_label'] = Categories::get((string)$r['category'])['label'];
             $r['is_demo'] = $db->metaGet('demo_of_' . (int)$r['id']) !== null;
+            $r['is_showcase'] = $db->metaGet('showcase_' . (int)$r['id']) !== null;
+            $r['wa_demo'] = $r['is_demo'] ? self::demoWhatsappUrl($db, $cfg, $r) : '';
+            $r['delivered'] = $db->metaGet('delivered_' . (int)$r['id']) !== null;
         }
         unset($r);
         // I negozi da approvare stanno in cima, poi i più recenti.
@@ -61,6 +64,44 @@ final class Admin
             }
         }
         return $s;
+    }
+
+    /**
+     * Andamento commerciale: prove in scadenza da richiamare, demo, conversioni.
+     *
+     * @param array<int,array<string,mixed>> $rows Admin::rows()
+     * @return array{expiring:array<int,array<string,mixed>>,demos:int,delivered:int,paying:int,expired:int,conversion:?int,new30:int}
+     */
+    public static function insights(array $rows, ?int $now = null): array
+    {
+        $now ??= time();
+        $expiring = [];
+        $out = ['demos' => 0, 'delivered' => 0, 'paying' => 0, 'expired' => 0, 'new30' => 0];
+        foreach ($rows as $r) {
+            if (!empty($r['is_admin'])) {
+                continue;
+            }
+            $state = $r['plan']['state'];
+            if (!empty($r['is_demo'])) {
+                $out['demos']++;
+            } elseif ($state === 'trial' && $r['plan']['days_left'] <= 7) {
+                $expiring[] = $r;
+            }
+            if (!empty($r['delivered'])) {
+                $out['delivered']++;
+            }
+            if ($state === 'active') {
+                $out['paying']++;
+            } elseif ($state === 'expired') {
+                $out['expired']++;
+            }
+            if ((int)strtotime((string)$r['created_at']) >= $now - 30 * 86400) {
+                $out['new30']++;
+            }
+        }
+        usort($expiring, static fn($a, $b) => $a['plan']['days_left'] <=> $b['plan']['days_left']);
+        $done = $out['paying'] + $out['expired'];
+        return $out + ['expiring' => $expiring, 'conversion' => $done > 0 ? (int)round($out['paying'] * 100 / $done) : null];
     }
 
     /** Aggiunge giorni alla prova (o, per chi paga, alla scadenza dell'abbonamento). */
@@ -131,11 +172,11 @@ final class Admin
         }
         $db->begin();
         try {
-            foreach (['appointments', 'blocked_slots', 'working_hours', 'products', 'services', 'staff', 'clients'] as $table) {
+            foreach (['appointments', 'blocked_slots', 'working_hours', 'products', 'services', 'staff', 'clients', 'shop_photos'] as $table) {
                 $db->exec("DELETE FROM $table WHERE account_id = ?", [$id]);
             }
             $db->exec('DELETE FROM accounts WHERE id = ?', [$id]);
-            $db->exec('DELETE FROM _meta WHERE meta_key IN (?, ?)', ['demo_of_' . $id, 'nosummary_' . $id]);
+            $db->exec('DELETE FROM _meta WHERE meta_key IN (?, ?, ?, ?, ?)', ['demo_of_' . $id, 'nosummary_' . $id, 'showcase_' . $id, 'demo_phone_' . $id, 'delivered_' . $id]);
             $db->commit();
         } catch (\Throwable $e) {
             $db->rollBack();
@@ -205,9 +246,36 @@ final class Admin
                 return ['ok' => false, 'error' => 'Foto di copertina non valida: usa un\'immagine PNG, JPEG o WebP fino a 1,5 MB.'];
             }
         }
+        $review = trim((string)($in['review_url'] ?? ''));
+        if (!Shop::reviewUrlValid($review)) {
+            return ['ok' => false, 'error' => 'Il link per le recensioni deve iniziare con https://'];
+        }
+        $photos = array_slice(array_values(array_filter((array)($in['photos'] ?? []), 'is_string')), 0, Shop::MAX_PHOTOS);
+        foreach ($photos as $ph) {
+            if (Shop::parseImage($ph, 1500) === null) {
+                return ['ok' => false, 'error' => 'Una delle foto della galleria non è valida: usa PNG, JPEG o WebP fino a 1,5 MB.'];
+            }
+        }
         $field = static fn(string $k, int $max): string => mb_substr(trim((string)($in[$k] ?? '')), 0, $max);
         $hours = $field('shop_hours', 500);
         $copyData = !empty($in['copy_data']);
+        // Giorni e orari di apertura (facoltativi): valgono per tutti i collaboratori della demo.
+        $openDays = array_values(array_unique(array_filter(array_map('intval', (array)($in['open_days'] ?? [])), static fn(int $d): bool => $d >= 1 && $d <= 7)));
+        $ranges = [];
+        foreach ([['am_from', 'am_to'], ['pm_from', 'pm_to']] as [$f, $t]) {
+            $from = trim((string)($in[$f] ?? ''));
+            $to = trim((string)($in[$t] ?? ''));
+            if ($from === '' && $to === '') {
+                continue;
+            }
+            if (!preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $from) || !preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $to) || $from >= $to) {
+                return ['ok' => false, 'error' => 'Controlla gli orari di apertura: ogni fascia deve avere inizio e fine (es. 09:00–13:00).'];
+            }
+            $ranges[] = [$from, $to];
+        }
+        if ($openDays !== [] && $ranges === []) {
+            return ['ok' => false, 'error' => 'Hai scelto i giorni di apertura: indica anche almeno una fascia oraria.'];
+        }
         $password = self::randomPassword();
         $days = max(1, (int)($cfg['trial_days'] ?? 30));
 
@@ -236,6 +304,9 @@ final class Admin
                         [$id, $staffMap[(int)$r['staff_id']], (int)$r['weekday'], $r['start_time'], $r['end_time']]);
                 }
             }
+            if ($openDays !== []) {
+                Availability::setShopHours($db, $id, $openDays, $ranges);
+            }
             $serviceMap = self::copyRows($db, 'services', $sourceId, $id);
             self::copyRows($db, 'products', $sourceId, $id);
             if ($staffMap === []) {
@@ -258,6 +329,7 @@ final class Admin
                     $a['public_token'] = ($a['public_token'] ?? '') !== '' ? bin2hex(random_bytes(16)) : '';
                     $a['ip_hash'] = '';
                     $a['reminded'] = 1; // nessun promemoria ai clienti di esempio
+                    $a['review_asked'] = 1;
                     $newApt = self::insertRow($db, 'appointments', $a);
                     foreach ($db->all('SELECT * FROM appointment_services WHERE appointment_id = ?', [$oldId]) as $as) {
                         if (isset($serviceMap[(int)$as['service_id']])) {
@@ -276,6 +348,12 @@ final class Admin
                     }
                 }
             }
+            if ($review !== '') {
+                $db->exec('UPDATE accounts SET review_url = ? WHERE id = ?', [$review, $id]);
+            }
+            foreach ($photos as $ph) {
+                Shop::addPhoto($db, $id, $ph);
+            }
             $db->commit();
         } catch (\Throwable $e) {
             $db->rollBack();
@@ -284,7 +362,91 @@ final class Admin
         // Niente email automatiche verso l'indirizzo demo; si riattiva dalle Impostazioni.
         $db->metaSet('nosummary_' . $id, '1');
         $db->metaSet('demo_of_' . $id, (string)$sourceId);
+        $prospect = trim((string)($in['prospect_phone'] ?? ''));
+        if ($prospect !== '') {
+            $db->metaSet('demo_phone_' . $id, mb_substr($prospect, 0, 40));
+        }
         return ['ok' => true, 'id' => $id, 'email' => $email, 'password' => $password, 'slug' => $slug];
+    }
+
+    /**
+     * Consegna in un passo: email del cliente, link per scegliere la password (inviato per email)
+     * ed eventualmente un piano. Restituisce un errore oppure null.
+     *
+     * @param array<string,mixed> $cfg
+     */
+    public static function deliver(Db $db, array $cfg, int $id, string $email, int $planId = 0, ?int $now = null): ?string
+    {
+        $now ??= time();
+        if ($planId > 0 && Plans::find($db, $planId) === null) {
+            return 'Piano non trovato.';
+        }
+        $err = self::changeEmail($db, $id, $email);
+        if ($err !== null) {
+            return $err;
+        }
+        // Password casuale finché il cliente non sceglie la sua dal link.
+        self::resetPassword($db, $id);
+        $token = bin2hex(random_bytes(16));
+        $db->exec('DELETE FROM password_resets WHERE account_id = ?', [$id]);
+        $db->exec('INSERT INTO password_resets (account_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?)',
+            [$id, hash('sha256', $token), date('Y-m-d H:i:s', $now + 7 * 86400), date('Y-m-d H:i:s', $now)]);
+        if ($planId > 0) {
+            Plans::assign($db, $id, $planId, $now);
+        }
+        $db->exec('DELETE FROM _meta WHERE meta_key = ?', ['demo_phone_' . $id]);
+        $db->metaSet('delivered_' . $id, date('Y-m-d', $now));
+        $acct = Auth::account($db, $id) ?? [];
+        Notify::accountDelivered($cfg, $acct, $token);
+        return null;
+    }
+
+    /** Testo del messaggio WhatsApp con cui si manda la demo al cliente. */
+    public static function demoMessage(array $cfg, array $acct): string
+    {
+        return 'Ciao! Ecco come sarebbe la pagina di prenotazione online di ' . $acct['business_name'] . ': ' . Notify::shopUrl($cfg, $acct)
+            . "\nProvala pure dal telefono: i tuoi clienti scelgono il servizio, il giorno e l'orario e tu ricevi la richiesta. Fammi sapere cosa ne pensi!";
+    }
+
+    /** Link wa.me per inviare la demo (al numero del cliente, se salvato). */
+    public static function demoWhatsappUrl(Db $db, array $cfg, array $acct): string
+    {
+        $phone = Notify::digits((string)($db->metaGet('demo_phone_' . (int)$acct['id']) ?? ''));
+        return 'https://wa.me/' . $phone . '?text=' . rawurlencode(self::demoMessage($cfg, $acct));
+    }
+
+    /** Mostra o nasconde il negozio tra gli esempi della home. Restituisce il nuovo stato. */
+    public static function toggleShowcase(Db $db, int $id): bool
+    {
+        if (self::isShowcase($db, $id)) {
+            $db->exec('DELETE FROM _meta WHERE meta_key = ?', ['showcase_' . $id]);
+            return false;
+        }
+        $db->metaSet('showcase_' . $id, '1');
+        return true;
+    }
+
+    public static function isShowcase(Db $db, int $id): bool
+    {
+        return $db->metaGet('showcase_' . $id) !== null;
+    }
+
+    /**
+     * Negozi da mostrare come esempio nella home (solo quelli con la pagina visibile).
+     *
+     * @return array<int,array{name:string,slug:string,category:string,cover:bool}>
+     */
+    public static function showcase(Db $db): array
+    {
+        $out = [];
+        foreach ($db->all("SELECT meta_key FROM _meta WHERE meta_key LIKE 'showcase!_%' ESCAPE '!' ORDER BY meta_key") as $m) {
+            $a = Auth::account($db, (int)substr((string)$m['meta_key'], 9));
+            if ($a === null || (int)$a['approved'] !== 1 || (int)$a['suspended'] === 1) {
+                continue;
+            }
+            $out[] = ['name' => (string)$a['business_name'], 'slug' => (string)$a['slug'], 'category' => (string)$a['category'], 'cover' => ($a['cover_mime'] ?? '') !== ''];
+        }
+        return $out;
     }
 
     /** Il negozio è una demo creata con "Duplica"? */

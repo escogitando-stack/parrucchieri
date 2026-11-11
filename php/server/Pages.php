@@ -62,6 +62,7 @@ $head<style>
   .filters{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}.filters input,.filters select{width:auto;height:40px;min-width:180px}.filters .btn{padding:9px 18px}
   details.act summary{cursor:pointer;color:#be185d;font-weight:600;font-size:13px}
   details.act .menu{margin-top:8px;display:flex;flex-direction:column;gap:6px;min-width:210px}
+  details.act form{flex-wrap:wrap}
   details.act form{display:flex;gap:6px;align-items:center;margin:0}
   details.act input[type=date],details.act input[type=number]{height:32px;width:auto;padding:0 8px;font-size:13px}
   .mini{border:1px solid #e7c5d4;background:#fff;color:#be185d;border-radius:8px;padding:5px 10px;font-size:13px;font-weight:600;cursor:pointer}
@@ -307,8 +308,9 @@ SVG;
     }
 
     /** @param array<string,mixed> $cfg */
-    public static function landing(array $cfg, array $dbPlans = []): string
+    public static function landing(array $cfg, array $dbPlans = [], array $examples = []): string
     {
+        $showcase = self::showcase($examples);
         $days = (int)($cfg['trial_days'] ?? 30);
         $name = self::name($cfg);
         $chips = '';
@@ -379,7 +381,7 @@ SVG;
   <div class="shot">$hero</div>
   <div class="chips">$chips</div>
 </section>
-
+$showcase
 <section class="blk" id="vantaggi">
   <h2>Perché usarla</h2>
   <p class="sub">Meno carta e messaggi sparsi, più tempo per il tuo lavoro.</p>
@@ -724,11 +726,20 @@ HTML;
                 $menu .= $form('delete', '<button class="mini danger">Elimina account e dati</button>',
                     'onsubmit="return confirm(\'Eliminare DEFINITIVAMENTE ' . self::h(addslashes((string)$r['business_name'])) . ' e tutti i suoi dati?\')"');
             }
-            $menu = '<a class="mini" style="text-decoration:none;text-align:center" href="/admin?duplica=' . $id . '#demo">Duplica per una demo</a>'
+            $demoTools = '';
+            if (!empty($r['is_demo'])) {
+                $demoTools = '<a class="mini" style="text-decoration:none;text-align:center;background:#dcfce7;border-color:#86efac;color:#166534" href="' . self::h((string)$r['wa_demo']) . '" target="_blank" rel="noopener">Invia la demo su WhatsApp</a>'
+                    . '<a class="mini" style="text-decoration:none;text-align:center" href="/' . self::h((string)$r['slug']) . '/qr.svg" download="qr-' . self::h((string)$r['slug']) . '.svg">Scarica il QR code</a>'
+                    . $form('deliver', '<input type="email" name="email" required placeholder="Email del cliente" style="height:32px;width:150px;font-size:13px">'
+                        . ($planOpts !== '' ? '<select name="plan_id" style="height:32px;width:auto;font-size:13px"><option value="0">Resta in prova</option>' . $planOpts . '</select>' : '')
+                        . '<button class="mini" style="background:#be185d;color:#fff">Consegna al cliente</button>', 'onsubmit="return confirm(\'Consegnare la demo? Il cliente riceve una email per scegliere la password.\')" title="Cambia email, manda il link per la password e, se scegli un piano, lo attiva"');
+            }
+            $menu = $demoTools . '<a class="mini" style="text-decoration:none;text-align:center" href="/admin?duplica=' . $id . '#demo">Duplica per una demo</a>'
+                . $form('showcase', '<button class="mini">' . (!empty($r['is_showcase']) ? 'Togli dagli esempi della home' : 'Mostra come esempio nella home') . '</button>')
                 . $form('email', '<input type="email" name="email" required placeholder="Nuova email di accesso" style="height:32px;width:auto;font-size:13px"><button class="mini">Cambia email</button>')
                 . $menu;
             $quick = $state === 'pending' ? $form('approve', '<button class="mini" style="background:#be185d;color:#fff">Approva</button>') : '';
-            $body .= '<tr><td><b>' . self::h((string)$r['business_name']) . '</b><br><small>' . self::h((string)$r['email']) . '</small><br><small>' . (in_array($state, ['trial', 'active', 'expired'], true) ? '<a href="/' . self::h((string)$r['slug']) . '" target="_blank" rel="noopener">/' . self::h((string)$r['slug']) . '</a> · <a class="site" href="/' . self::h((string)$r['slug']) . '" target="_blank" rel="noopener">Vedi sito ↗</a>' : '/' . self::h((string)$r['slug']) . ' <span class="muted">(pagina non ancora visibile)</span>') . '</small>' . (!empty($r['is_demo']) ? ' <span class="badge b-demo">Demo</span>' : '') . '</td>'
+            $body .= '<tr><td><b>' . self::h((string)$r['business_name']) . '</b><br><small>' . self::h((string)$r['email']) . '</small><br><small>' . (in_array($state, ['trial', 'active', 'expired'], true) ? '<a href="/' . self::h((string)$r['slug']) . '" target="_blank" rel="noopener">/' . self::h((string)$r['slug']) . '</a> · <a class="site" href="/' . self::h((string)$r['slug']) . '" target="_blank" rel="noopener">Vedi sito ↗</a>' : '/' . self::h((string)$r['slug']) . ' <span class="muted">(pagina non ancora visibile)</span>') . '</small>' . (!empty($r['is_demo']) ? ' <span class="badge b-demo">Demo</span>' : '') . (!empty($r['is_showcase']) ? ' <span class="badge b-active">In home</span>' : '') . '</td>'
                 . '<td>' . self::h((string)$r['category_label']) . '</td>'
                 . '<td><span class="badge b-' . $state . '">' . $labels[$state] . '</span><br><small>' . self::h($when) . '</small></td>'
                 . '<td>' . $fmt((string)$r['created_at']) . '</td>'
@@ -770,7 +781,7 @@ HTML;
         $planBox = '<details class="card" style="margin:0 0 18px"' . ($plans === [] ? ' open' : '') . '><summary style="cursor:pointer;font-weight:700">Piani di abbonamento (' . count($plans) . ')</summary>'
             . '<p class="sub" style="text-align:left;margin:8px 0 12px;font-size:14px">Nome, durata in giorni e prezzo. I piani attivi compaiono nella home del sito e nella pagina Abbonamento; con il codice Stripe il cliente può pagare online, senza codice li assegni tu da "Azioni".</p>'
             . $planRows . '</details>';
-        $demoBox = self::adminDemoBox($csrf, $extra);
+        $demoBox = self::adminInsights((array)($extra['insights'] ?? []), $csrf) . self::adminDemoBox($csrf, $extra);
         $catBox = self::adminCategoriesBox($csrf, $extra);
         $n = $notice ? '<p class="ok">' . $notice . '</p>' : ''; // già escapato da chi lo costruisce
         $e = $error ? '<p class="err">' . self::h($error) . '</p>' : '';
@@ -821,6 +832,11 @@ HTML;
             $cats .= '<option value="' . self::h($k) . '"' . (($old['category'] ?? '') === $k ? ' selected' : '') . '>' . self::h($label) . '</option>';
         }
         $open = $dup > 0 || $old !== [] ? ' open' : '';
+        $dayChecks = '';
+        $chosenDays = array_map('intval', (array)($old['open_days'] ?? []));
+        foreach ([1 => 'Lun', 2 => 'Mar', 3 => 'Mer', 4 => 'Gio', 5 => 'Ven', 6 => 'Sab', 7 => 'Dom'] as $dn => $dl) {
+            $dayChecks .= '<label class="check" style="margin:0"><input type="checkbox" name="open_days[]" value="' . $dn . '"' . (in_array($dn, $chosenDays, true) ? ' checked' : '') . '>' . $dl . '</label>';
+        }
         $copy = ($old === [] || !empty($old['copy_data'])) ? ' checked' : '';
         return <<<HTML
 <details class="card" id="demo" style="margin:0 0 18px"$open><summary style="cursor:pointer;font-weight:700">Crea una demo per un cliente</summary>
@@ -831,15 +847,21 @@ HTML;
   <label>Negozio da copiare<select name="id" required>$src</select></label>
   <label>Nome dell'attività *<input name="business_name" required maxlength="120" value="{$v('business_name')}" placeholder="es. Parrucchiera Giulia"></label>
   <label>Categoria<select name="category">$cats</select></label>
+  <label>Cellulare del cliente (per mandargli la demo)<input name="prospect_phone" maxlength="40" value="{$v('prospect_phone')}" placeholder="es. 333 1234567"></label>
   <label>Email di accesso<input type="email" name="email" maxlength="190" value="{$v('email')}" placeholder="vuota = indirizzo demo automatico"></label>
   <label>Telefono<input name="shop_phone" maxlength="64" value="{$v('shop_phone')}"></label>
   <label>WhatsApp<input name="shop_whatsapp" maxlength="64" value="{$v('shop_whatsapp')}"></label>
   <label>Email del negozio (pubblica)<input type="email" name="shop_email" maxlength="190" value="{$v('shop_email')}"></label>
   <label>Indirizzo<input name="shop_address" maxlength="255" value="{$v('shop_address')}" placeholder="Via, numero, città"></label>
-  <label>Orari (testo per la pagina pubblica)<input name="shop_hours" maxlength="500" value="{$v('shop_hours')}" placeholder="vuoto = come il negozio copiato"></label>
+  <label>Note sugli orari (facoltative)<input name="shop_hours" maxlength="500" value="{$v('shop_hours')}" placeholder="es. Sabato su appuntamento"></label>
   <label>Logo (PNG, JPG, WebP, max 400 KB)<input type="file" name="logo" accept="image/png,image/jpeg,image/webp,image/gif"></label>
   <label>Foto di copertina (max 1,5 MB, verticale)<input type="file" name="cover" accept="image/png,image/jpeg,image/webp"></label>
+  <label>Galleria lavori (fino a 8 foto)<input type="file" name="photos[]" multiple accept="image/png,image/jpeg,image/webp"></label>
+  <label>Link per le recensioni Google<input name="review_url" maxlength="500" value="{$v('review_url')}" placeholder="https://g.page/r/..."></label>
 </div>
+<div style="margin:12px 0 0"><span style="font-size:13px;font-weight:600;color:#57534e">Giorni e orari di apertura</span> <span class="muted">(vuoto = come il negozio copiato; valgono per tutti i collaboratori e sono quelli prenotabili)</span>
+<div style="display:flex;flex-wrap:wrap;gap:4px 14px;margin:6px 0">$dayChecks</div>
+<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:14px">Mattina <input type="time" name="am_from" value="{$v('am_from')}" style="width:auto;height:36px"> – <input type="time" name="am_to" value="{$v('am_to')}" style="width:auto;height:36px"> &nbsp; Pomeriggio <input type="time" name="pm_from" value="{$v('pm_from')}" style="width:auto;height:36px"> – <input type="time" name="pm_to" value="{$v('pm_to')}" style="width:auto;height:36px"></div></div>
 <label style="display:block;font-size:13px;font-weight:600;color:#57534e;margin:10px 0 0">Descrizione<textarea name="shop_description" maxlength="1000" rows="2" style="margin-top:4px;width:100%">{$v('shop_description')}</textarea></label>
 <label class="check"><input type="checkbox" name="copy_data" value="1"$copy>Copia anche clienti, appuntamenti e chiusure (agenda già piena per la demo)</label>
 <button class="btn" type="submit" style="margin-top:6px">Crea la demo</button>
@@ -921,5 +943,64 @@ HTML;
         return '<details class="card" id="categorie" style="margin:0 0 18px"' . ($old !== [] ? ' open' : '') . '><summary style="cursor:pointer;font-weight:700">Categorie merceologiche (' . count($cats) . ')</summary>'
             . '<p class="sub" style="text-align:left;margin:8px 0 12px;font-size:14px">I tipi di attività tra cui si sceglie in registrazione. Ognuno precompila i servizi del nuovo negozio e i nomi usati nell\'app (per esempio <i>Meccanici</i> e <i>Interventi</i> per un\'officina). Una categoria disattivata sparisce dalle scelte ma resta ai negozi che la usano; se la elimini, scegli in quale categoria spostare i suoi negozi (servizi e dati non cambiano).</p>'
             . $html . '</details>';
+    }
+
+    /**
+     * Sezione "Guarda alcuni esempi" della home: anteprime delle pagine dei negozi scelti dall'amministratore.
+     *
+     * @param array<int,array{name:string,slug:string,category:string}> $examples
+     */
+    private static function showcase(array $examples): string
+    {
+        if ($examples === []) {
+            return '';
+        }
+        $cards = '';
+        foreach (array_slice($examples, 0, 6) as $ex) {
+            $cat = Categories::get($ex['category']);
+            $tpl = Themes::forCategory($ex['category'], $cat);
+            $st = $tpl['style'];
+            $font = $st['font'] === 'serif' ? '"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif' : 'system-ui,sans-serif';
+            $art = !empty($ex['cover']) ? '<img src="/' . self::h($ex['slug']) . '/copertina" alt="" loading="lazy">' : ($tpl['image'] !== '' ? '<img src="' . self::h($tpl['image']) . '" alt="" loading="lazy" referrerpolicy="no-referrer">' : Themes::illustration($st, $tpl['icon']));
+            $cards .= '<a class="ex" href="/' . self::h($ex['slug']) . '" target="_blank" rel="noopener" style="background:' . $st['bg'] . ';color:' . $st['ink'] . '">'
+                . '<div class="ex-arch" style="background:' . $st['soft'] . '">' . $art . '</div>'
+                . '<div class="ex-txt"><small style="color:' . $st['muted'] . '">' . self::h((string)$cat['label']) . '</small>'
+                . '<b style="font-family:' . $font . '">' . self::h($ex['name']) . '</b>'
+                . '<span class="ex-h" style="font-family:' . $font . '">' . str_replace('<em>', '<em style="color:' . $st['acc'] . '">', Themes::headlineHtml($tpl['headline'])) . '</span>'
+                . '<span class="ex-go" style="color:' . $st['acc'] . '">Guarda la pagina →</span></div></a>';
+        }
+        return '<section class="blk" id="esempi"><h2>Guarda alcuni esempi</h2><p class="sub">Ogni attività ha la sua pagina di prenotazione, con colori e testi pensati per il suo mestiere.</p>'
+            . '<style>.exs{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin:24px 0}.ex{display:flex;gap:14px;align-items:center;border-radius:20px;padding:14px;text-decoration:none;border:1px solid rgba(0,0,0,.06);transition:transform .15s}.ex:hover{transform:translateY(-3px)}.ex-arch{flex:none;width:96px;height:120px;border-radius:999px 999px 14px 14px;overflow:hidden}.ex-arch img,.ex-arch svg{width:100%;height:100%;object-fit:cover;display:block}.ex-txt{display:flex;flex-direction:column;gap:3px;min-width:0}.ex-txt small{font-size:11px;letter-spacing:.12em;text-transform:uppercase}.ex-txt b{font-size:18px;font-weight:600}.ex-h{font-size:15px;line-height:1.3}.ex-h em{font-style:italic}.ex-go{font-size:13px;font-weight:700;margin-top:4px}</style>'
+            . '<div class="exs">' . $cards . '</div></section>';
+    }
+
+    /** Riquadro "Andamento": prove in scadenza da richiamare e numeri delle demo. @param array<string,mixed> $in */
+    private static function adminInsights(array $in, string $csrf): string
+    {
+        if ($in === []) {
+            return '';
+        }
+        $conv = $in['conversion'] === null ? '—' : $in['conversion'] . '%';
+        $cards = '';
+        foreach ([[$in['paying'], 'Abbonati paganti'], [$conv, 'Prove trasformate in abbonamenti'], [$in['new30'], 'Nuovi negli ultimi 30 giorni'], [$in['demos'], 'Demo da consegnare'], [$in['delivered'], 'Demo consegnate']] as [$n, $l]) {
+            $cards .= '<div class="stat"><b>' . self::h((string)$n) . '</b><span>' . $l . '</span></div>';
+        }
+        $list = '';
+        foreach ($in['expiring'] as $r) {
+            $d = (int)$r['plan']['days_left'];
+            $phone = trim((string)($r['shop_phone'] ?? ''));
+            $wa = Notify::digits((string)(($r['shop_whatsapp'] ?? '') !== '' ? $r['shop_whatsapp'] : $phone));
+            $msg = 'Ciao! Sono di ' . 'Appuntamenti4me: la prova di ' . $r['business_name'] . ' scade ' . ($d <= 0 ? 'oggi' : ($d === 1 ? 'domani' : "tra $d giorni")) . '. Come ti stai trovando? Se vuoi continuare ti aiuto a scegliere il piano.';
+            $list .= '<tr><td><b>' . self::h((string)$r['business_name']) . '</b><br><small>' . self::h((string)$r['email']) . '</small></td>'
+                . '<td><span class="badge b-trial">' . ($d <= 0 ? 'scade oggi' : ($d === 1 ? 'scade domani' : "tra $d giorni")) . '</span></td>'
+                . '<td>' . (int)$r['appointments'] . ' app. · ' . (int)$r['clients'] . ' clienti</td>'
+                . '<td style="white-space:nowrap">' . ($phone !== '' ? '<a class="mini" style="text-decoration:none" href="tel:' . self::h((string)preg_replace('/[^0-9+]/', '', $phone)) . '">Chiama</a> ' : '')
+                . ($wa !== '' ? '<a class="mini" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/' . self::h($wa) . '?text=' . self::h(rawurlencode($msg)) . '">WhatsApp</a> ' : '')
+                . '<a class="mini" style="text-decoration:none" href="mailto:' . self::h((string)$r['email']) . '">Email</a></td></tr>';
+        }
+        $calls = $list !== ''
+            ? '<h3 style="margin:16px 0 8px;font-size:16px">Prove in scadenza nei prossimi 7 giorni: da richiamare (' . count($in['expiring']) . ')</h3><div class="tbl"><table><tbody>' . $list . '</tbody></table></div>'
+            : '<p class="muted" style="margin:10px 0 0">Nessuna prova in scadenza nei prossimi 7 giorni.</p>';
+        return '<details class="card" style="margin:0 0 18px" open><summary style="cursor:pointer;font-weight:700">Andamento</summary><div class="stats" style="margin-top:12px">' . $cards . '</div>' . $calls . '</details>';
     }
 }

@@ -39,6 +39,27 @@ if ($method === 'POST' && $path !== '/stripe-webhook' && ($_SERVER['HTTP_SEC_FET
 
 $db = App\connect($cfg);
 
+// Indicazioni per i motori di ricerca: home e pagine dei negozi attivi, mai le demo.
+if ($path === '/robots.txt') {
+    header('Content-Type: text/plain; charset=utf-8');
+    echo "User-agent: *\nDisallow: /admin\nDisallow: /api/\nSitemap: " . baseUrl($cfg) . "/sitemap.xml\n";
+    exit;
+}
+if ($path === '/sitemap.xml') {
+    header('Content-Type: application/xml; charset=utf-8');
+    $base = baseUrl($cfg);
+    $xml = '<?xml version="1.0" encoding="UTF-8"?>' . "\n" . '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n";
+    $xml .= '<url><loc>' . htmlspecialchars($base . '/', ENT_XML1) . '</loc></url>' . "\n";
+    foreach ($db->all("SELECT id, email, slug, plan_status, trial_ends_at, paid_until, suspended, approved FROM accounts WHERE approved = 1 AND suspended = 0 AND slug <> '' ORDER BY id") as $a) {
+        if (Admin::isDemo($db, (int)$a['id']) || Auth::isAdmin($cfg, $a) || !in_array(Auth::plan($a)['state'], ['trial', 'active'], true)) {
+            continue;
+        }
+        $xml .= '<url><loc>' . htmlspecialchars($base . '/' . $a['slug'], ENT_XML1) . '</loc></url>' . "\n";
+    }
+    echo $xml . '</urlset>';
+    exit;
+}
+
 // Notifiche di pagamento da Stripe.
 if ($path === '/stripe-webhook') {
     $payload = (string)file_get_contents('php://input');
@@ -269,7 +290,7 @@ if (preg_match('#^/calendario/([a-f0-9]{32})\.ics$#', $path, $mm)) {
 }
 
 // Pagina pubblica del negozio: /nome, con logo, orari e prenotazione online.
-if (preg_match('#^/([a-z0-9][a-z0-9-]{1,78}[a-z0-9])(?:/(logo|copertina|giorni|orari|prenota|privacy|primo|qr\.svg))?$#', $path, $mm)) {
+if (preg_match('#^/([a-z0-9][a-z0-9-]{1,78}[a-z0-9])(?:/(logo|copertina|giorni|orari|prenota|privacy|primo|qr\.svg|foto/\d{1,9}))?$#', $path, $mm)) {
     $shopAcct = Booking::accountBySlug($db, $mm[1]);
     if ($shopAcct !== null) {
         $sub = $mm[2] ?? '';
@@ -280,6 +301,12 @@ if (preg_match('#^/([a-z0-9][a-z0-9-]{1,78}[a-z0-9])(?:/(logo|copertina|giorni|o
             exit;
         }
         if ($sub === '') {
+            $shopAcct['_hours'] = Availability::hoursSummary($db, (int)$shopAcct['id']);
+            $shopAcct['_demo'] = Admin::isDemo($db, (int)$shopAcct['id']);
+            $shopAcct['_photos'] = Shop::photoIds($db, (int)$shopAcct['id']);
+            if ($shopAcct['_demo']) {
+                header('X-Robots-Tag: noindex, nofollow');
+            }
             echo Shop::page($cfg, $shopAcct, Availability::services($db, (int)$shopAcct['id']), Availability::staff($db, (int)$shopAcct['id']), Booking::open($cfg, $shopAcct));
             exit;
         }
@@ -298,8 +325,12 @@ if (preg_match('#^/([a-z0-9][a-z0-9-]{1,78}[a-z0-9])(?:/(logo|copertina|giorni|o
             echo Shop::privacyPage($cfg, $shopAcct);
             exit;
         }
-        if ($sub === 'logo' || $sub === 'copertina') {
-            $img = $sub === 'logo' ? Shop::logo($shopAcct) : Shop::cover($shopAcct);
+        if ($sub === 'logo' || $sub === 'copertina' || str_starts_with($sub, 'foto/')) {
+            $img = match (true) {
+                $sub === 'logo' => Shop::logo($shopAcct),
+                $sub === 'copertina' => Shop::cover($shopAcct),
+                default => Shop::photo($db, (int)$shopAcct['id'], (int)substr($sub, 5)),
+            };
             if ($img === null) {
                 http_response_code(404);
                 exit;
@@ -367,7 +398,7 @@ if ($accountId === null) {
         redirect('/login');
     }
     if ($path === '/') {
-        echo Pages::landing($cfg, App\Plans::active($db));
+        echo Pages::landing($cfg, App\Plans::active($db), Admin::showcase($db));
         exit;
     }
     redirect('/login');
@@ -419,13 +450,33 @@ if ($path === '/admin') {
             } elseif (is_array($upc) && ($upc['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
                 $in['cover'] = 'x';
             }
+            $in['photos'] = [];
+            $ups = $_FILES['photos'] ?? null;
+            if (is_array($ups) && is_array($ups['tmp_name'] ?? null)) {
+                foreach ($ups['tmp_name'] as $k => $tmp) {
+                    if (($ups['error'][$k] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+                        continue;
+                    }
+                    if (($ups['error'][$k] ?? 1) !== UPLOAD_ERR_OK || !is_uploaded_file((string)$tmp)) {
+                        $in['photos'][] = 'x';
+                        continue;
+                    }
+                    $raw = (string)file_get_contents((string)$tmp);
+                    $info = @getimagesizefromstring($raw);
+                    $in['photos'][] = 'data:' . (string)($info['mime'] ?? 'application/octet-stream') . ';base64,' . base64_encode($raw);
+                }
+            }
             $res = Admin::duplicate($db, $cfg, $target, $in);
             if ($res['ok']) {
                 $new = Auth::account($db, (int)$res['id']) ?? [];
                 $csrf = Pages::h(Admin::csrfToken());
                 $notice = 'Demo <b>' . Pages::h((string)$new['business_name']) . '</b> creata. Accesso: <b>' . Pages::h((string)$res['email']) . '</b> · password <code class="pw">' . Pages::h((string)$res['password']) . '</code>'
                     . '<br>Pagina di prenotazione: <a href="' . Pages::h(App\Notify::shopUrl($cfg, $new)) . '" target="_blank" rel="noopener">' . Pages::h(App\Notify::shopUrl($cfg, $new)) . '</a>'
-                    . '<form method="post" action="/admin" style="margin-top:8px"><input type="hidden" name="csrf" value="' . $csrf . '"><input type="hidden" name="azione" value="impersonate"><input type="hidden" name="id" value="' . (int)$res['id'] . '"><button class="mini">Entra e personalizza servizi e prezzi →</button></form>';
+                    . '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">'
+                    . '<a class="mini" style="text-decoration:none;background:#dcfce7;border-color:#86efac;color:#166534" href="' . Pages::h(Admin::demoWhatsappUrl($db, $cfg, $new)) . '" target="_blank" rel="noopener">Invia la demo su WhatsApp</a>'
+                    . '<a class="mini" style="text-decoration:none" href="/' . Pages::h((string)$new['slug']) . '/qr.svg" download="qr-' . Pages::h((string)$new['slug']) . '.svg">Scarica il QR code</a>'
+                    . '<a class="mini" style="text-decoration:none" href="' . Pages::h(App\Notify::shopUrl($cfg, $new)) . '" target="_blank" rel="noopener">Apri la pagina</a>'
+                    . '<form method="post" action="/admin" style="margin:0"><input type="hidden" name="csrf" value="' . $csrf . '"><input type="hidden" name="azione" value="impersonate"><input type="hidden" name="id" value="' . (int)$res['id'] . '"><button class="mini">Entra e personalizza servizi e prezzi →</button></form></div>';
             } else {
                 $error = $res['error'] ?? 'Duplicazione non riuscita.';
                 $dupOld = $_POST;
@@ -472,6 +523,16 @@ if ($path === '/admin') {
                 redirect('/');
             }
             $error = 'Non puoi entrare in questo negozio.';
+        } elseif ($action === 'deliver') {
+            $err = Admin::deliver($db, $cfg, $target, (string)($_POST['email'] ?? ''), (int)($_POST['plan_id'] ?? 0));
+            if ($err === null) {
+                $notice = "<b>$name</b> consegnato a <b>" . Pages::h(strtolower(trim((string)$_POST['email']))) . '</b>: gli abbiamo scritto una email con il link per scegliere la password (valido 7 giorni).'
+                    . ((int)($_POST['plan_id'] ?? 0) > 0 ? ' Piano attivato.' : ' Resta in prova: puoi assegnare un piano da Azioni.');
+            } else {
+                $error = $err;
+            }
+        } elseif ($action === 'showcase') {
+            $notice = Admin::toggleShowcase($db, $target) ? "<b>$name</b> ora compare tra gli esempi della home." : "<b>$name</b> tolto dagli esempi della home.";
         } elseif ($action === 'email') {
             $err = Admin::changeEmail($db, $target, (string)($_POST['email'] ?? ''));
             if ($err === null) {
@@ -543,6 +604,7 @@ if ($path === '/admin') {
             'categories' => App\Categories::all(),
             'usage' => App\Categories::usage($db),
             'cat_old' => $catOld ?? [],
+            'insights' => Admin::insights($all),
         ]
     );
     exit;

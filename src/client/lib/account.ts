@@ -35,6 +35,8 @@ export interface AccountInfo {
   shop_hours: string;
   has_logo: boolean;
   has_cover: boolean;
+  review_url: string;
+  photos: number[];
   daily_summary: boolean;
   impersonating?: boolean;
 }

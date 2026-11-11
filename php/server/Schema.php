@@ -15,12 +15,13 @@ namespace App;
  *   6 = piani di abbonamento gestiti dall'amministratore
  *   7 = conferma automatica, promemoria, email automatiche e recupero password
  *   8 = categorie merceologiche gestite dall'amministratore (tabella categories)
+ *   11 = galleria foto, link recensioni e richiesta di recensione dopo l'appuntamento
  *   10 = pagina pubblica a template: copertina del negozio, stile/immagine/titolo della categoria
  *   9 = 15 nuove categorie (dentista, veterinario, gommista, idraulico, autoscuola...)
  */
 final class Schema
 {
-    public const VERSION = 10;
+    public const VERSION = 11;
 
     /** Tabelle i cui dati appartengono a un negozio. */
     private const OWNED = ['clients', 'staff', 'services', 'appointments', 'blocked_slots', 'products', 'working_hours'];
@@ -59,6 +60,9 @@ final class Schema
         }
         if ($version < 10) {
             self::migrateTo10($db);
+        }
+        if ($version < 11) {
+            self::migrateTo11($db);
         }
     }
 
@@ -108,6 +112,7 @@ final class Schema
                 logo_data MEDIUMTEXT NULL,
                 cover_mime VARCHAR(32) NOT NULL DEFAULT '',
                 cover_data MEDIUMTEXT NULL,
+                review_url VARCHAR(500) NOT NULL DEFAULT '',
                 trial_mail_stage $int NOT NULL DEFAULT 0,
                 onboard_mail $int NOT NULL DEFAULT 0,
                 created_at $ts
@@ -174,6 +179,7 @@ final class Schema
                 ip_hash VARCHAR(64) NOT NULL DEFAULT '',
                 reminded $int NOT NULL DEFAULT 0,
                 consent_at VARCHAR(19) NOT NULL DEFAULT '',
+                review_asked $int NOT NULL DEFAULT 0,
                 created_at $ts,
                 updated_at $ts,
                 FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
@@ -232,6 +238,7 @@ final class Schema
             self::plansSql($db),
             self::resetsSql($db),
             self::categoriesSql($db),
+            self::photosSql($db),
             "CREATE TABLE _meta (
                 meta_key VARCHAR(64) NOT NULL PRIMARY KEY,
                 meta_value VARCHAR(255) NOT NULL
@@ -253,6 +260,7 @@ final class Schema
             'CREATE INDEX idx_services_account ON services(account_id)',
             'CREATE INDEX idx_products_account ON products(account_id)',
             'CREATE INDEX idx_password_resets_hash ON password_resets(token_hash)',
+            'CREATE INDEX idx_shop_photos_account ON shop_photos(account_id, sort_order)',
         ];
         foreach ($statements as $sql) {
             $db->exec($sql);
@@ -471,6 +479,38 @@ final class Schema
                     $db->exec("ALTER TABLE $table ADD COLUMN $col $def");
                 }
             }
+        }
+        $db->metaSet('schema_version', '10');
+    }
+
+    private static function photosSql(Db $db): string
+    {
+        [$pk, $int, $ts, $tail] = self::types($db);
+        return "CREATE TABLE shop_photos (
+                id $pk,
+                account_id $int NOT NULL,
+                mime VARCHAR(32) NOT NULL,
+                data MEDIUMTEXT NOT NULL,
+                sort_order $int NOT NULL DEFAULT 0,
+                created_at $ts
+            )$tail";
+    }
+
+    /** Galleria foto del negozio, link per le recensioni e richiesta di recensione. */
+    private static function migrateTo11(Db $db): void
+    {
+        $int = $db->driver === 'sqlite' ? 'INTEGER' : 'INT';
+        if (!$db->columnExists('accounts', 'review_url')) {
+            $db->exec("ALTER TABLE accounts ADD COLUMN review_url VARCHAR(500) NOT NULL DEFAULT ''");
+        }
+        if (!$db->columnExists('appointments', 'review_asked')) {
+            // Gli appuntamenti già passati non ricevono la richiesta: solo quelli completati da ora in poi.
+            $db->exec("ALTER TABLE appointments ADD COLUMN review_asked $int NOT NULL DEFAULT 0");
+            $db->exec('UPDATE appointments SET review_asked = 1');
+        }
+        if (!$db->tableExists('shop_photos')) {
+            $db->exec(self::photosSql($db));
+            $db->exec('CREATE INDEX idx_shop_photos_account ON shop_photos(account_id, sort_order)');
         }
         $db->metaSet('schema_version', (string)self::VERSION);
     }

@@ -214,3 +214,15 @@ casella apposita anche clienti, appuntamenti e chiusure, così l'agenda della de
 - Quando il cliente compra: *Azioni → Cambia email* con la sua email (tornano le email automatiche), poi *Nuova password*
   e *Assegna piano*. Tutti i dati della demo restano suoi.
 
+
+## Novità per la vendita
+
+- **Andamento** (in cima a /admin): abbonati, percentuale di prove trasformate, demo da consegnare e consegnate,
+  prove in scadenza nei prossimi 7 giorni con i pulsanti Chiama / WhatsApp / Email.
+- **Demo**: cellulare del cliente, giorni e orari di apertura (sono quelli prenotabili), foto di copertina, galleria e
+  link alle recensioni. Da *Azioni*: **Invia la demo su WhatsApp**, **Scarica il QR code**, **Consegna al cliente**
+  (email del cliente + link per scegliere la password, valido 7 giorni + piano facoltativo).
+- **Esempi nella home**: *Azioni → Mostra come esempio nella home*.
+- Le demo non compaiono su Google (noindex) e restano fuori da `/sitemap.xml`.
+- **Recensioni**: se il negozio imposta il link Google, il giorno dopo un appuntamento segnato come *completato* il cliente
+  riceve un'email per lasciare una recensione (serve il cron già configurato; ora con `review_hour`, default 10).

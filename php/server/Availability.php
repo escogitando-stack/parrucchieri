@@ -182,4 +182,73 @@ final class Availability
         }
         return null;
     }
+
+    /**
+     * Orari di apertura reali, ricavati dagli orari dei collaboratori attivi: righe come
+     * "Lun–Ven" => "9:00–13:00, 15:00–19:00". Giorni consecutivi con gli stessi orari sono uniti.
+     *
+     * @return array<int,array{0:string,1:string}>
+     */
+    public static function hoursSummary(Db $db, int $accountId): array
+    {
+        $byDay = [];
+        $rows = $db->all(
+            'SELECT w.weekday, w.start_time, w.end_time FROM working_hours w JOIN staff s ON s.id = w.staff_id
+             WHERE w.account_id = ? AND s.active = 1 ORDER BY w.weekday, w.start_time',
+            [$accountId]
+        );
+        foreach ($rows as $r) {
+            $byDay[(int)$r['weekday']][] = [toMinutes((string)$r['start_time']), toMinutes((string)$r['end_time'])];
+        }
+        $fmt = static fn(int $m): string => intdiv($m, 60) . ':' . str_pad((string)($m % 60), 2, '0', STR_PAD_LEFT);
+        $text = [];
+        for ($d = 1; $d <= 7; $d++) {
+            $ranges = $byDay[$d] ?? [];
+            usort($ranges, static fn($a, $b) => $a[0] <=> $b[0]);
+            $merged = [];
+            foreach ($ranges as [$a, $b]) {
+                if ($merged !== [] && $a <= $merged[count($merged) - 1][1]) {
+                    $merged[count($merged) - 1][1] = max($merged[count($merged) - 1][1], $b);
+                } else {
+                    $merged[] = [$a, $b];
+                }
+            }
+            $text[$d] = implode(', ', array_map(static fn($r) => $fmt($r[0]) . '–' . $fmt($r[1]), $merged));
+        }
+        $names = [1 => 'Lun', 2 => 'Mar', 3 => 'Mer', 4 => 'Gio', 5 => 'Ven', 6 => 'Sab', 7 => 'Dom'];
+        $out = [];
+        $d = 1;
+        while ($d <= 7) {
+            if ($text[$d] === '') {
+                $d++;
+                continue;
+            }
+            $e = $d;
+            while ($e < 7 && $text[$e + 1] === $text[$d]) {
+                $e++;
+            }
+            $label = $d === $e ? $names[$d] : ($e === $d + 1 ? $names[$d] . ', ' . $names[$e] : $names[$d] . '–' . $names[$e]);
+            $out[] = [$label, $text[$d]];
+            $d = $e + 1;
+        }
+        return $out;
+    }
+
+    /**
+     * Imposta gli stessi orari di lavoro a tutti i collaboratori del negozio.
+     *
+     * @param array<int,int> $days giorni della settimana (1 = lunedì ... 7 = domenica)
+     * @param array<int,array{0:string,1:string}> $ranges fasce orarie HH:MM
+     */
+    public static function setShopHours(Db $db, int $accountId, array $days, array $ranges): void
+    {
+        foreach ($db->all('SELECT id FROM staff WHERE account_id = ?', [$accountId]) as $st) {
+            $db->exec('DELETE FROM working_hours WHERE account_id = ? AND staff_id = ?', [$accountId, (int)$st['id']]);
+            foreach ($days as $day) {
+                foreach ($ranges as [$from, $to]) {
+                    $db->exec('INSERT INTO working_hours (account_id, staff_id, weekday, start_time, end_time) VALUES (?, ?, ?, ?, ?)', [$accountId, (int)$st['id'], $day, $from, $to]);
+                }
+            }
+        }
+    }
 }

@@ -190,14 +190,18 @@ final class Themes
         $dark = $s['bg'] === '#1a1716';
         $line = $dark ? $acc : $acc;
         $paths = self::iconPaths($icon);
+        static $n = 0;
+        $n++;
+        $g1 = 'tg' . $n . 'a';
+        $g2 = 'tg' . $n . 'b';
         return <<<SVG
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 500" preserveAspectRatio="xMidYMid slice" role="img" aria-hidden="true">
   <defs>
-    <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="$acc2"/><stop offset="1" stop-color="$soft"/></linearGradient>
-    <radialGradient id="g2" cx=".7" cy=".25" r=".7"><stop offset="0" stop-color="$surface" stop-opacity=".9"/><stop offset="1" stop-color="$surface" stop-opacity="0"/></radialGradient>
+    <linearGradient id="$g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="$acc2"/><stop offset="1" stop-color="$soft"/></linearGradient>
+    <radialGradient id="$g2" cx=".7" cy=".25" r=".7"><stop offset="0" stop-color="$surface" stop-opacity=".9"/><stop offset="1" stop-color="$surface" stop-opacity="0"/></radialGradient>
   </defs>
-  <rect width="400" height="500" fill="url(#g1)"/>
-  <rect width="400" height="500" fill="url(#g2)"/>
+  <rect width="400" height="500" fill="url(#$g1)"/>
+  <rect width="400" height="500" fill="url(#$g2)"/>
   <circle cx="330" cy="420" r="150" fill="$acc" opacity=".10"/>
   <circle cx="60" cy="90" r="90" fill="$surface" opacity=".35"/>
   <path d="M-20 380 C 90 320, 170 460, 420 360 L 420 520 L -20 520 Z" fill="$acc" opacity=".14"/>

@@ -486,10 +486,10 @@ foreach ([
     $old->exec($sql);
 }
 Schema::ensure($old);
-check('migrazione: versione e tabella account', $old->metaGet('schema_version') === '10' && $old->tableExists('accounts') && $old->tableExists('categories') && $old->columnExists('clients', 'account_id'));
+check('migrazione: versione e tabella account', $old->metaGet('schema_version') === '11' && $old->tableExists('accounts') && $old->tableExists('categories') && $old->columnExists('clients', 'account_id'));
 check('migrazione: dati esistenti senza proprietario', Schema::hasUnownedData($old));
 Schema::ensure($old);
-check('migrazione ripetibile', $old->metaGet('schema_version') === '10');
+check('migrazione ripetibile', $old->metaGet('schema_version') === '11');
 $first = Auth::register($old, ['trial_days' => 30], 'Salone Giulia', 'parrucchiere', 'giulia@example.com', 'password123');
 check('primo negozio eredita i dati', $first['ok'] && !Schema::hasUnownedData($old)
     && $old->row('SELECT COUNT(*) AS c FROM clients WHERE account_id = ?', [$first['id']])['c'] === 1
@@ -980,7 +980,7 @@ $old8->exec("DELETE FROM categories WHERE cat_key IN ('dentista', 'autoscuola')"
 $old8->exec("UPDATE categories SET label = 'Dentista mio' WHERE cat_key = 'veterinario'");
 $old8->metaSet('schema_version', '8');
 Schema::ensure($old8);
-check('migrazione 9: aggiunge solo le mancanti', $old8->metaGet('schema_version') === '10' && $old8->row("SELECT id FROM categories WHERE cat_key = 'autoscuola'") !== null && $old8->row("SELECT label FROM categories WHERE cat_key = 'veterinario'")['label'] === 'Dentista mio' && (int)$old8->row("SELECT COUNT(*) AS n FROM categories")['n'] === 22 && (int)$old8->row("SELECT sort_order AS s FROM categories WHERE cat_key = 'altro'")['s'] === (int)$old8->row("SELECT MAX(sort_order) AS s FROM categories")['s']);
+check('migrazione 9: aggiunge solo le mancanti', $old8->metaGet('schema_version') === '11' && $old8->row("SELECT id FROM categories WHERE cat_key = 'autoscuola'") !== null && $old8->row("SELECT label FROM categories WHERE cat_key = 'veterinario'")['label'] === 'Dentista mio' && (int)$old8->row("SELECT COUNT(*) AS n FROM categories")['n'] === 22 && (int)$old8->row("SELECT sort_order AS s FROM categories WHERE cat_key = 'altro'")['s'] === (int)$old8->row("SELECT MAX(sort_order) AS s FROM categories")['s']);
 check('categorie: nuova', \App\Categories::save($db, 0, ['label' => 'Fisioterapia', 'staff_title' => 'Fisioterapista', 't_staffs' => 'Terapisti', 'services' => "Seduta | Trattamento manuale | 45 | 50,5 | Trattamenti\nValutazione | | 30 | 0", 'active' => '1']) === null);
 $fis = \App\Categories::get('fisioterapia');
 check('categorie: servizi letti dal testo', $fis['label'] === 'Fisioterapia' && count($fis['services']) === 2 && $fis['services'][0][3] === 50.5 && $fis['services'][0][2] === 45 && $fis['terms']['staffs'] === 'Terapisti' && $fis['terms']['service'] === 'servizio');
@@ -1041,6 +1041,119 @@ check('copertina: caricata dal negozio', $s1 === 200 && \App\Shop::cover($ea) !=
 check('copertina: rimossa', $acc['account']['has_cover'] === false);
 check('copertina: immagine non valida rifiutata', call(new Api($db, $eid), 'PUT', '/api/account', [], ['cover' => 'data:image/png;base64,AAAA'])[0] === 400);
 \App\Categories::boot(null);
+
+// ── Orari reali e demo non indicizzate ───────────────────────────────
+fwrite(STDOUT, "Orari reali e demo\n");
+$db = newDb();
+$hid = addAccount($db, 'orari@example.com', 'parrucchiere');
+check('orari: ricavati dagli orari di lavoro', \App\Availability::hoursSummary($db, $hid) === [['Lun–Ven', '9:00–13:00, 15:00–19:00']]);
+$r = Admin::duplicate($db, [], $hid, ['business_name' => 'Orari Demo', 'open_days' => ['2', '3', '4', '5', '6'], 'am_from' => '09:30', 'am_to' => '19:00']);
+check('demo: giorni e orari scelti', $r['ok'] && \App\Availability::hoursSummary($db, (int)$r['id']) === [['Mar–Sab', '9:30–19:00']]);
+check('demo: orari incompleti rifiutati', !Admin::duplicate($db, [], $hid, ['business_name' => 'X1', 'open_days' => ['1']])['ok'] && !Admin::duplicate($db, [], $hid, ['business_name' => 'X2', 'open_days' => ['1'], 'am_from' => '13:00', 'am_to' => '09:00'])['ok']);
+$da = Auth::account($db, (int)$r['id']) + ['_demo' => true, '_hours' => \App\Availability::hoursSummary($db, (int)$r['id'])];
+$dh = \App\Shop::page([], $da, [], [], true);
+check('demo: pagina non indicizzata, orari reali mostrati', str_contains($dh, 'name="robots" content="noindex') && str_contains($dh, 'Mar–Sab') && str_contains($dh, '9:30–19:00'));
+check('negozio vero: indicizzabile', !str_contains(\App\Shop::page([], Auth::account($db, $hid), [], [], true), 'noindex'));
+
+// ── Esempi nella home ────────────────────────────────────────────────
+fwrite(STDOUT, "Esempi nella home\n");
+$db = newDb();
+$x1 = addAccount($db, 'ex1@example.com', 'estetica');
+$x2 = addAccount($db, 'ex2@example.com', 'gommista');
+check('esempi: nessuno all\'inizio', Admin::showcase($db) === [] && !str_contains(Pages::landing([]), 'id="esempi"'));
+check('esempi: aggiunti', Admin::toggleShowcase($db, $x1) && Admin::toggleShowcase($db, $x2) && count(Admin::showcase($db)) === 2);
+$land = Pages::landing([], [], Admin::showcase($db));
+check('esempi: in home con link e stile', str_contains($land, 'id="esempi"') && str_contains($land, 'href="/' . Auth::account($db, $x1)['slug'] . '"') && str_contains($land, '#f7ebe7'));
+check('esempi: tolto', !Admin::toggleShowcase($db, $x2) && count(Admin::showcase($db)) === 1);
+Admin::setSuspended($db, $x1, true);
+check('esempi: sospeso non mostrato', Admin::showcase($db) === []);
+
+// ── Demo: WhatsApp e consegna ────────────────────────────────────────
+fwrite(STDOUT, "Demo: WhatsApp e consegna\n");
+$db = newDb();
+$src = addAccount($db, 'src@example.com', 'barbiere');
+$r = Admin::duplicate($db, ['base_url' => 'https://appuntamenti4me.it'], $src, ['business_name' => 'Barber Leo', 'prospect_phone' => '333 765 4321']);
+$leo = Auth::account($db, (int)$r['id']);
+$wa = Admin::demoWhatsappUrl($db, ['base_url' => 'https://appuntamenti4me.it'], $leo);
+check('demo: link WhatsApp al cliente con la pagina', str_starts_with($wa, 'https://wa.me/393337654321?text=') && str_contains(urldecode($wa), 'https://appuntamenti4me.it/barber-leo'));
+$plan = \App\Plans::save($db, 0, ['name' => 'Annuale', 'duration_days' => 365, 'price' => '240', 'active' => 1]);
+$pid = (int)$db->row('SELECT id FROM plans LIMIT 1')['id'];
+\App\Mailer::$sent = [];
+check('consegna: in un passo', Admin::deliver($db, ['base_url' => 'https://appuntamenti4me.it'], (int)$r['id'], 'leo@example.com', $pid) === null);
+$leo = Auth::account($db, (int)$r['id']);
+check('consegna: email, piano, non più demo', $leo['email'] === 'leo@example.com' && $leo['plan_status'] === 'active' && !Admin::isDemo($db, (int)$r['id']));
+$mail = end(\App\Mailer::$sent);
+check('consegna: email con link per la password', $mail !== false && $mail['to'] === 'leo@example.com' && preg_match('#/reimposta/([0-9a-f]{32})#', $mail['text'] . $mail['html'], $mm) === 1 && Auth::resetValid($db, $mm[1]));
+check('consegna: link valido 7 giorni', isset($mm[1]) && Auth::resetValid($db, $mm[1], time() + 6 * 86400) && !Auth::resetValid($db, $mm[1], time() + 8 * 86400));
+check('consegna: email già usata rifiutata', Admin::deliver($db, [], (int)$r['id'], 'src@example.com') !== null);
+
+// ── Galleria e recensioni ────────────────────────────────────────────
+fwrite(STDOUT, "Galleria e recensioni\n");
+$db = newDb();
+$gid = addAccount($db, 'gal@example.com', 'unghie');
+$gapi = new Api($db, $gid);
+$png1 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+[$s, $d] = call($gapi, 'PUT', '/api/account', [], ['add_photo' => $png1]);
+call($gapi, 'PUT', '/api/account', [], ['add_photo' => $png1]);
+[, $d] = call($gapi, 'GET', '/api/account');
+check('galleria: 2 foto caricate', $s === 200 && count($d['account']['photos']) === 2);
+for ($i = 0; $i < 6; $i++) { call($gapi, 'PUT', '/api/account', [], ['add_photo' => $png1]); }
+check('galleria: massimo 8 foto', call($gapi, 'PUT', '/api/account', [], ['add_photo' => $png1])[0] === 400 && count(\App\Shop::photoIds($db, $gid)) === 8);
+$first = \App\Shop::photoIds($db, $gid)[0];
+check('galleria: foto leggibile solo dal suo negozio', \App\Shop::photo($db, $gid, $first) !== null && \App\Shop::photo($db, $gid + 1, $first) === null);
+[, $d] = call($gapi, 'PUT', '/api/account', [], ['remove_photo' => $first]);
+check('galleria: foto tolta', count($d['account']['photos']) === 7);
+$ga = Auth::account($db, $gid) + ['_photos' => \App\Shop::photoIds($db, $gid)];
+$gh = \App\Shop::page([], $ga, [], [], true);
+check('pagina: galleria', str_contains($gh, 'tp-gallery') && substr_count($gh, 'class="tp-ph') === 8 && str_contains($gh, '/foto/'));
+check('recensioni: link solo https', call($gapi, 'PUT', '/api/account', [], ['review_url' => 'javascript:alert(1)'])[0] === 400 && call($gapi, 'PUT', '/api/account', [], ['review_url' => 'https://g.page/r/abc/review'])[0] === 200);
+check('pagina: pulsante recensione', str_contains(\App\Shop::page([], Auth::account($db, $gid), [], [], true), 'href="https://g.page/r/abc/review"'));
+// richiesta di recensione dopo un appuntamento completato
+[, $cl] = call($gapi, 'POST', '/api/clients', [], ['name' => 'Sara', 'email' => 'sara@example.com']);
+$cid = $cl['client']['id'] ?? $cl['id'];
+$today = date('Y-m-d');
+$db->exec("INSERT INTO appointments (account_id, identifier, client_id, status, scheduled_date, start_time, end_time, notes) VALUES (?, 'A-1', ?, 'completed', ?, '10:00', '11:00', '')", [$gid, $cid, $today]);
+$db->exec("INSERT INTO appointments (account_id, identifier, client_id, status, scheduled_date, start_time, end_time, notes) VALUES (?, 'A-2', ?, 'completed', ?, '12:00', '13:00', '')", [$gid, $cid, $today]);
+$db->exec("INSERT INTO appointments (account_id, identifier, client_id, status, scheduled_date, start_time, end_time, notes) VALUES (?, 'A-3', ?, 'booked', ?, '15:00', '16:00', '')", [$gid, $cid, $today]);
+\App\Mailer::$sent = [];
+$early = strtotime($today . ' 08:00:00');
+$late = strtotime($today . ' 18:00:00');
+check('recensioni: non prima delle 10', \App\Automation::run($db, [], $early)['reviews'] === 0);
+$rv = \App\Automation::run($db, [], $late);
+$rmail = array_values(array_filter(\App\Mailer::$sent, static fn($m) => str_contains($m['subject'], "Com'è andata")));
+check('recensioni: una sola email al cliente con il link', $rv['reviews'] === 1 && count($rmail) === 1 && $rmail[0]['to'] === 'sara@example.com' && str_contains($rmail[0]['html'], 'https://g.page/r/abc/review'));
+check('recensioni: mai due volte', \App\Automation::run($db, [], $late + 3600)['reviews'] === 0);
+
+// ── Andamento commerciale ────────────────────────────────────────────
+fwrite(STDOUT, "Andamento commerciale\n");
+$db = newDb();
+$t1 = addAccount($db, 't1@example.com');
+$t2 = addAccount($db, 't2@example.com');
+$t3 = addAccount($db, 't3@example.com');
+$db->exec("UPDATE accounts SET trial_ends_at = ?, shop_phone = '333 1112223' WHERE id = ?", [date('Y-m-d H:i:s', time() + 2 * 86400 + 60), $t1]);
+$db->exec("UPDATE accounts SET plan_status = 'active', paid_until = ? WHERE id = ?", [date('Y-m-d H:i:s', time() + 300 * 86400), $t2]);
+$db->exec("UPDATE accounts SET trial_ends_at = ? WHERE id = ?", [date('Y-m-d H:i:s', time() - 86400), $t3]);
+$dm = Admin::duplicate($db, [], $t2, ['business_name' => 'Demo Uno']);
+$ins = Admin::insights(Admin::rows($db));
+check('andamento: prove in scadenza', count($ins['expiring']) === 1 && (int)$ins['expiring'][0]['id'] === $t1);
+check('andamento: paganti, conversione, demo', $ins['paying'] === 1 && $ins['expired'] === 1 && $ins['conversion'] === 50 && $ins['demos'] === 1 && $ins['delivered'] === 0);
+Admin::deliver($db, [], (int)$dm['id'], 'uno@example.com');
+$ins = Admin::insights(Admin::rows($db));
+check('andamento: demo consegnata', $ins['demos'] === 0 && $ins['delivered'] === 1);
+Auth::start();
+$rows = Admin::rows($db);
+$ap = Pages::admin([], $rows, Admin::stats($rows), ['q' => '', 'state' => '', 'page' => 1, 'pages' => 1, 'shown' => count($rows)], Admin::csrfToken(), 0, null, null, [], ['insights' => $ins]);
+check('andamento: riquadro con richiamo WhatsApp', str_contains($ap, 'Prove in scadenza nei prossimi 7 giorni') && str_contains($ap, 'https://wa.me/393331112223?text='));
+Auth::logout();
+
+// ── Demo con galleria ────────────────────────────────────────────────
+fwrite(STDOUT, "Demo con galleria\n");
+$db = newDb();
+$gs = addAccount($db, 'gs@example.com');
+$png1 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+$gr = Admin::duplicate($db, [], $gs, ['business_name' => 'Galleria Demo', 'photos' => [$png1, $png1, $png1], 'review_url' => 'https://g.page/r/x']);
+check('demo: galleria con le foto caricate (una volta sola)', $gr['ok'] && count(\App\Shop::photoIds($db, (int)$gr['id'])) === 3 && Auth::account($db, (int)$gr['id'])['review_url'] === 'https://g.page/r/x');
+check('demo: link recensioni non valido rifiutato', !Admin::duplicate($db, [], $gs, ['business_name' => 'Z', 'review_url' => 'http://x'])['ok']);
 
 fwrite(STDOUT, "\n$passed ok, $failed falliti\n");
 exit($failed === 0 ? 0 : 1);
