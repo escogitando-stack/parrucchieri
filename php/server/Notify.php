@@ -97,7 +97,7 @@ final class Notify
         return self::baseUrl($cfg) . '/' . $acct['slug'];
     }
 
-    private static function html(string $title, string $text, string $buttonLabel = '', string $buttonUrl = ''): string
+    private static function html(string $title, string $text, string $buttonLabel = '', string $buttonUrl = '', string $extraHtml = ''): string
     {
         $h = static fn(string $s): string => htmlspecialchars($s, ENT_QUOTES, 'UTF-8');
         $paras = '';
@@ -106,14 +106,14 @@ final class Notify
         }
         $btn = $buttonUrl !== '' ? '<p style="margin:22px 0"><a href="' . $h($buttonUrl) . '" style="background:#be185d;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600;display:inline-block">' . $h($buttonLabel) . '</a></p>' : '';
         return '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#1c1917;max-width:560px;margin:0 auto;padding:20px">'
-            . '<h2 style="margin:0 0 16px;font-size:20px">' . $h($title) . '</h2>' . $paras . $btn . '</div>';
+            . '<h2 style="margin:0 0 16px;font-size:20px">' . $h($title) . '</h2>' . $paras . $extraHtml . $btn . '</div>';
     }
 
     /** @param array<string,mixed> $cfg */
-    private static function mail(array $cfg, string $to, string $subject, string $text, string $btnLabel = '', string $btnUrl = '', string $replyTo = '', string $fromName = ''): bool
+    private static function mail(array $cfg, string $to, string $subject, string $text, string $btnLabel = '', string $btnUrl = '', string $replyTo = '', string $fromName = '', string $extraHtml = ''): bool
     {
         $plain = $text . ($btnUrl !== '' ? "\n\n$btnLabel: $btnUrl" : '');
-        return Mailer::send($cfg, $to, $subject, $plain, self::html($subject, $text, $btnLabel, $btnUrl), $replyTo, $fromName);
+        return Mailer::send($cfg, $to, $subject, $plain, self::html($subject, $text, $btnLabel, $btnUrl, $extraHtml), $replyTo, $fromName);
     }
 
     /** Un nuovo negozio si è registrato: avvisa l'amministratore. @param array<string,mixed> $cfg @param array<string,mixed> $acct */
@@ -298,7 +298,29 @@ final class Notify
         $text = 'Domani, ' . self::dateIt($tomorrow) . ($rows === [] ? ": nessun appuntamento.\n" : ' - ' . count($rows) . (count($rows) === 1 ? " appuntamento:\n\n" : " appuntamenti:\n\n") . implode("\n", $lines) . "\n")
             . ($pending > 0 ? "\nHai " . $pending . ($pending === 1 ? ' richiesta' : ' richieste') . " in attesa di risposta." : '');
         $subject = 'Domani: ' . count($rows) . (count($rows) === 1 ? ' appuntamento' : ' appuntamenti') . ($pending > 0 ? ' e ' . $pending . ' da approvare' : '');
-        return self::mail($cfg, self::ownerEmail($acct), $subject, $text, 'Apri il calendario', self::baseUrl($cfg) . '/calendar');
+        // Promemoria WhatsApp con un tocco, per i clienti che hanno lasciato il telefono.
+        $h = static fn(string $v): string => htmlspecialchars($v, ENT_QUOTES, 'UTF-8');
+        $wa = '';
+        foreach ($rows as $r) {
+            $url = self::reminderWhatsappUrl($acct, $tomorrow, (string)$r['start_time'], (string)$r['client_name'], (string)($r['client_phone'] ?? ''));
+            if ($url !== '') {
+                $wa .= '<tr><td style="padding:6px 0">' . $h((string)$r['start_time'] . ' - ' . $r['client_name']) . '</td><td style="padding:6px 0;text-align:right"><a href="' . $h($url) . '" style="background:#25d366;color:#fff;text-decoration:none;padding:6px 12px;border-radius:999px;font-size:13px;font-weight:600;display:inline-block">Promemoria WhatsApp</a></td></tr>';
+            }
+        }
+        $extra = $wa !== '' ? '<p style="margin:18px 0 6px;font-weight:600">Vuoi ricordarlo anche su WhatsApp? Tocca il pulsante: il messaggio è già scritto.</p><table style="width:100%;border-collapse:collapse;font-size:14px">' . $wa . '</table>' : '';
+        return self::mail($cfg, self::ownerEmail($acct), $subject, $text, 'Apri il calendario', self::baseUrl($cfg) . '/calendar', '', '', $extra);
+    }
+
+    /** Link wa.me con il promemoria dell'appuntamento di domani, pronto da inviare. @param array<string,mixed> $acct */
+    public static function reminderWhatsappUrl(array $acct, string $date, string $time, string $clientName, string $clientPhone): string
+    {
+        $num = self::digits($clientPhone);
+        if (strlen($num) < 8) {
+            return '';
+        }
+        $msg = "Ciao $clientName, ti ricordiamo l'appuntamento di domani, " . self::dateIt($date) . " alle $time, da {$acct['business_name']}"
+            . (!empty($acct['shop_address']) ? " ({$acct['shop_address']})" : '') . '. Se hai un imprevisto avvisaci. A presto!';
+        return 'https://wa.me/' . $num . '?text=' . rawurlencode($msg);
     }
 
     /** La prova gratuita sta per finire. @param array<string,mixed> $cfg @param array<string,mixed> $acct */

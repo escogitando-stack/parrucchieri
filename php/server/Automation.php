@@ -83,7 +83,7 @@ final class Automation
                 continue;
             }
             $rows = $db->all(
-                "SELECT a.id, a.start_time, c.name AS client_name, s.name AS staff_name FROM appointments a
+                "SELECT a.id, a.start_time, c.name AS client_name, c.phone AS client_phone, s.name AS staff_name FROM appointments a
                  JOIN clients c ON c.id = a.client_id LEFT JOIN staff s ON s.id = a.staff_id
                  WHERE a.account_id = ? AND a.scheduled_date = ? AND a.status IN ('confirmed', 'booked') ORDER BY a.start_time",
                 [$aid, $tomorrow]

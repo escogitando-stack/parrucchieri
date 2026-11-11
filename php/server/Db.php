@@ -58,6 +58,28 @@ final class Db
         return $rows[0] ?? null;
     }
 
+    /** Scorre le righe una alla volta (per esportazioni grandi senza riempire la memoria). @return \Generator<int,array<string,mixed>> */
+    public function iterate(string $sql, array $params = []): \Generator
+    {
+        $st = $this->pdo->prepare($sql);
+        $st->execute($params);
+        while (($row = $st->fetch(PDO::FETCH_ASSOC)) !== false) {
+            yield $row;
+        }
+    }
+
+    /** Valore SQL letterale (per il backup). */
+    public function quote(mixed $v): string
+    {
+        if ($v === null) {
+            return 'NULL';
+        }
+        if (is_int($v) || is_float($v)) {
+            return (string)$v;
+        }
+        return $this->pdo->quote((string)$v);
+    }
+
     public function exec(string $sql, array $params = []): int
     {
         $st = $this->pdo->prepare($sql);

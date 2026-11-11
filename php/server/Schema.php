@@ -15,13 +15,14 @@ namespace App;
  *   6 = piani di abbonamento gestiti dall'amministratore
  *   7 = conferma automatica, promemoria, email automatiche e recupero password
  *   8 = categorie merceologiche gestite dall'amministratore (tabella categories)
+ *   12 = registro delle azioni dell'amministratore
  *   11 = galleria foto, link recensioni e richiesta di recensione dopo l'appuntamento
  *   10 = pagina pubblica a template: copertina del negozio, stile/immagine/titolo della categoria
  *   9 = 15 nuove categorie (dentista, veterinario, gommista, idraulico, autoscuola...)
  */
 final class Schema
 {
-    public const VERSION = 11;
+    public const VERSION = 12;
 
     /** Tabelle i cui dati appartengono a un negozio. */
     private const OWNED = ['clients', 'staff', 'services', 'appointments', 'blocked_slots', 'products', 'working_hours'];
@@ -63,6 +64,12 @@ final class Schema
         }
         if ($version < 11) {
             self::migrateTo11($db);
+        }
+        if ($version < 12) {
+            if (!$db->tableExists('admin_log')) {
+                $db->exec(self::adminLogSql($db));
+            }
+            $db->metaSet('schema_version', (string)self::VERSION);
         }
     }
 
@@ -239,6 +246,7 @@ final class Schema
             self::resetsSql($db),
             self::categoriesSql($db),
             self::photosSql($db),
+            self::adminLogSql($db),
             "CREATE TABLE _meta (
                 meta_key VARCHAR(64) NOT NULL PRIMARY KEY,
                 meta_value VARCHAR(255) NOT NULL
@@ -496,6 +504,20 @@ final class Schema
             )$tail";
     }
 
+    private static function adminLogSql(Db $db): string
+    {
+        [$pk, $int, $ts, $tail] = self::types($db);
+        return "CREATE TABLE admin_log (
+                id $pk,
+                admin_email VARCHAR(190) NOT NULL DEFAULT '',
+                action VARCHAR(40) NOT NULL,
+                target_id $int NOT NULL DEFAULT 0,
+                target_name VARCHAR(255) NOT NULL DEFAULT '',
+                ip VARCHAR(64) NOT NULL DEFAULT '',
+                created_at $ts
+            )$tail";
+    }
+
     /** Galleria foto del negozio, link per le recensioni e richiesta di recensione. */
     private static function migrateTo11(Db $db): void
     {
@@ -512,7 +534,7 @@ final class Schema
             $db->exec(self::photosSql($db));
             $db->exec('CREATE INDEX idx_shop_photos_account ON shop_photos(account_id, sort_order)');
         }
-        $db->metaSet('schema_version', (string)self::VERSION);
+        $db->metaSet('schema_version', '11');
     }
 
     /** Categorie merceologiche nel database, partendo da quelle predefinite. */

@@ -226,3 +226,15 @@ casella apposita anche clienti, appuntamenti e chiusure, così l'agenda della de
 - Le demo non compaiono su Google (noindex) e restano fuori da `/sitemap.xml`.
 - **Recensioni**: se il negozio imposta il link Google, il giorno dopo un appuntamento segnato come *completato* il cliente
   riceve un'email per lasciare una recensione (serve il cron già configurato; ora con `review_hour`, default 10).
+
+## Pagine per categoria, promemoria WhatsApp, sicurezza
+
+- **Pagine per categoria**: `/per/dentista`, `/per/gommista`... (una per ogni categoria attiva, con i suoi colori,
+  il listino già pronto e gli esempi di quella categoria). Le etichette delle attività nella home portano lì,
+  sono nella sitemap e il pulsante di prova precompila l'attività nella registrazione.
+- **Promemoria WhatsApp**: nel riepilogo serale al titolare, accanto a ogni appuntamento di domani con telefono,
+  c'è il pulsante "Promemoria WhatsApp" con il messaggio già scritto.
+- **Blocco accessi**: dopo 8 password sbagliate sulla stessa email (o 25 dallo stesso indirizzo) l'accesso
+  si blocca per 15 minuti.
+- **/admin → Sicurezza e backup**: registro delle ultime azioni nel pannello e pulsante per scaricare il backup
+  completo del database (.sql, si reimporta da phpMyAdmin → Importa).

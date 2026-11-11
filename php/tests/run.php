@@ -486,10 +486,10 @@ foreach ([
     $old->exec($sql);
 }
 Schema::ensure($old);
-check('migrazione: versione e tabella account', $old->metaGet('schema_version') === '11' && $old->tableExists('accounts') && $old->tableExists('categories') && $old->columnExists('clients', 'account_id'));
+check('migrazione: versione e tabella account', $old->metaGet('schema_version') === '12' && $old->tableExists('accounts') && $old->tableExists('categories') && $old->columnExists('clients', 'account_id'));
 check('migrazione: dati esistenti senza proprietario', Schema::hasUnownedData($old));
 Schema::ensure($old);
-check('migrazione ripetibile', $old->metaGet('schema_version') === '11');
+check('migrazione ripetibile', $old->metaGet('schema_version') === '12');
 $first = Auth::register($old, ['trial_days' => 30], 'Salone Giulia', 'parrucchiere', 'giulia@example.com', 'password123');
 check('primo negozio eredita i dati', $first['ok'] && !Schema::hasUnownedData($old)
     && $old->row('SELECT COUNT(*) AS c FROM clients WHERE account_id = ?', [$first['id']])['c'] === 1
@@ -980,7 +980,7 @@ $old8->exec("DELETE FROM categories WHERE cat_key IN ('dentista', 'autoscuola')"
 $old8->exec("UPDATE categories SET label = 'Dentista mio' WHERE cat_key = 'veterinario'");
 $old8->metaSet('schema_version', '8');
 Schema::ensure($old8);
-check('migrazione 9: aggiunge solo le mancanti', $old8->metaGet('schema_version') === '11' && $old8->row("SELECT id FROM categories WHERE cat_key = 'autoscuola'") !== null && $old8->row("SELECT label FROM categories WHERE cat_key = 'veterinario'")['label'] === 'Dentista mio' && (int)$old8->row("SELECT COUNT(*) AS n FROM categories")['n'] === 22 && (int)$old8->row("SELECT sort_order AS s FROM categories WHERE cat_key = 'altro'")['s'] === (int)$old8->row("SELECT MAX(sort_order) AS s FROM categories")['s']);
+check('migrazione 9: aggiunge solo le mancanti', $old8->metaGet('schema_version') === '12' && $old8->row("SELECT id FROM categories WHERE cat_key = 'autoscuola'") !== null && $old8->row("SELECT label FROM categories WHERE cat_key = 'veterinario'")['label'] === 'Dentista mio' && (int)$old8->row("SELECT COUNT(*) AS n FROM categories")['n'] === 22 && (int)$old8->row("SELECT sort_order AS s FROM categories WHERE cat_key = 'altro'")['s'] === (int)$old8->row("SELECT MAX(sort_order) AS s FROM categories")['s']);
 check('categorie: nuova', \App\Categories::save($db, 0, ['label' => 'Fisioterapia', 'staff_title' => 'Fisioterapista', 't_staffs' => 'Terapisti', 'services' => "Seduta | Trattamento manuale | 45 | 50,5 | Trattamenti\nValutazione | | 30 | 0", 'active' => '1']) === null);
 $fis = \App\Categories::get('fisioterapia');
 check('categorie: servizi letti dal testo', $fis['label'] === 'Fisioterapia' && count($fis['services']) === 2 && $fis['services'][0][3] === 50.5 && $fis['services'][0][2] === 45 && $fis['terms']['staffs'] === 'Terapisti' && $fis['terms']['service'] === 'servizio');
@@ -1154,6 +1154,58 @@ $png1 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAD
 $gr = Admin::duplicate($db, [], $gs, ['business_name' => 'Galleria Demo', 'photos' => [$png1, $png1, $png1], 'review_url' => 'https://g.page/r/x']);
 check('demo: galleria con le foto caricate (una volta sola)', $gr['ok'] && count(\App\Shop::photoIds($db, (int)$gr['id'])) === 3 && Auth::account($db, (int)$gr['id'])['review_url'] === 'https://g.page/r/x');
 check('demo: link recensioni non valido rifiutato', !Admin::duplicate($db, [], $gs, ['business_name' => 'Z', 'review_url' => 'http://x'])['ok']);
+
+// ── Pagine per categoria ─────────────────────────────────────────────
+fwrite(STDOUT, "Pagine per categoria\n");
+$db = newDb();
+\App\Categories::boot($db);
+$cl = Pages::categoryLanding(['trial_days' => 30], 'dentista', \App\Categories::get('dentista'), [['name' => 'Studio Rossi', 'slug' => 'studio-rossi', 'category' => 'dentista', 'cover' => false], ['name' => 'Altro', 'slug' => 'altro-x', 'category' => 'barbiere', 'cover' => false]]);
+check('categoria: titolo, servizi, esempi della categoria, iscrizione precompilata', str_contains($cl, '<em>studio dentistico</em>') && str_contains($cl, 'Igiene orale') && str_contains($cl, 'href="/studio-rossi"') && !str_contains($cl, 'altro-x') && str_contains($cl, '/registrati?attivita=dentista'));
+check('categoria: dati strutturati validi', (function () use ($cl) { preg_match('#<script type="application/ld\+json">(.*?)</script>#s', $cl, $m); $j = json_decode($m[1] ?? '', true); return is_array($j) && $j['@type'] === 'SoftwareApplication'; })());
+$_GET['attivita'] = 'gommista';
+check('registrazione: attività precompilata', str_contains(Pages::register([]), 'value="gommista" selected'));
+unset($_GET['attivita']);
+check('home: categorie cliccabili', str_contains(Pages::landing([]), 'href="/per/dentista"'));
+check('slug riservato "per"', !\App\Booking::slugValid('per') || \App\Booking::makeSlug($db, 'Per') !== 'per');
+\App\Categories::boot(null);
+
+// ── Promemoria WhatsApp nel riepilogo serale ─────────────────────────
+fwrite(STDOUT, "Promemoria WhatsApp\n");
+\App\Mailer::$sent = [];
+\App\Notify::dailySummary([], ['business_name' => 'Salone <Bello>', 'email' => 'o@example.com', 'shop_email' => '', 'shop_address' => 'Via Roma 1'], date('Y-m-d', time() + 86400), [
+    ['start_time' => '10:00', 'client_name' => 'Anna', 'client_phone' => '333 1234567', 'services' => 'Taglio', 'staff_name' => ''],
+    ['start_time' => '11:00', 'client_name' => 'Bruno', 'client_phone' => '', 'services' => '', 'staff_name' => ''],
+], 0);
+$sm = end(\App\Mailer::$sent);
+check('riepilogo: pulsante WhatsApp solo per chi ha il telefono', $sm !== false && substr_count($sm['html'], 'Promemoria WhatsApp') === 1 && str_contains($sm['html'], 'https://wa.me/393331234567?text=') && str_contains(urldecode(html_entity_decode($sm['html'])), 'Via Roma 1'));
+check('riepilogo: testo semplice senza link lunghi', !str_contains($sm['text'], 'wa.me'));
+
+// ── Sicurezza e backup ───────────────────────────────────────────────
+fwrite(STDOUT, "Sicurezza e backup\n");
+$db = newDb();
+$lid = addAccount($db, 'lock@example.com');
+$t0 = time();
+for ($i = 0; $i < Auth::MAX_FAILS_EMAIL; $i++) { Auth::login($db, 'lock@example.com', 'sbagliata', [], '1.2.3.4', $t0); }
+check('accesso: bloccato dopo troppi errori, anche con la password giusta', !empty(Auth::login($db, 'lock@example.com', 'segretissima', [], '5.6.7.8', $t0 + 10)['locked']));
+check('accesso: sbloccato dopo 15 minuti', Auth::login($db, 'lock@example.com', 'segretissima', [], '5.6.7.8', $t0 + Auth::LOCK_SECONDS + 1)['ok']);
+check('accesso: riuscito azzera il contatore', !Auth::loginLocked($db, 'lock@example.com', '', $t0 + Auth::LOCK_SECONDS + 2));
+for ($i = 0; $i < Auth::MAX_FAILS_IP; $i++) { Auth::login($db, "x$i@example.com", 'sbagliata', [], '9.9.9.9', $t0); }
+check('accesso: bloccato per indirizzo IP', !empty(Auth::login($db, 'lock@example.com', 'segretissima', [], '9.9.9.9', $t0 + 5)['locked']) && Auth::login($db, 'lock@example.com', 'segretissima', [], '8.8.8.8', $t0 + 5)['ok']);
+Auth::logout();
+Admin::log($db, 'admin@example.com', 'delete', 7, 'Negozio <X>', '1.1.1.1');
+$lg = Admin::logRows($db);
+check('registro: azione annotata', count($lg) === 1 && $lg[0]['action'] === 'delete' && $lg[0]['target_name'] === 'Negozio <X>');
+Auth::start();
+$ap = Pages::admin([], [], Admin::stats([]), ['q' => '', 'state' => '', 'page' => 1, 'pages' => 1, 'shown' => 0], Admin::csrfToken(), 0, null, null, [], ['log' => $lg]);
+check('registro: mostrato ed escapato', str_contains($ap, 'Negozio &lt;X&gt;') && str_contains($ap, '/admin/backup'));
+Auth::logout();
+$dump = '';
+Admin::backup($db, static function (string $c) use (&$dump): void { $dump .= $c; });
+check('backup: tabelle e dati', str_contains($dump, 'CREATE TABLE accounts') && str_contains($dump, "'lock@example.com'") && str_contains($dump, 'INSERT INTO "services"'));
+$restore = Db::connect(['driver' => 'sqlite', 'path' => ':memory:']);
+$okRestore = true;
+try { foreach (array_filter(array_map('trim', preg_split("/;\n/", $dump))) as $stmt) { if (!str_starts_with($stmt, '--')) { $restore->exec($stmt); } } } catch (Throwable $e) { $okRestore = false; }
+check('backup: si reimporta', $okRestore && (int)$restore->row('SELECT COUNT(*) AS c FROM accounts')['c'] === 1 && (int)$restore->row('SELECT COUNT(*) AS c FROM services')['c'] === 8);
 
 fwrite(STDOUT, "\n$passed ok, $failed falliti\n");
 exit($failed === 0 ? 0 : 1);

@@ -415,6 +415,67 @@ final class Admin
         return 'https://wa.me/' . $phone . '?text=' . rawurlencode(self::demoMessage($cfg, $acct));
     }
 
+    public const ACTION_LABELS = [
+        'approve' => 'Approvato', 'impersonate' => 'Entrato nel negozio', 'extend' => 'Prova prolungata', 'assign' => 'Piano assegnato',
+        'activate' => 'Attivato fino a una data', 'suspend' => 'Sospeso / riattivato', 'reset' => 'Nuova password', 'delete' => 'Eliminato',
+        'email' => 'Email di accesso cambiata', 'deliver' => 'Demo consegnata', 'duplicate' => 'Demo creata', 'showcase' => 'Esempi della home',
+        'cat_save' => 'Categoria salvata', 'cat_delete' => 'Categoria eliminata', 'plan_save' => 'Piano salvato', 'plan_delete' => 'Piano eliminato',
+        'backup' => 'Backup scaricato',
+    ];
+
+    /**
+     * Backup completo del database in formato SQL, scritto a pezzi con $out (per non riempire la memoria).
+     * Con MySQL si reimporta da phpMyAdmin → Importa.
+     *
+     * @param callable(string):void $out
+     */
+    public static function backup(Db $db, callable $out): void
+    {
+        $sqlite = $db->driver === 'sqlite';
+        $tables = $sqlite
+            ? array_column($db->all("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"), 'name')
+            : array_map(static fn(array $r): string => (string)array_values($r)[0], $db->all('SHOW TABLES'));
+        $q = static fn(string $n): string => $sqlite ? '"' . str_replace('"', '""', $n) . '"' : '`' . str_replace('`', '``', $n) . '`';
+        $out('-- Backup ' . date('Y-m-d H:i:s') . "\n" . ($sqlite ? '' : "SET NAMES utf8mb4;\nSET FOREIGN_KEY_CHECKS = 0;\n"));
+        foreach ($tables as $t) {
+            $t = (string)$t;
+            if ($sqlite) {
+                $create = (string)($db->row("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?", [$t])['sql'] ?? '');
+            } else {
+                $r = $db->row('SHOW CREATE TABLE ' . $q($t));
+                $create = (string)($r['Create Table'] ?? array_values($r ?? [])[1] ?? '');
+            }
+            $out("\nDROP TABLE IF EXISTS " . $q($t) . ";\n" . $create . ";\n");
+            $batch = [];
+            $cols = null;
+            foreach ($db->iterate('SELECT * FROM ' . $q($t)) as $row) {
+                $cols ??= implode(', ', array_map($q, array_keys($row)));
+                $batch[] = '(' . implode(', ', array_map([$db, 'quote'], array_values($row))) . ')';
+                if (count($batch) >= 100) {
+                    $out('INSERT INTO ' . $q($t) . " ($cols) VALUES\n" . implode(",\n", $batch) . ";\n");
+                    $batch = [];
+                }
+            }
+            if ($batch !== []) {
+                $out('INSERT INTO ' . $q($t) . " ($cols) VALUES\n" . implode(",\n", $batch) . ";\n");
+            }
+        }
+        $out($sqlite ? '' : "\nSET FOREIGN_KEY_CHECKS = 1;\n");
+    }
+
+    /** Annota un'azione dell'amministratore nel registro. */
+    public static function log(Db $db, string $adminEmail, string $action, int $targetId = 0, string $targetName = '', string $ip = ''): void
+    {
+        $db->exec('INSERT INTO admin_log (admin_email, action, target_id, target_name, ip, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+            [mb_substr($adminEmail, 0, 190), mb_substr($action, 0, 40), $targetId, mb_substr($targetName, 0, 255), mb_substr($ip, 0, 64), date('Y-m-d H:i:s')]);
+    }
+
+    /** Ultime azioni registrate. @return array<int,array<string,mixed>> */
+    public static function logRows(Db $db, int $limit = 50): array
+    {
+        return $db->all('SELECT * FROM admin_log ORDER BY id DESC LIMIT ' . max(1, min(500, $limit)));
+    }
+
     /** Mostra o nasconde il negozio tra gli esempi della home. Restituisce il nuovo stato. */
     public static function toggleShowcase(Db $db, int $id): bool
     {

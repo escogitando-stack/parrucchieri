@@ -91,6 +91,7 @@ $head<style>
   .contact-list{list-style:none;padding:0;margin:0}.contact-list li{padding:10px 0;border-bottom:1px solid #f0eeed;display:flex;gap:12px;align-items:center}.contact-list li:last-child{border:0}
   .contact-list .ico{margin:0;flex:none}.contact-list small{display:block;color:#78716c;font-size:12px}
   .chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:26px 0 0}
+  a.chip{text-decoration:none}a.chip:hover{border-color:#be185d;color:#be185d}
   .chip{background:#fff;border:1px solid #e7e5e4;border-radius:999px;padding:6px 14px;font-size:14px;color:#44403c}
   .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px;margin:30px 0}
   .card{background:#fff;border:1px solid #e7e5e4;border-radius:14px;padding:22px}
@@ -314,8 +315,8 @@ SVG;
         $days = (int)($cfg['trial_days'] ?? 30);
         $name = self::name($cfg);
         $chips = '';
-        foreach (Categories::options() as $label) {
-            $chips .= '<span class="chip">' . self::h($label) . '</span>';
+        foreach (Categories::options() as $ck => $label) {
+            $chips .= '<a class="chip" href="/per/' . self::h($ck) . '">' . self::h($label) . '</a>';
         }
         $pricing = $cfg['pricing'] ?? [];
         $monthly = (string)($pricing['monthly_label'] ?? '');
@@ -475,7 +476,7 @@ HTML;
         $days = (int)($cfg['trial_days'] ?? 30);
         $options = '';
         foreach (Categories::options() as $key => $label) {
-            $sel = ($old['category'] ?? 'parrucchiere') === $key ? ' selected' : '';
+            $sel = ($old['category'] ?? (isset($_GET['attivita']) && is_string($_GET['attivita']) ? $_GET['attivita'] : 'parrucchiere')) === $key ? ' selected' : '';
             $options .= '<option value="' . self::h($key) . "\"$sel>" . self::h($label) . '</option>';
         }
         $err = $error ? '<p class="err">' . self::h($error) . '</p>' : '';
@@ -782,7 +783,7 @@ HTML;
             . '<p class="sub" style="text-align:left;margin:8px 0 12px;font-size:14px">Nome, durata in giorni e prezzo. I piani attivi compaiono nella home del sito e nella pagina Abbonamento; con il codice Stripe il cliente può pagare online, senza codice li assegni tu da "Azioni".</p>'
             . $planRows . '</details>';
         $demoBox = self::adminInsights((array)($extra['insights'] ?? []), $csrf) . self::adminDemoBox($csrf, $extra);
-        $catBox = self::adminCategoriesBox($csrf, $extra);
+        $catBox = self::adminCategoriesBox($csrf, $extra) . self::adminToolsBox($csrf, (array)($extra['log'] ?? []));
         $n = $notice ? '<p class="ok">' . $notice . '</p>' : ''; // già escapato da chi lo costruisce
         $e = $error ? '<p class="err">' . self::h($error) . '</p>' : '';
         $q = self::h($f['q']);
@@ -1002,5 +1003,121 @@ HTML;
             ? '<h3 style="margin:16px 0 8px;font-size:16px">Prove in scadenza nei prossimi 7 giorni: da richiamare (' . count($in['expiring']) . ')</h3><div class="tbl"><table><tbody>' . $list . '</tbody></table></div>'
             : '<p class="muted" style="margin:10px 0 0">Nessuna prova in scadenza nei prossimi 7 giorni.</p>';
         return '<details class="card" style="margin:0 0 18px" open><summary style="cursor:pointer;font-weight:700">Andamento</summary><div class="stats" style="margin-top:12px">' . $cards . '</div>' . $calls . '</details>';
+    }
+
+    /**
+     * Pagina di presentazione dedicata a una categoria (es. /per/dentista), con i colori del suo stile,
+     * i servizi già pronti e gli esempi di negozi di quella categoria.
+     *
+     * @param array<string,mixed> $cfg
+     * @param array<int,array{name:string,slug:string,category:string,cover:bool}> $examples
+     */
+    public static function categoryLanding(array $cfg, string $key, array $cat, array $examples = []): string
+    {
+        $site = self::name($cfg);
+        $days = (int)($cfg['trial_days'] ?? 30);
+        $tpl = Themes::forCategory($key, $cat);
+        $st = $tpl['style'];
+        $dark = $st['bg'] === '#1a1716';
+        $label = (string)$cat['label'];
+        $lower = mb_strtolower($label);
+        $terms = (array)$cat['terms'];
+        $svcWord = mb_strtolower((string)$terms['services']);
+        $font = $st['font'] === 'serif' ? '"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif' : 'system-ui,-apple-system,"Segoe UI",sans-serif';
+        $services = (array)$cat['services'];
+
+        $mock = '';
+        foreach (array_slice($services, 0, 4) as $i => $sv) {
+            [$sn, , $dur, $price] = array_pad(array_values($sv), 4, 0);
+            $mock .= '<div class="cl-svc' . ($i === 0 ? ' on' : '') . '"><span><b>' . self::h((string)$sn) . '</b><small>' . (int)$dur . ' min' . ((float)$price > 0 ? ' · ' . number_format((float)$price, 0, ',', '.') . ' €' : '') . '</small></span><i></i></div>';
+        }
+        $list = '';
+        foreach ($services as $sv) {
+            [$sn, $sd, $dur, $price] = array_pad(array_values($sv), 4, 0);
+            $list .= '<li><b>' . self::h((string)$sn) . '</b><small>' . self::h((string)$sd) . '</small><em>' . (int)$dur . ' min' . ((float)$price > 0 ? ' · ' . number_format((float)$price, (fmod((float)$price, 1.0) === 0.0 ? 0 : 2), ',', '.') . ' €' : '') . '</em></li>';
+        }
+        $points = '';
+        foreach ([
+            ['I clienti prenotano da soli', 'Scelgono ' . $terms['service'] . ', giorno e orario dalla tua pagina, anche di sera e nei festivi. Tu approvi con un tocco o lasci la conferma automatica.'],
+            ['Meno buchi in agenda', 'Promemoria automatico il giorno prima e link per spostare o annullare: chi non può venire libera il posto per un altro.'],
+            ['Più recensioni su Google', 'Dopo l\'appuntamento il cliente riceve l\'invito a lasciarti una recensione: la tua attività sale nelle ricerche.'],
+        ] as $i => [$t, $d]) {
+            $points .= '<div class="cl-pt"><span>' . sprintf('%02d', $i + 1) . '</span><h3>' . self::h($t) . '</h3><p>' . self::h($d) . '</p></div>';
+        }
+        $ex = '';
+        foreach ($examples as $e) {
+            if ($e['category'] === $key) {
+                $ex .= '<a class="cl-ex" href="/' . self::h($e['slug']) . '" target="_blank" rel="noopener">' . self::h($e['name']) . ' →</a>';
+            }
+        }
+        $ex = $ex !== '' ? '<p class="cl-exs">Guarda una pagina vera: ' . $ex . '</p>' : '';
+        $faqs = '';
+        foreach ([
+            ['Quanto ci vuole per partire?', 'Pochi minuti: ti registri, trovi già il listino con ' . count($services) . ' voci tipiche per ' . $lower . ', con durate e prezzi indicativi; lo adatti e condividi il link della tua pagina.'],
+            ['Posso cambiare ' . $svcWord . ', prezzi e orari?', 'Sì, tutto: aggiungi, togli o modifichi voci del listino, durate, prezzi, orari di lavoro e chiusure per ferie.'],
+            ['Funziona con più ' . mb_strtolower((string)$terms['staffs']) . '?', 'Sì: ognuno ha la sua colonna in agenda e i suoi orari, e il cliente può scegliere con chi prenotare.'],
+            ['Quanto costa?', 'Provi gratis per ' . $days . ' giorni con tutte le funzioni, senza carta di credito. Poi scegli il piano che preferisci.'],
+        ] as [$q, $a]) {
+            $faqs .= '<details><summary>' . self::h($q) . '</summary><p>' . self::h($a) . '</p></details>';
+        }
+        $title = 'Gestionale appuntamenti per ' . $lower . ' · ' . $site;
+        $desc = 'Agenda online e prenotazioni 24/7 per ' . $lower . ': ' . $svcWord . ' già pronti, promemoria automatici e pagina di prenotazione. Prova gratis ' . $days . ' giorni.';
+        $ld = json_encode(['@context' => 'https://schema.org', '@type' => 'SoftwareApplication', 'name' => $site . ' per ' . $lower, 'applicationCategory' => 'BusinessApplication', 'operatingSystem' => 'Web', 'description' => $desc, 'offers' => ['@type' => 'Offer', 'price' => '0', 'priceCurrency' => 'EUR', 'description' => 'Prova gratuita di ' . $days . ' giorni']], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG);
+        $vars = '--bg:' . $st['bg'] . ';--surface:' . $st['surface'] . ';--ink:' . $st['ink'] . ';--muted:' . $st['muted'] . ';--acc:' . $st['acc'] . ';--acc2:' . $st['acc2'] . ';--soft:' . $st['soft'] . ';--on-acc:' . ($dark ? '#1a1716' : '#fff') . ';--line:' . ($dark ? 'rgba(255,255,255,.12)' : 'rgba(0,0,0,.09)') . ';--fh:' . $font;
+        $head = '<meta name="description" content="' . self::h($desc) . '">' . "\n"
+            . '<meta property="og:title" content="' . self::h($title) . '">' . "\n"
+            . '<link rel="canonical" href="' . self::h(Notify::baseUrl($cfg) . '/per/' . $key) . '">' . "\n"
+            . '<script type="application/ld+json">' . $ld . '</script>' . "\n"
+            . '<style>:root{' . $vars . '}' . <<<'CSS'
+html body{background:var(--bg);color:var(--ink)}html body header.top .brand,html body header.top nav a{color:var(--ink)}html body footer,html body footer a{color:var(--muted)}
+.cl a{color:var(--acc)}.cl .btn{background:var(--acc);color:var(--on-acc)!important;border-radius:999px;padding:15px 28px}.cl .btn.alt{background:transparent;color:var(--ink)!important;border:1.5px solid var(--ink)}
+.cl-hero{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:40px;align-items:center;padding:24px 0 40px}
+.cl-kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--acc);font-weight:700;margin:0 0 12px}
+.cl h1{font-family:var(--fh);font-weight:500;font-size:clamp(36px,5.2vw,60px);line-height:1.05;letter-spacing:-.02em;margin:0 0 18px}.cl h1 em,.cl h2 em{font-style:italic;color:var(--acc)}
+.cl-lead{font-size:18px;line-height:1.6;color:var(--muted);margin:0 0 26px;max-width:540px}.cl-cta{display:flex;flex-wrap:wrap;gap:12px;align-items:center}.cl-note{font-size:14px;color:var(--muted);margin:12px 0 0}
+.cl-art{position:relative;max-width:420px;width:100%;justify-self:center}
+.cl-arch{aspect-ratio:4/5;border-radius:999px 999px 28px 28px;overflow:hidden;box-shadow:0 30px 60px -30px rgba(0,0,0,.35)}.cl-arch svg{width:100%;height:100%;display:block}
+.cl-card{position:absolute;left:-30px;bottom:26px;width:250px;background:var(--surface);color:var(--ink);border-radius:18px;padding:14px;box-shadow:0 20px 44px -18px rgba(0,0,0,.4);font-size:13px}
+.cl-card>b{display:block;margin-bottom:8px;font-size:13px}.cl-svc{display:flex;justify-content:space-between;align-items:center;border:1px solid var(--line);border-radius:10px;padding:7px 10px;margin-top:6px}
+.cl-svc span{display:flex;flex-direction:column}.cl-svc small{color:var(--muted);font-size:11px}.cl-svc i{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--line)}.cl-svc.on{border-color:var(--acc);background:var(--soft)}.cl-svc.on i{background:var(--acc);border-color:var(--acc)}
+.cl-pts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:10px 0 40px}.cl-pt{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:22px}
+.cl-pt span{font:italic 500 30px/1 var(--fh);color:var(--acc)}.cl-pt h3{margin:12px 0 6px;font-size:17px}.cl-pt p{margin:0;color:var(--muted);font-size:15px;line-height:1.5}
+.cl-box{background:var(--surface);border:1px solid var(--line);border-radius:24px;padding:28px;margin:0 0 30px}.cl h2{font-family:var(--fh);font-weight:500;font-size:clamp(28px,3.6vw,40px);text-align:left;margin:0 0 6px}
+.cl-sub{color:var(--muted);margin:0 0 18px}.cl-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 34px}
+.cl-list li{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:10px 0;border-bottom:1px dashed var(--line)}.cl-list small{grid-column:1;color:var(--muted);font-size:13px}.cl-list em{grid-row:1/3;grid-column:2;align-self:center;font-style:normal;font-weight:700;color:var(--acc);white-space:nowrap}
+.cl-faq details{border-bottom:1px solid var(--line);padding:14px 0}.cl-faq summary{cursor:pointer;font-weight:600}.cl-faq p{color:var(--muted);margin:8px 0 0}
+.cl-exs{margin:18px 0 0;font-size:15px}.cl-ex{font-weight:700;margin-right:12px}
+.cl-end{text-align:center;padding:20px 0 10px}.cl-end h2{text-align:center}
+@media(max-width:820px){.cl-hero{grid-template-columns:1fr}.cl-art{max-width:300px}.cl-card{left:-10px;width:220px}.cl-pts,.cl-list{grid-template-columns:1fr}.cl-box{padding:20px}}
+CSS . '</style>';
+        $reg = '/registrati?attivita=' . rawurlencode($key);
+        $art = Themes::illustration($st, $tpl['icon']);
+        $body = '<div class="cl">'
+            . '<section class="cl-hero"><div>'
+            . '<p class="cl-kicker">' . self::h($site) . ' per ' . self::h($lower) . '</p>'
+            . '<h1>Agenda e prenotazioni online per <em>' . self::h($lower) . '</em></h1>'
+            . '<p class="cl-lead">Una pagina di prenotazione con il tuo listino, promemoria automatici ai clienti e l\'agenda di tutto lo staff in un unico posto. Si usa dal telefono, senza installare nulla.</p>'
+            . '<div class="cl-cta"><a class="btn" href="' . self::h($reg) . '">Prova gratis ' . $days . ' giorni</a><a class="btn alt" href="#servizi">Cosa trovi già pronto</a></div>'
+            . '<p class="cl-note">Nessuna carta di credito. Listino già pronto: ' . count($services) . ' voci tipiche per ' . self::h($lower) . '.</p>' . $ex
+            . '</div><div class="cl-art"><div class="cl-arch">' . $art . '</div><div class="cl-card"><b>Prenota online</b>' . $mock . '</div></div></section>'
+            . '<section class="cl-pts">' . $points . '</section>'
+            . '<section class="cl-box" id="servizi"><p class="cl-kicker">Già pronto</p><h2>Il listino è <em>già</em> pronto</h2><p class="cl-sub">Durate e prezzi indicativi: li cambi in un attimo, aggiungi i tuoi e togli quelli che non fai.</p><ul class="cl-list">' . $list . '</ul></section>'
+            . '<section class="cl-box cl-faq"><h2>Domande <em>frequenti</em></h2>' . $faqs . '</section>'
+            . '<section class="cl-end"><h2>Prova con la tua <em>attività</em></h2><p class="cl-sub">' . $days . ' giorni gratis, tutte le funzioni incluse.</p><a class="btn" href="' . self::h($reg) . '">Crea il tuo account</a></section>'
+            . '</div>';
+        return self::layout($cfg, $title, $body, false, false, null, $head);
+    }
+
+    /** Riquadro "Sicurezza e backup": registro delle azioni e download del backup. @param array<int,array<string,mixed>> $log */
+    private static function adminToolsBox(string $csrf, array $log): string
+    {
+        $rows = '';
+        foreach ($log as $l) {
+            $rows .= '<tr><td style="white-space:nowrap">' . self::h(date('d/m/Y H:i', (int)strtotime((string)$l['created_at']))) . '</td><td>' . self::h(Admin::ACTION_LABELS[$l['action']] ?? (string)$l['action']) . '</td><td>' . self::h((string)$l['target_name']) . '</td><td><small>' . self::h((string)$l['admin_email']) . '</small></td></tr>';
+        }
+        $table = $rows !== '' ? '<div class="tbl" style="margin-top:12px"><table><thead><tr><th>Quando</th><th>Azione</th><th>Su</th><th>Da</th></tr></thead><tbody>' . $rows . '</tbody></table></div>' : '<p class="muted">Nessuna azione registrata.</p>';
+        return '<details class="card" id="sicurezza" style="margin:0 0 18px"><summary style="cursor:pointer;font-weight:700">Sicurezza e backup</summary>'
+            . '<form method="post" action="/admin/backup" style="margin:12px 0 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><input type="hidden" name="csrf" value="' . self::h($csrf) . '"><button class="mini">Scarica il backup del database</button><span class="muted">File .sql con tutti i dati: conservalo in un posto sicuro (contiene dati dei clienti).</span></form>'
+            . '<h3 style="margin:16px 0 0;font-size:15px">Ultime azioni nel pannello</h3>' . $table . '</details>';
     }
 }

@@ -206,8 +206,55 @@ final class Auth
     }
 
     /** @return array{ok:bool,id?:int} */
-    public static function login(Db $db, string $email, string $password, array $cfg = []): array
+    /** Tentativi sbagliati prima del blocco (per email e per indirizzo IP) e durata del blocco. */
+    public const MAX_FAILS_EMAIL = 8;
+    public const MAX_FAILS_IP = 25;
+    public const LOCK_SECONDS = 900;
+
+    /** Chiavi del contatore dei tentativi sbagliati. @return array<int,array{0:string,1:int}> */
+    private static function failKeys(string $email, string $ip): array
     {
+        $keys = [['lf_e' . substr(hash('sha256', strtolower(trim($email))), 0, 40), self::MAX_FAILS_EMAIL]];
+        if ($ip !== '') {
+            $keys[] = ['lf_i' . substr(hash('sha256', $ip), 0, 40), self::MAX_FAILS_IP];
+        }
+        return $keys;
+    }
+
+    /** L'accesso è bloccato per troppi tentativi sbagliati? */
+    public static function loginLocked(Db $db, string $email, string $ip = '', ?int $now = null): bool
+    {
+        $now ??= time();
+        foreach (self::failKeys($email, $ip) as [$key, $max]) {
+            [$since, $count] = array_map('intval', explode(':', (string)($db->metaGet($key) ?? '0:0')) + [0, 0]);
+            if ($count >= $max && $now - $since < self::LOCK_SECONDS) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static function recordFailure(Db $db, string $email, string $ip, int $now): void
+    {
+        foreach (self::failKeys($email, $ip) as [$key]) {
+            [$since, $count] = array_map('intval', explode(':', (string)($db->metaGet($key) ?? '0:0')) + [0, 0]);
+            if ($now - $since >= self::LOCK_SECONDS) {
+                [$since, $count] = [$now, 0];
+            }
+            $db->metaSet($key, $since . ':' . ($count + 1));
+        }
+        // Pulizia dei contatori vecchi (il valore inizia con il momento del primo errore).
+        if (random_int(1, 20) === 1) {
+            $db->exec("DELETE FROM _meta WHERE meta_key LIKE 'lf!_%' ESCAPE '!' AND meta_value < ?", [(string)($now - 86400)]);
+        }
+    }
+
+    public static function login(Db $db, string $email, string $password, array $cfg = [], string $ip = '', ?int $now = null): array
+    {
+        $now ??= time();
+        if (self::loginLocked($db, $email, $ip, $now)) {
+            return ['ok' => false, 'locked' => true];
+        }
         if (self::configAdminMatches($cfg, $email, $password)) {
             $e = strtolower(trim($email));
             $acct = $db->row('SELECT id, password_hash FROM accounts WHERE email = ?', [$e]);
@@ -224,9 +271,13 @@ final class Auth
         // Si verifica sempre un hash, anche se l'email non esiste, per non far capire chi è registrato.
         $hash = $acct['password_hash'] ?? '$2y$10$QtfLZrm/LZSWtIGfsvpmceT9nDJ6.nhWgsNBqAkSqQfD2TSDeMx9W';
         if (!password_verify($password, (string)$hash) || $acct === null) {
-            sleep(1); // rallenta i tentativi a raffica
+            self::recordFailure($db, $email, $ip, $now);
+            if (PHP_SAPI !== 'cli') {
+                sleep(1); // rallenta i tentativi a raffica
+            }
             return ['ok' => false];
         }
+        $db->exec('DELETE FROM _meta WHERE meta_key = ?', [self::failKeys($email, '')[0][0]]);
         self::openSession((int)$acct['id']);
         $db->exec('UPDATE accounts SET last_login_at = ? WHERE id = ?', [date('Y-m-d H:i:s'), (int)$acct['id']]);
         return ['ok' => true, 'id' => (int)$acct['id']];

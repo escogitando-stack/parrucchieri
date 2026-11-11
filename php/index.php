@@ -39,6 +39,18 @@ if ($method === 'POST' && $path !== '/stripe-webhook' && ($_SERVER['HTTP_SEC_FET
 
 $db = App\connect($cfg);
 
+// Pagine di presentazione per categoria: /per/dentista, /per/gommista...
+if (preg_match('#^/per/([a-z0-9-]{2,32})$#', $path, $pm)) {
+    $catAll = App\Categories::all();
+    if (!isset($catAll[$pm[1]]) || empty($catAll[$pm[1]]['active'])) {
+        http_response_code(404);
+        echo Shop::notFound($cfg);
+        exit;
+    }
+    echo Pages::categoryLanding($cfg, $pm[1], $catAll[$pm[1]], Admin::showcase($db));
+    exit;
+}
+
 // Indicazioni per i motori di ricerca: home e pagine dei negozi attivi, mai le demo.
 if ($path === '/robots.txt') {
     header('Content-Type: text/plain; charset=utf-8');
@@ -50,6 +62,9 @@ if ($path === '/sitemap.xml') {
     $base = baseUrl($cfg);
     $xml = '<?xml version="1.0" encoding="UTF-8"?>' . "\n" . '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n";
     $xml .= '<url><loc>' . htmlspecialchars($base . '/', ENT_XML1) . '</loc></url>' . "\n";
+    foreach (array_keys(App\Categories::options()) as $ck) {
+        $xml .= '<url><loc>' . htmlspecialchars($base . '/per/' . $ck, ENT_XML1) . '</loc></url>' . "\n";
+    }
     foreach ($db->all("SELECT id, email, slug, plan_status, trial_ends_at, paid_until, suspended, approved FROM accounts WHERE approved = 1 AND suspended = 0 AND slug <> '' ORDER BY id") as $a) {
         if (Admin::isDemo($db, (int)$a['id']) || Auth::isAdmin($cfg, $a) || !in_array(Auth::plan($a)['state'], ['trial', 'active'], true)) {
             continue;
@@ -95,13 +110,14 @@ if ($path === '/login') {
     }
     if ($method === 'POST') {
         $email = (string)($_POST['email'] ?? '');
-        if (Auth::login($db, $email, (string)($_POST['password'] ?? ''), $cfg)['ok']) {
+        $login = Auth::login($db, $email, (string)($_POST['password'] ?? ''), $cfg, (string)($_SERVER['REMOTE_ADDR'] ?? ''));
+        if ($login['ok']) {
             $next = (string)($_SESSION['after_login'] ?? '');
             unset($_SESSION['after_login']);
             redirect($next === '/admin' ? '/admin' : '/');
         }
-        http_response_code(401);
-        echo Pages::login($cfg, 'Email o password non corrette.', $email);
+        http_response_code(!empty($login['locked']) ? 429 : 401);
+        echo Pages::login($cfg, !empty($login['locked']) ? 'Troppi tentativi sbagliati: per sicurezza l\'accesso è bloccato per 15 minuti. Se hai dimenticato la password usa "Password dimenticata".' : 'Email o password non corrette.', $email);
         exit;
     }
     echo Pages::login($cfg);
@@ -417,6 +433,23 @@ if ($path === '/admin/torna') {
     redirect('/admin');
 }
 
+// Backup del database (solo amministratore, con il token del modulo).
+if ($path === '/admin/backup') {
+    if (!Auth::isAdmin($cfg, $acct) || $method !== 'POST' || !Admin::checkCsrf((string)($_POST['csrf'] ?? ''))) {
+        http_response_code(404);
+        exit('Non trovato');
+    }
+    Admin::log($db, (string)$acct['email'], 'backup', 0, '', (string)($_SERVER['REMOTE_ADDR'] ?? ''));
+    @set_time_limit(300);
+    header('Content-Type: application/sql; charset=utf-8');
+    header('Content-Disposition: attachment; filename="backup-appuntamenti-' . date('Y-m-d-His') . '.sql"');
+    header('Cache-Control: no-store');
+    Admin::backup($db, static function (string $chunk): void {
+        echo $chunk;
+    });
+    exit;
+}
+
 // Pannello amministratore (solo per le email elencate in config.php → admin_emails).
 if ($path === '/admin') {
     if (!Auth::isAdmin($cfg, $acct)) {
@@ -520,6 +553,7 @@ if ($path === '/admin') {
             }
         } elseif ($action === 'impersonate') {
             if (Auth::impersonate($db, $cfg, $accountId, $target)) {
+                Admin::log($db, (string)$acct['email'], 'impersonate', $target, (string)$row['business_name'], (string)($_SERVER['REMOTE_ADDR'] ?? ''));
                 redirect('/');
             }
             $error = 'Non puoi entrare in questo negozio.';
@@ -574,6 +608,17 @@ if ($path === '/admin') {
         }
     }
     render_admin:
+    if ($method === 'POST' && $error === null && isset($action) && isset(Admin::ACTION_LABELS[$action])) {
+        $logId = (int)($target ?? 0);
+        $logName = match (true) {
+            $action === 'duplicate' => (string)(Auth::account($db, $logId = (int)($res['id'] ?? 0))['business_name'] ?? ''),
+            str_starts_with($action, 'cat_') => 'Categoria: ' . (string)($_POST['label'] ?? ('#' . $logId)),
+            str_starts_with($action, 'plan_') => 'Piano: ' . (string)($_POST['name'] ?? ('#' . $logId)),
+            $action === 'delete' => (string)($row['business_name'] ?? ''),
+            default => (string)(Auth::account($db, $logId)['business_name'] ?? ''),
+        };
+        Admin::log($db, (string)$acct['email'], $action, $logId, $logName, (string)($_SERVER['REMOTE_ADDR'] ?? ''));
+    }
     $all = Admin::rows($db, null, $cfg);
     $stats = Admin::stats($all);
     $q = trim((string)($_GET['q'] ?? ''));
@@ -605,6 +650,7 @@ if ($path === '/admin') {
             'usage' => App\Categories::usage($db),
             'cat_old' => $catOld ?? [],
             'insights' => Admin::insights($all),
+            'log' => Admin::logRows($db, 50),
         ]
     );
     exit;
