@@ -1,0 +1,386 @@
+<?php
+declare(strict_types=1);
+
+namespace App;
+
+/** Account dei negozi: registrazione, accesso, sessione e stato dell'abbonamento. */
+final class Auth
+{
+    public const MIN_PASSWORD = 8;
+
+    public static function isHttps(): bool
+    {
+        return (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+            || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https';
+    }
+
+    public static function start(): void
+    {
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            return;
+        }
+        $lifetime = 60 * 60 * 24 * 30;
+        ini_set('session.gc_maxlifetime', (string)$lifetime);
+        ini_set('session.use_strict_mode', '1');
+        session_name('appuntamenti');
+        session_set_cookie_params([
+            'lifetime' => $lifetime,
+            'path' => '/',
+            'secure' => self::isHttps(),
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ]);
+        session_start();
+    }
+
+    /** Id del negozio con la sessione aperta, oppure null. */
+    public static function accountId(): ?int
+    {
+        self::start();
+        $id = $_SESSION['account_id'] ?? null;
+        return is_int($id) && $id > 0 ? $id : null;
+    }
+
+    public static function isLoggedIn(): bool
+    {
+        return self::accountId() !== null;
+    }
+
+    private static function openSession(int $accountId): void
+    {
+        self::start();
+        $after = $_SESSION['after_login'] ?? null;
+        session_regenerate_id(true);
+        $_SESSION = ['account_id' => $accountId];
+        if ($after !== null) {
+            $_SESSION['after_login'] = $after;
+        }
+    }
+
+    public static function logout(): void
+    {
+        self::start();
+        $_SESSION = [];
+        if (ini_get('session.use_cookies')) {
+            $p = session_get_cookie_params();
+            setcookie(session_name(), '', time() - 3600, $p['path'], $p['domain'] ?? '', (bool)$p['secure'], true);
+        }
+        session_destroy();
+    }
+
+    /** @return array<string,mixed>|null */
+    public static function account(Db $db, int $id): ?array
+    {
+        return $db->row('SELECT * FROM accounts WHERE id = ?', [$id]);
+    }
+
+    /**
+     * Prova gratuita o abbonamento: 'trial', 'active', 'expired' oppure 'suspended' (bloccato dall'amministratore).
+     *
+     * @param array<string,mixed> $acct
+     * @return array{state:string,days_left:int,ends_at:string}
+     */
+    public static function plan(array $acct, ?int $now = null): array
+    {
+        $now ??= time();
+        if (!empty($acct['suspended'])) {
+            return ['state' => 'suspended', 'days_left' => 0, 'ends_at' => ''];
+        }
+        if (isset($acct['approved']) && (int)$acct['approved'] === 0) {
+            return ['state' => 'pending', 'days_left' => 0, 'ends_at' => ''];
+        }
+        $grace = 3 * 86400; // tolleranza se il rinnovo arriva in ritardo
+        $status = (string)($acct['plan_status'] ?? 'trial');
+        $paidUntil = (string)($acct['paid_until'] ?? '');
+        $trialEnd = (string)($acct['trial_ends_at'] ?? '');
+        if ($status === 'active') {
+            $end = $paidUntil !== '' ? (int)strtotime($paidUntil) : PHP_INT_MAX - $grace;
+            if ($now <= $end + $grace) {
+                return ['state' => 'active', 'days_left' => 0, 'ends_at' => $paidUntil];
+            }
+        } elseif ($status === 'trial' && $trialEnd !== '') {
+            $end = (int)strtotime($trialEnd);
+            if ($now <= $end) {
+                return ['state' => 'trial', 'days_left' => (int)ceil(($end - $now) / 86400), 'ends_at' => $trialEnd];
+            }
+        }
+        return ['state' => 'expired', 'days_left' => 0, 'ends_at' => $status === 'active' ? $paidUntil : $trialEnd];
+    }
+
+    /**
+     * Piano da mostrare: l'amministratore non scade mai (a meno che l'account sia sospeso).
+     *
+     * @param array<string,mixed> $cfg @param array<string,mixed> $acct
+     * @return array{state:string,days_left:int,ends_at:string}
+     */
+    public static function effectivePlan(array $cfg, array $acct): array
+    {
+        if (self::isAdmin($cfg, $acct) && empty($acct['suspended'])) {
+            return ['state' => 'active', 'days_left' => 0, 'ends_at' => ''];
+        }
+        return self::plan($acct);
+    }
+
+    /** @param array<string,mixed> $cfg @param array<string,mixed> $acct */
+    public static function isAdmin(array $cfg, array $acct): bool
+    {
+        $admins = array_map(static fn($e) => strtolower(trim((string)$e)), array_merge((array)($cfg['admin_emails'] ?? []), [(string)($cfg['admin_email'] ?? '')]));
+        $admins = array_filter($admins, static fn($e) => $e !== '');
+        return in_array(strtolower((string)($acct['email'] ?? '')), $admins, true);
+    }
+
+    /** Può usare l'agenda? Gli amministratori sì, sempre (non pagano il proprio accesso). */
+    public static function canUse(array $cfg, array $acct): bool
+    {
+        if (self::isAdmin($cfg, $acct) && empty($acct['suspended'])) {
+            return true;
+        }
+        return in_array(self::plan($acct)['state'], ['trial', 'active'], true);
+    }
+
+    /**
+     * Crea il negozio, avvia la prova e apre la sessione.
+     *
+     * @param array<string,mixed> $cfg
+     * @return array{ok:bool,error?:string,id?:int}
+     */
+    public static function register(Db $db, array $cfg, string $business, string $category, string $email, string $password): array
+    {
+        $business = trim($business);
+        $email = strtolower(trim($email));
+        if ($business === '' || mb_strlen($business) > 120) {
+            return ['ok' => false, 'error' => 'Inserisci il nome della tua attività.'];
+        }
+        if (!Categories::valid($category)) {
+            return ['ok' => false, 'error' => 'Scegli il tipo di attività.'];
+        }
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($email) > 190) {
+            return ['ok' => false, 'error' => 'Inserisci un indirizzo email valido.'];
+        }
+        if (strlen($password) < self::MIN_PASSWORD) {
+            return ['ok' => false, 'error' => 'La password deve avere almeno ' . self::MIN_PASSWORD . ' caratteri.'];
+        }
+        if ($db->row('SELECT id FROM accounts WHERE email = ?', [$email]) !== null) {
+            return ['ok' => false, 'error' => 'Esiste già un account con questa email. Prova ad accedere.'];
+        }
+
+        $days = max(1, (int)($cfg['trial_days'] ?? 30));
+        $first = $db->row('SELECT id FROM accounts LIMIT 1') === null;
+        // Di norma un nuovo negozio deve essere approvato dall'amministratore (require_approval = false per disattivare).
+        $approved = self::isAdmin($cfg, ['email' => $email]) || ($cfg['require_approval'] ?? true) === false;
+        $db->exec(
+            'INSERT INTO accounts (email, password_hash, business_name, category, plan_status, approved, slug, trial_ends_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [$email, password_hash($password, PASSWORD_DEFAULT), $business, $category, 'trial', $approved ? 1 : 0, Booking::makeSlug($db, $business), date('Y-m-d H:i:s', time() + $days * 86400)]
+        );
+        $id = $db->lastId();
+        // Il primo negozio eredita i dati inseriti prima dell'arrivo degli account.
+        if ($first && Schema::hasUnownedData($db)) {
+            Schema::adoptUnownedData($db, $id);
+        } else {
+            Schema::seedAccount($db, $id, $category);
+        }
+        self::openSession($id);
+        $db->exec('UPDATE accounts SET last_login_at = ? WHERE id = ?', [date('Y-m-d H:i:s'), $id]);
+        if (!$approved) {
+            Notify::newRegistration($cfg, self::account($db, $id) ?? []);
+        }
+        return ['ok' => true, 'id' => $id];
+    }
+
+    /**
+     * Amministratore definito in config.php (admin_email + admin_password o admin_password_hash):
+     * al primo accesso corretto l'account viene creato, poi la password del config resta valida.
+     */
+    private static function configAdminMatches(array $cfg, string $email, string $password): bool
+    {
+        $adminEmail = strtolower(trim((string)($cfg['admin_email'] ?? '')));
+        if ($adminEmail === '' || strtolower(trim($email)) !== $adminEmail) {
+            return false;
+        }
+        $plain = (string)($cfg['admin_password'] ?? '');
+        $hash = (string)($cfg['admin_password_hash'] ?? '');
+        if ($plain !== '' && hash_equals($plain, $password)) {
+            return true;
+        }
+        return $hash !== '' && password_verify($password, $hash);
+    }
+
+    /** @return array{ok:bool,id?:int} */
+    /** Tentativi sbagliati prima del blocco (per email e per indirizzo IP) e durata del blocco. */
+    public const MAX_FAILS_EMAIL = 8;
+    public const MAX_FAILS_IP = 25;
+    public const LOCK_SECONDS = 900;
+
+    /** Chiavi del contatore dei tentativi sbagliati. @return array<int,array{0:string,1:int}> */
+    private static function failKeys(string $email, string $ip): array
+    {
+        $keys = [['lf_e' . substr(hash('sha256', strtolower(trim($email))), 0, 40), self::MAX_FAILS_EMAIL]];
+        if ($ip !== '') {
+            $keys[] = ['lf_i' . substr(hash('sha256', $ip), 0, 40), self::MAX_FAILS_IP];
+        }
+        return $keys;
+    }
+
+    /** L'accesso è bloccato per troppi tentativi sbagliati? */
+    public static function loginLocked(Db $db, string $email, string $ip = '', ?int $now = null): bool
+    {
+        $now ??= time();
+        foreach (self::failKeys($email, $ip) as [$key, $max]) {
+            [$since, $count] = array_map('intval', explode(':', (string)($db->metaGet($key) ?? '0:0')) + [0, 0]);
+            if ($count >= $max && $now - $since < self::LOCK_SECONDS) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static function recordFailure(Db $db, string $email, string $ip, int $now): void
+    {
+        foreach (self::failKeys($email, $ip) as [$key]) {
+            [$since, $count] = array_map('intval', explode(':', (string)($db->metaGet($key) ?? '0:0')) + [0, 0]);
+            if ($now - $since >= self::LOCK_SECONDS) {
+                [$since, $count] = [$now, 0];
+            }
+            $db->metaSet($key, $since . ':' . ($count + 1));
+        }
+        // Pulizia dei contatori vecchi (il valore inizia con il momento del primo errore).
+        if (random_int(1, 20) === 1) {
+            $db->exec("DELETE FROM _meta WHERE meta_key LIKE 'lf!_%' ESCAPE '!' AND meta_value < ?", [(string)($now - 86400)]);
+        }
+    }
+
+    public static function login(Db $db, string $email, string $password, array $cfg = [], string $ip = '', ?int $now = null): array
+    {
+        $now ??= time();
+        if (self::loginLocked($db, $email, $ip, $now)) {
+            return ['ok' => false, 'locked' => true];
+        }
+        if (self::configAdminMatches($cfg, $email, $password)) {
+            $e = strtolower(trim($email));
+            $acct = $db->row('SELECT id, password_hash FROM accounts WHERE email = ?', [$e]);
+            if ($acct === null) {
+                $r = self::register($db, array_merge($cfg, ['allow_registration' => true]), 'Amministrazione', 'altro', $e, $password);
+                return $r['ok'] ? ['ok' => true, 'id' => (int)$r['id']] : ['ok' => false];
+            }
+            // La password del config è quella valida: tiene allineato l'account.
+            if (!password_verify($password, (string)$acct['password_hash'])) {
+                $db->exec('UPDATE accounts SET password_hash = ? WHERE id = ?', [password_hash($password, PASSWORD_DEFAULT), (int)$acct['id']]);
+            }
+        }
+        $acct = $db->row('SELECT id, password_hash FROM accounts WHERE email = ?', [strtolower(trim($email))]);
+        // Si verifica sempre un hash, anche se l'email non esiste, per non far capire chi è registrato.
+        $hash = $acct['password_hash'] ?? '$2y$10$QtfLZrm/LZSWtIGfsvpmceT9nDJ6.nhWgsNBqAkSqQfD2TSDeMx9W';
+        if (!password_verify($password, (string)$hash) || $acct === null) {
+            self::recordFailure($db, $email, $ip, $now);
+            if (PHP_SAPI !== 'cli') {
+                sleep(1); // rallenta i tentativi a raffica
+            }
+            return ['ok' => false];
+        }
+        $db->exec('DELETE FROM _meta WHERE meta_key = ?', [self::failKeys($email, '')[0][0]]);
+        self::openSession((int)$acct['id']);
+        $db->exec('UPDATE accounts SET last_login_at = ? WHERE id = ?', [date('Y-m-d H:i:s'), (int)$acct['id']]);
+        return ['ok' => true, 'id' => (int)$acct['id']];
+    }
+
+    /** @return array{ok:bool,error?:string} */
+    public static function changePassword(Db $db, int $accountId, string $current, string $new): array
+    {
+        $acct = self::account($db, $accountId);
+        if ($acct === null || !password_verify($current, (string)$acct['password_hash'])) {
+            sleep(1);
+            return ['ok' => false, 'error' => 'La password attuale non è corretta.'];
+        }
+        if (strlen($new) < self::MIN_PASSWORD) {
+            return ['ok' => false, 'error' => 'La nuova password deve avere almeno ' . self::MIN_PASSWORD . ' caratteri.'];
+        }
+        $db->exec('UPDATE accounts SET password_hash = ? WHERE id = ?', [password_hash($new, PASSWORD_DEFAULT), $accountId]);
+        return ['ok' => true];
+    }
+
+    /** Id dell'amministratore che sta guardando un negozio come se fosse il titolare (o null). */
+    public static function impersonator(): ?int
+    {
+        $id = $_SESSION['impersonator'] ?? null;
+        return is_int($id) && $id > 0 ? $id : null;
+    }
+
+    /** L'amministratore entra nel negozio indicato; ritorna false se non è consentito. @param array<string,mixed> $cfg */
+    public static function impersonate(Db $db, array $cfg, int $adminId, int $targetId): bool
+    {
+        $admin = self::account($db, $adminId);
+        $target = self::account($db, $targetId);
+        if ($admin === null || $target === null || !self::isAdmin($cfg, $admin) || self::impersonator() !== null || $adminId === $targetId) {
+            return false;
+        }
+        self::start();
+        $_SESSION['impersonator'] = $adminId;
+        $_SESSION['account_id'] = $targetId;
+        return true;
+    }
+
+    /** Torna all'account amministratore. @param array<string,mixed> $cfg */
+    public static function stopImpersonating(Db $db, array $cfg): bool
+    {
+        self::start();
+        $adminId = self::impersonator();
+        $admin = $adminId !== null ? self::account($db, $adminId) : null;
+        if ($admin === null || !self::isAdmin($cfg, $admin)) {
+            return false;
+        }
+        unset($_SESSION['impersonator']);
+        $_SESSION['account_id'] = $adminId;
+        return true;
+    }
+
+    private const RESET_TTL = 3600;
+
+    /**
+     * Password dimenticata: se l'email esiste invia un link valido un'ora (massimo 3 richieste all'ora).
+     * Non rivela mai se l'indirizzo è registrato.
+     *
+     * @param array<string,mixed> $cfg
+     */
+    public static function requestReset(Db $db, array $cfg, string $email, ?int $now = null): void
+    {
+        $now ??= time();
+        $acct = $db->row('SELECT * FROM accounts WHERE email = ?', [strtolower(trim($email))]);
+        if ($acct === null || !empty($acct['suspended'])) {
+            return;
+        }
+        $recent = (int)$db->row('SELECT COUNT(*) AS c FROM password_resets WHERE account_id = ? AND created_at >= ?', [(int)$acct['id'], date('Y-m-d H:i:s', $now - 3600)])['c'];
+        if ($recent >= 3) {
+            return;
+        }
+        $token = bin2hex(random_bytes(16));
+        $db->exec('DELETE FROM password_resets WHERE expires_at < ?', [date('Y-m-d H:i:s', $now)]);
+        $db->exec(
+            'INSERT INTO password_resets (account_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?)',
+            [(int)$acct['id'], hash('sha256', $token), date('Y-m-d H:i:s', $now + self::RESET_TTL), date('Y-m-d H:i:s', $now)]
+        );
+        Notify::passwordReset($cfg, $acct, $token);
+    }
+
+    /** Il codice del link è valido e non scaduto? */
+    public static function resetValid(Db $db, string $token, ?int $now = null): bool
+    {
+        return preg_match('/^[a-f0-9]{32}$/', $token) === 1
+            && $db->row('SELECT id FROM password_resets WHERE token_hash = ? AND expires_at >= ?', [hash('sha256', $token), date('Y-m-d H:i:s', $now ?? time())]) !== null;
+    }
+
+    /** @return array{ok:bool,error?:string} */
+    public static function resetPassword(Db $db, string $token, string $new, ?int $now = null): array
+    {
+        $now ??= time();
+        if (!self::resetValid($db, $token, $now)) {
+            return ['ok' => false, 'error' => 'Il link non è valido o è scaduto: richiedine uno nuovo.'];
+        }
+        if (strlen($new) < self::MIN_PASSWORD) {
+            return ['ok' => false, 'error' => 'La nuova password deve avere almeno ' . self::MIN_PASSWORD . ' caratteri.'];
+        }
+        $row = $db->row('SELECT account_id FROM password_resets WHERE token_hash = ?', [hash('sha256', $token)]);
+        $db->exec('UPDATE accounts SET password_hash = ? WHERE id = ?', [password_hash($new, PASSWORD_DEFAULT), (int)$row['account_id']]);
+        $db->exec('DELETE FROM password_resets WHERE account_id = ?', [(int)$row['account_id']]);
+        return ['ok' => true];
+    }
+}
