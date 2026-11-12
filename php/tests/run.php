@@ -872,6 +872,13 @@ check('statistiche', Admin::stats($rows)['total'] === 3 && Admin::stats($rows)['
 
 // prolungare la prova
 $before = strtotime(Auth::account($db, $s1)['trial_ends_at']);
+check('giorni di prova: non impostati → vale config', Admin::trialDays($db) === null && \App\withSettings($db, ['trial_days' => 30])['trial_days'] === 30);
+check('giorni di prova: valori non validi rifiutati', !Admin::setTrialDays($db, 0) && !Admin::setTrialDays($db, 400) && Admin::trialDays($db) === null);
+check('giorni di prova: impostati dall\'admin e applicati', Admin::setTrialDays($db, 14) && \App\withSettings($db, ['trial_days' => 30])['trial_days'] === 14);
+$trialReg = Auth::register($db, \App\withSettings($db, ['trial_days' => 30]), 'Prova Quattordici', 'parrucchiere', 'prova14@example.com', 'password123');
+check('giorni di prova: il nuovo iscritto ottiene 14 giorni', is_array($trialReg) && abs(strtotime((string)Auth::account($db, (int)($trialReg['id'] ?? $trialReg['account_id'] ?? 0))['trial_ends_at']) - (time() + 14 * 86400)) < 5);
+check('giorni di prova: la home mostra 14', str_contains(Pages::landing(\App\withSettings($db, ['trial_days' => 30])), '14 giorni'));
+$db->exec("DELETE FROM _meta WHERE meta_key = 'trial_days'");
 check('prolunga la prova di 30 giorni', Admin::extend($db, $s1, 30) && strtotime(Auth::account($db, $s1)['trial_ends_at']) === $before + 30 * 86400);
 $db->exec("UPDATE accounts SET trial_ends_at = '2000-01-01 00:00:00' WHERE id = ?", [$s2]);
 check('prova scaduta', Auth::plan(Auth::account($db, $s2))['state'] === 'expired');

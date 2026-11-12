@@ -55,6 +55,16 @@ function connect(array $cfg): Db
     return $db;
 }
 
+/** I giorni di prova scelti dall'admin (nel database) hanno la precedenza su config.php. */
+function withSettings(Db $db, array $cfg): array
+{
+    $days = Admin::trialDays($db);
+    if ($days !== null) {
+        $cfg['trial_days'] = $days;
+    }
+    return $cfg;
+}
+
 function securityHeaders(): void
 {
     header('X-Content-Type-Options: nosniff');

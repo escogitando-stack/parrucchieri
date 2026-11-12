@@ -104,6 +104,23 @@ final class Admin
         return $out + ['expiring' => $expiring, 'conversion' => $done > 0 ? (int)round($out['paying'] * 100 / $done) : null];
     }
 
+    /** Giorni di prova impostati dall'admin (null se non impostati: vale config.php). */
+    public static function trialDays(Db $db): ?int
+    {
+        $v = $db->metaGet('trial_days');
+        return $v !== null && ctype_digit($v) && (int)$v >= 1 ? (int)$v : null;
+    }
+
+    /** Imposta i giorni di prova dei NUOVI iscritti (1–365). */
+    public static function setTrialDays(Db $db, int $days): bool
+    {
+        if ($days < 1 || $days > 365) {
+            return false;
+        }
+        $db->metaSet('trial_days', (string)$days);
+        return true;
+    }
+
     /** Aggiunge giorni alla prova (o, per chi paga, alla scadenza dell'abbonamento). */
     public static function extend(Db $db, int $id, int $days, ?int $now = null): bool
     {
@@ -419,7 +436,7 @@ final class Admin
         'approve' => 'Approvato', 'impersonate' => 'Entrato nel negozio', 'extend' => 'Prova prolungata', 'assign' => 'Piano assegnato',
         'activate' => 'Attivato fino a una data', 'suspend' => 'Sospeso / riattivato', 'reset' => 'Nuova password', 'delete' => 'Eliminato',
         'email' => 'Email di accesso cambiata', 'deliver' => 'Demo consegnata', 'duplicate' => 'Demo creata', 'showcase' => 'Esempi della home',
-        'cat_save' => 'Categoria salvata', 'cat_delete' => 'Categoria eliminata', 'plan_save' => 'Piano salvato', 'plan_delete' => 'Piano eliminato',
+        'cat_save' => 'Categoria salvata', 'cat_delete' => 'Categoria eliminata', 'plan_save' => 'Piano salvato', 'plan_delete' => 'Piano eliminato', 'trial_days' => 'Giorni di prova cambiati',
         'backup' => 'Backup scaricato',
     ];
 

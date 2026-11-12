@@ -38,6 +38,7 @@ if ($method === 'POST' && $path !== '/stripe-webhook' && ($_SERVER['HTTP_SEC_FET
 }
 
 $db = App\connect($cfg);
+$cfg = App\withSettings($db, $cfg);
 
 // Pagine di presentazione per categoria: /per/dentista, /per/gommista...
 if (preg_match('#^/per/([a-z0-9-]{2,32})$#', $path, $pm)) {
@@ -523,6 +524,15 @@ if ($path === '/admin') {
             } else {
                 $error = $err;
                 $catOld = $_POST;
+            }
+            goto render_admin;
+        }
+        if ($action === 'trial_days') {
+            if (Admin::setTrialDays($db, (int)($_POST['trial_days'] ?? 0))) {
+                $cfg['trial_days'] = (int)$_POST['trial_days'];
+                $notice = 'Giorni di prova aggiornati: i nuovi negozi avranno ' . (int)$_POST['trial_days'] . ' giorni. Chi è già in prova non cambia.';
+            } else {
+                $error = 'Inserisci un numero di giorni tra 1 e 365.';
             }
             goto render_admin;
         }

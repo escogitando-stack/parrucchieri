@@ -169,6 +169,7 @@ Poi apri http://localhost:8080 (password `prova`). I test dell'API: `php php/tes
 - **Sposta la prenotazione**: le email ai clienti hanno il link `/sposta/<codice>` (e la pagina di annullamento lo propone). Se i servizi sono a conferma immediata resta confermata, altrimenti torna "da approvare" e ti arriva l'email con il pulsante Approva/Rifiuta.
 - **Il cliente cambia i servizi**: nella stessa pagina `/sposta/<codice>` può aggiungere o togliere servizi (solo quelli prenotabili online). Gli orari liberi si ricalcolano sulla nuova durata, prezzo e durata si aggiornano, e tu ricevi l'email di modifica.
 - **Il titolare cambia i servizi di una prenotazione**: nel dettaglio prenotazione, riquadro "Servizi" → Modifica. Spunti i servizi, durata e totale si ricalcolano; se il nuovo orario di fine si sovrappone a un altro appuntamento ti chiede conferma.
+- **Giorni di prova**: nell'admin, box "Piani di abbonamento e prova", campo "Giorni di prova gratuita" (1–365). Vale per i nuovi iscritti e per i testi di home, email e pagine; ha la precedenza su `trial_days` di config.php. Chi è già in prova non cambia.
 
 ## Email automatiche e promemoria (gruppo 3)
 

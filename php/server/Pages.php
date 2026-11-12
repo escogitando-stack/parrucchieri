@@ -785,7 +785,14 @@ HTML;
             $planRows .= $planForm($p);
         }
         $planRows .= $planForm(['id' => 0, 'name' => '', 'duration_days' => 365, 'price' => 0, 'stripe_price_id' => '', 'active' => true]);
-        $planBox = '<details class="card" style="margin:0 0 18px"' . ($plans === [] ? ' open' : '') . '><summary style="cursor:pointer;font-weight:700">Piani di abbonamento (' . count($plans) . ')</summary>'
+        $trialForm = '<form method="post" action="/admin" class="pk-row" style="margin:0 0 14px;align-items:center">'
+            . '<input type="hidden" name="csrf" value="' . self::h($csrf) . '"><input type="hidden" name="id" value="0">'
+            . '<label for="td" style="font-weight:600">Giorni di prova gratuita</label>'
+            . '<input id="td" name="trial_days" type="number" min="1" max="365" value="' . (int)($cfg['trial_days'] ?? 30) . '" required style="width:90px">'
+            . '<button class="mini" name="azione" value="trial_days">Salva</button>'
+            . '<span class="muted" style="font-size:13px">Vale per i nuovi iscritti e per i testi del sito; chi è già in prova mantiene la sua scadenza (la puoi allungare da "Azioni").</span></form>';
+        $planBox = '<details class="card" style="margin:0 0 18px"' . ($plans === [] ? ' open' : '') . '><summary style="cursor:pointer;font-weight:700">Piani di abbonamento e prova (' . count($plans) . ')</summary>'
+            . '<div style="margin-top:12px">' . $trialForm . '</div>'
             . '<p class="sub" style="text-align:left;margin:8px 0 12px;font-size:14px">Nome, durata in giorni e prezzo. I piani attivi compaiono nella home del sito e nella pagina Abbonamento; con il codice Stripe il cliente può pagare online, senza codice li assegni tu da "Azioni".</p>'
             . $planRows . '</details>';
         $demoBox = self::adminInsights((array)($extra['insights'] ?? []), $csrf) . self::adminDemoBox($csrf, $extra);

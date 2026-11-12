@@ -25,5 +25,6 @@ if (!$cli) {
     header('Content-Type: text/plain; charset=utf-8');
 }
 $db = App\connect($cfg);
+$cfg = App\withSettings($db, $cfg);
 $res = Automation::run($db, $cfg);
 echo date('Y-m-d H:i:s') . ' promemoria=' . $res['reminders'] . ' riepiloghi=' . $res['summaries'] . ' prova=' . $res['trial'] . ' configurazione=' . $res['onboarding'] . ' recensioni=' . $res['reviews'] . "\n";
