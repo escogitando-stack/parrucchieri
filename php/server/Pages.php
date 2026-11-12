@@ -46,7 +46,13 @@ $head<style>
   a{color:#be185d}
   header.top{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;max-width:1040px;margin:0 auto;padding:18px 20px}
   header.top .brand{font-weight:700;font-size:18px;color:#1c1917;text-decoration:none}
-  header.top nav a{margin-left:16px;text-decoration:none;font-weight:600;font-size:15px}
+  header.top nav a{margin-left:16px;text-decoration:none;font-weight:600;font-size:15px;white-space:nowrap}
+  @media(max-width:700px){
+    header.top{padding:14px 16px;gap:10px}
+    header.top nav{width:100%;display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px}
+    header.top nav a{margin-left:0!important;font-size:15px;padding:6px 0}
+    header.top nav a.btn{flex:1 0 100%;text-align:center;padding:11px 16px!important;margin-top:4px;font-size:16px}
+  }
   .wrap{max-width:1040px;margin:0 auto;padding:0 20px}
   .narrow{max-width:440px}
   .wide{max-width:1240px}
