@@ -111,6 +111,57 @@ final class Admin
         return $v !== null && ctype_digit($v) && (int)$v >= 1 ? (int)$v : null;
     }
 
+    /** Cifra un valore con la chiave segreta del sito (le chiavi Stripe non stanno in chiaro nel database). */
+    public static function seal(array $cfg, string $plain): string
+    {
+        $key = hash('sha256', 'seal|' . Notify::secret($cfg), true);
+        $iv = random_bytes(12);
+        $ct = openssl_encrypt($plain, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $iv, $tag);
+        return 'enc:' . base64_encode($iv . $tag . (string)$ct);
+    }
+
+    public static function unseal(array $cfg, ?string $stored): string
+    {
+        if ($stored === null || !str_starts_with($stored, 'enc:')) {
+            return '';
+        }
+        $raw = base64_decode(substr($stored, 4), true);
+        if ($raw === false || strlen($raw) < 29) {
+            return '';
+        }
+        $key = hash('sha256', 'seal|' . Notify::secret($cfg), true);
+        $pt = openssl_decrypt(substr($raw, 28), 'aes-256-gcm', $key, OPENSSL_RAW_DATA, substr($raw, 0, 12), substr($raw, 12, 16));
+        return $pt === false ? '' : $pt;
+    }
+
+    /**
+     * Salva le chiavi Stripe. Campo vuoto = lascia com'è. Restituisce un messaggio d'errore o null.
+     * @param array<string,mixed> $cfg
+     */
+    public static function setStripe(Db $db, array $cfg, string $secretKey, string $webhookSecret): ?string
+    {
+        $secretKey = trim($secretKey);
+        $webhookSecret = trim($webhookSecret);
+        if ($secretKey !== '' && !preg_match('/^(sk|rk)_(live|test)_[A-Za-z0-9]{16,}$/', $secretKey)) {
+            return 'La chiave segreta deve iniziare con sk_live_ o sk_test_ (oppure rk_ se è una chiave con restrizioni).';
+        }
+        if ($webhookSecret !== '' && !preg_match('/^whsec_[A-Za-z0-9+\/=_-]{16,}$/', $webhookSecret)) {
+            return 'Il segreto del webhook deve iniziare con whsec_.';
+        }
+        if ($secretKey !== '') {
+            $db->metaSet('stripe_secret_key', self::seal($cfg, $secretKey));
+        }
+        if ($webhookSecret !== '') {
+            $db->metaSet('stripe_webhook_secret', self::seal($cfg, $webhookSecret));
+        }
+        return null;
+    }
+
+    public static function clearStripe(Db $db): void
+    {
+        $db->exec("DELETE FROM _meta WHERE meta_key IN ('stripe_secret_key', 'stripe_webhook_secret')");
+    }
+
     /** Imposta i giorni di prova dei NUOVI iscritti (1–365). */
     public static function setTrialDays(Db $db, int $days): bool
     {
@@ -436,7 +487,7 @@ final class Admin
         'approve' => 'Approvato', 'impersonate' => 'Entrato nel negozio', 'extend' => 'Prova prolungata', 'assign' => 'Piano assegnato',
         'activate' => 'Attivato fino a una data', 'suspend' => 'Sospeso / riattivato', 'reset' => 'Nuova password', 'delete' => 'Eliminato',
         'email' => 'Email di accesso cambiata', 'deliver' => 'Demo consegnata', 'duplicate' => 'Demo creata', 'showcase' => 'Esempi della home',
-        'cat_save' => 'Categoria salvata', 'cat_delete' => 'Categoria eliminata', 'plan_save' => 'Piano salvato', 'plan_delete' => 'Piano eliminato', 'trial_days' => 'Giorni di prova cambiati',
+        'cat_save' => 'Categoria salvata', 'cat_delete' => 'Categoria eliminata', 'plan_save' => 'Piano salvato', 'plan_delete' => 'Piano eliminato', 'trial_days' => 'Giorni di prova cambiati', 'stripe_save' => 'Chiavi Stripe salvate', 'stripe_clear' => 'Chiavi Stripe rimosse', 'stripe_test' => 'Prova collegamento Stripe',
         'backup' => 'Backup scaricato',
     ];
 

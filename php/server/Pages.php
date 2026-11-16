@@ -791,8 +791,29 @@ HTML;
             . '<input id="td" name="trial_days" type="number" min="1" max="365" value="' . (int)($cfg['trial_days'] ?? 30) . '" required style="width:90px">'
             . '<button class="mini" name="azione" value="trial_days">Salva</button>'
             . '<span class="muted" style="font-size:13px">Vale per i nuovi iscritti e per i testi del sito; chi è già in prova mantiene la sua scadenza (la puoi allungare da "Azioni").</span></form>';
+        $sk = (string)($cfg['stripe']['secret_key'] ?? '');
+        $wh = (string)($cfg['stripe']['webhook_secret'] ?? '');
+        $mask = static fn(string $v): string => $v === '' ? 'non impostata' : '••••' . substr($v, -4);
+        $hook = rtrim((string)(($cfg['base_url'] ?? '') ?: ''), '/') . '/stripe-webhook';
+        $hidden = '<input type="hidden" name="csrf" value="' . self::h($csrf) . '"><input type="hidden" name="id" value="0">';
+        $stripeBox = '<div class="card" style="margin:0 0 14px;padding:16px">'
+            . '<h3 style="margin:0 0 6px;font-size:16px">Pagamenti Stripe</h3>'
+            . '<p class="muted" style="margin:0 0 12px;font-size:13px">Stato: ' . ($sk !== '' && $wh !== '' ? '<b style="color:#15803d">attivo</b>' : '<b style="color:#b45309">incompleto</b>')
+            . ' · chiave segreta: ' . self::h($mask($sk)) . ' · segreto webhook: ' . self::h($mask($wh)) . '</p>'
+            . '<form method="post" action="/admin" autocomplete="off" style="display:grid;gap:10px">' . $hidden
+            . '<label style="font-weight:600;font-size:14px">Chiave segreta API<input name="stripe_secret" type="password" placeholder="sk_live_… (vuoto = non cambiare)" autocomplete="new-password" style="display:block;width:100%;margin-top:4px"></label>'
+            . '<label style="font-weight:600;font-size:14px">Segreto del webhook<input name="stripe_webhook" type="password" placeholder="whsec_… (vuoto = non cambiare)" autocomplete="new-password" style="display:block;width:100%;margin-top:4px"></label>'
+            . '<div class="pk-row"><button class="mini" name="azione" value="stripe_save">Salva chiavi</button>'
+            . '<button class="mini" name="azione" value="stripe_test">Prova collegamento</button>'
+            . '<button class="mini" name="azione" value="stripe_clear" onclick="return confirm(\'Rimuovere le chiavi Stripe salvate qui?\')">Rimuovi</button></div></form>'
+            . '<div style="margin-top:14px;font-size:13px;line-height:1.6" class="muted"><b style="color:inherit">Come collegarlo</b><ol style="margin:6px 0 0;padding-left:20px">'
+            . '<li>In Stripe → Sviluppatori → Chiavi API copia la <b>chiave segreta</b> (o creane una con restrizioni) e incollala qui.</li>'
+            . '<li>In Sviluppatori → Webhook aggiungi l\'endpoint <code style="user-select:all">' . self::h($hook) . '</code></li>'
+            . '<li>Eventi da selezionare: <code>checkout.session.completed</code>, <code>customer.subscription.created</code>, <code>customer.subscription.updated</code>, <code>customer.subscription.deleted</code>.</li>'
+            . '<li>Copia il <b>segreto di firma</b> (whsec_…) del webhook e incollalo qui, poi premi "Prova collegamento".</li>'
+            . '<li>Su ogni piano inserisci il codice prezzo Stripe (<code>price_…</code>) per far pagare online.</li></ol></div></div>';
         $planBox = '<details class="card" style="margin:0 0 18px"' . ($plans === [] ? ' open' : '') . '><summary style="cursor:pointer;font-weight:700">Piani di abbonamento e prova (' . count($plans) . ')</summary>'
-            . '<div style="margin-top:12px">' . $trialForm . '</div>'
+            . '<div style="margin-top:12px">' . $stripeBox . $trialForm . '</div>'
             . '<p class="sub" style="text-align:left;margin:8px 0 12px;font-size:14px">Nome, durata in giorni e prezzo. I piani attivi compaiono nella home del sito e nella pagina Abbonamento; con il codice Stripe il cliente può pagare online, senza codice li assegni tu da "Azioni".</p>'
             . $planRows . '</details>';
         $demoBox = self::adminInsights((array)($extra['insights'] ?? []), $csrf) . self::adminDemoBox($csrf, $extra);

@@ -62,6 +62,12 @@ function withSettings(Db $db, array $cfg): array
     if ($days !== null) {
         $cfg['trial_days'] = $days;
     }
+    foreach (['secret_key' => 'stripe_secret_key', 'webhook_secret' => 'stripe_webhook_secret'] as $k => $meta) {
+        $v = Admin::unseal($cfg, $db->metaGet($meta));
+        if ($v !== '') {
+            $cfg['stripe'][$k] = $v;
+        }
+    }
     return $cfg;
 }
 

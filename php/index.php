@@ -527,6 +527,30 @@ if ($path === '/admin') {
             }
             goto render_admin;
         }
+        if ($action === 'stripe_save') {
+            $err = Admin::setStripe($db, $cfg, (string)($_POST['stripe_secret'] ?? ''), (string)($_POST['stripe_webhook'] ?? ''));
+            if ($err === null) {
+                $notice = 'Chiavi Stripe salvate.';
+                $cfg = App\withSettings($db, $cfg);
+            } else {
+                $error = $err;
+            }
+            goto render_admin;
+        }
+        if ($action === 'stripe_clear') {
+            Admin::clearStripe($db);
+            $notice = 'Chiavi Stripe rimosse dal database (restano quelle di config.php, se presenti).';
+            goto render_admin;
+        }
+        if ($action === 'stripe_test') {
+            [$okS, $msgS] = Billing::testConnection($cfg);
+            if ($okS) {
+                $notice = $msgS . (empty($cfg['stripe']['webhook_secret']) ? ' Manca ancora il segreto del webhook.' : '');
+            } else {
+                $error = 'Stripe: ' . $msgS;
+            }
+            goto render_admin;
+        }
         if ($action === 'trial_days') {
             if (Admin::setTrialDays($db, (int)($_POST['trial_days'] ?? 0))) {
                 $cfg['trial_days'] = (int)$_POST['trial_days'];

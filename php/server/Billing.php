@@ -42,6 +42,26 @@ final class Billing
         return $data;
     }
 
+    /**
+     * Prova le chiavi: chiede a Stripe i dati dell'account. Restituisce [ok, messaggio].
+     * @param array<string,mixed> $cfg
+     * @return array{0:bool,1:string}
+     */
+    public static function testConnection(array $cfg): array
+    {
+        if (empty($cfg['stripe']['secret_key'])) {
+            return [false, 'Chiave segreta non impostata.'];
+        }
+        try {
+            $a = self::stripe($cfg, 'GET', 'account');
+        } catch (\Throwable $e) {
+            return [false, $e->getMessage()];
+        }
+        $name = (string)($a['settings']['dashboard']['display_name'] ?? $a['business_profile']['name'] ?? $a['id'] ?? '');
+        $mode = str_starts_with((string)$cfg['stripe']['secret_key'], 'sk_test_') || str_starts_with((string)$cfg['stripe']['secret_key'], 'rk_test_') ? 'modalità di PROVA' : 'modalità REALE';
+        return [true, 'Collegato a Stripe' . ($name !== '' ? ' (' . $name . ')' : '') . ' in ' . $mode . '.'];
+    }
+
     /** Pagina di pagamento ospitata da Stripe: restituisce l'indirizzo a cui mandare il cliente. */
     public static function checkoutUrl(array $cfg, array $acct, string $plan, string $baseUrl): string
     {

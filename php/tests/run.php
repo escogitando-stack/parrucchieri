@@ -872,6 +872,18 @@ check('statistiche', Admin::stats($rows)['total'] === 3 && Admin::stats($rows)['
 
 // prolungare la prova
 $before = strtotime(Auth::account($db, $s1)['trial_ends_at']);
+// Stripe gestito dall'admin
+$cfgS = ['db' => ['name' => 'x', 'pass' => 'y'], 'admin_password' => 'z', 'stripe' => []];
+$skT = 'sk_test_' . str_repeat('a1B2', 8); $whT = 'whsec_' . str_repeat('Zx9', 12);
+check('stripe: cifratura andata e ritorno', Admin::unseal($cfgS, Admin::seal($cfgS, $skT)) === $skT && !str_contains(Admin::seal($cfgS, $skT), 'sk_test'));
+check('stripe: valori non validi rifiutati', Admin::setStripe($db, $cfgS, 'abc', '') !== null && Admin::setStripe($db, $cfgS, '', 'nope') !== null && $db->metaGet('stripe_secret_key') === null);
+check('stripe: salvataggio e applicazione', Admin::setStripe($db, $cfgS, $skT, $whT) === null && \App\withSettings($db, $cfgS)['stripe']['secret_key'] === $skT && \App\withSettings($db, $cfgS)['stripe']['webhook_secret'] === $whT && Billing::enabled(\App\withSettings($db, $cfgS)));
+check('stripe: in chiaro nel database non compare', !str_contains((string)$db->metaGet('stripe_secret_key'), $skT) && !str_contains((string)$db->metaGet('stripe_webhook_secret'), $whT));
+check('stripe: campo vuoto lascia com\'è', Admin::setStripe($db, $cfgS, '', '') === null && \App\withSettings($db, $cfgS)['stripe']['secret_key'] === $skT);
+check('stripe: chiave di un altro sito non si legge', Admin::unseal(['secret' => 'altro'], $db->metaGet('stripe_secret_key')) === '');
+Admin::clearStripe($db);
+check('stripe: rimozione', \App\withSettings($db, $cfgS)['stripe'] === [] && !Billing::enabled(\App\withSettings($db, $cfgS)));
+check('stripe: il box admin mostra l\'indirizzo del webhook', str_contains(Pages::admin(['base_url' => 'https://x.it', 'trial_days' => 30], [], ['total' => 0, 'pending' => 0, 'trial' => 0, 'active' => 0, 'expired' => 0, 'clients' => 0, 'appointments' => 0], ['q' => '', 'plan' => ''], 'tok', 1), 'https://x.it/stripe-webhook'));
 check('giorni di prova: non impostati → vale config', Admin::trialDays($db) === null && \App\withSettings($db, ['trial_days' => 30])['trial_days'] === 30);
 check('giorni di prova: valori non validi rifiutati', !Admin::setTrialDays($db, 0) && !Admin::setTrialDays($db, 400) && Admin::trialDays($db) === null);
 check('giorni di prova: impostati dall\'admin e applicati', Admin::setTrialDays($db, 14) && \App\withSettings($db, ['trial_days' => 30])['trial_days'] === 14);
