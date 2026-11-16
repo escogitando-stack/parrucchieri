@@ -14,6 +14,7 @@ import { StaffList } from "./components/staff-list";
 import { ServiceList } from "./components/service-list";
 import { ProductList } from "./components/product-list";
 import { Settings } from "./components/settings";
+import { Guide } from "./components/guide";
 import { ErrorBanner } from "./components/error-banner";
 import { useAccount } from "@/lib/account";
 
@@ -54,6 +55,7 @@ export function App() {
       case "services": return <ServiceList />;
       case "products": return <ProductList />;
       case "settings": return <Settings />;
+      case "guide": return <Guide />;
       default: return <Dashboard />;
     }
   };

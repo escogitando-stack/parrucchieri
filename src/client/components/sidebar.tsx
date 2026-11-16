@@ -1,7 +1,7 @@
 import { AppNav, embedded } from "@clawnify/app/client";
 import { useEffect, useState } from "preact/hooks";
 import { useApp } from "../context";
-import { Menu, LayoutDashboard, CalendarDays, Clock, Users, UserCog, Sparkles, Package, LogOut, Settings, ShieldCheck, DollarSign, Check } from "lucide-preact";
+import { Menu, LayoutDashboard, CalendarDays, Clock, Users, UserCog, Sparkles, Package, LogOut, Settings, BookOpen, ShieldCheck, DollarSign, Check } from "lucide-preact";
 import { useAccount, useTerms } from "@/lib/account";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -19,6 +19,7 @@ const navItems: { view: View; path: string; label: string; icon: typeof LayoutDa
   { view: "services", path: "/services", label: "Servizi", icon: Sparkles },
   { view: "products", path: "/products", label: "Prodotti", icon: Package },
   { view: "settings", path: "/settings", label: "Impostazioni", icon: Settings },
+  { view: "guide", path: "/guida", label: "Guida", icon: BookOpen },
 ];
 
 /** Etichette del menu: personale, servizi e prodotti prendono il nome del tipo di attività. */
@@ -168,7 +169,7 @@ export function Sidebar({ currentView }: { currentView: View }) {
   }, []);
 
   if (embedded) {
-    const icons = ["home", "calendar-days", "clock", "users", "users", "sparkles", "package", "settings"];
+    const icons = ["home", "calendar-days", "clock", "users", "users", "sparkles", "package", "settings", "book-open"];
     return <AppNav title={businessName} icon="calendar-days" active={currentView}
       groups={[{ items: items.map((item, index) => ({
         id: item.view, label: item.label, href: item.path, icon: icons[index],

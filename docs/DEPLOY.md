@@ -170,6 +170,7 @@ Poi apri http://localhost:8080 (password `prova`). I test dell'API: `php php/tes
 - **Il cliente cambia i servizi**: nella stessa pagina `/sposta/<codice>` può aggiungere o togliere servizi (solo quelli prenotabili online). Gli orari liberi si ricalcolano sulla nuova durata, prezzo e durata si aggiornano, e tu ricevi l'email di modifica.
 - **Il titolare cambia i servizi di una prenotazione**: nel dettaglio prenotazione, riquadro "Servizi" → Modifica. Spunti i servizi, durata e totale si ricalcolano; se il nuovo orario di fine si sovrappone a un altro appuntamento ti chiede conferma.
 - **Giorni di prova**: nell'admin, box "Piani di abbonamento e prova", campo "Giorni di prova gratuita" (1–365). Vale per i nuovi iscritti e per i testi di home, email e pagine; ha la precedenza su `trial_days` di config.php. Chi è già in prova non cambia.
+- **Guida**: nuova voce "Guida" nel menu del backoffice (`/guida`) con i passi per usare l'app, aggiornata alle funzioni attuali. Il testo è in `src/client/components/guide.tsx`.
 
 ## Email automatiche e promemoria (gruppo 3)
 
