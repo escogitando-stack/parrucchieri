@@ -1,0 +1,27 @@
+Options -Indexes
+DirectoryIndex index.php
+
+<IfModule mod_rewrite.c>
+RewriteEngine On
+
+# Sempre HTTPS
+RewriteCond %{HTTPS} !=on
+RewriteCond %{HTTP:X-Forwarded-Proto} !https
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# API
+RewriteRule ^api(/|$) api.php [L]
+
+# Mai esporre il codice server né la pagina dell'app senza passare dal login
+RewriteRule ^(server/|app\.html$|\.ftp-deploy) - [F,L]
+
+# File statici (assets/...) serviti direttamente; ogni altra rotta passa dal login
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^ index.php [L]
+</IfModule>
+
+<IfModule mod_headers.c>
+<FilesMatch "\.(js|css|woff2?)$">
+Header set Cache-Control "public, max-age=31536000, immutable"
+</FilesMatch>
+</IfModule>
