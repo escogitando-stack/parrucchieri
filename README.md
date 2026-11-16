@@ -226,3 +226,6 @@ This project is part of the [OpenClaw](https://github.com/openclaw/openclaw) eco
 ## License
 
 AGPL-3.0
+
+## Sicurezza: segreti cifrati
+Chiave Stripe e segreto del webhook stanno nel database **cifrati** (AES-256-GCM, prefisso `enc1:`). La chiave di cifratura è in `server/config.key.php`, creato da solo alla prima richiesta, escluso da Git e dal deploy: **non cancellarlo** (se lo perdi basta reinserire le chiavi dal backoffice) e salvalo nei backup separatamente dal database. I valori salvati col vecchio metodo (`enc:`) restano leggibili e passano da soli al nuovo formato. Su Stripe conviene usare una *Restricted key* (`rk_live_…`).

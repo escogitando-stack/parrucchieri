@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace App;
 
+define('SEGRETI_DIR', __DIR__);
+require_once __DIR__ . '/segreti.php';
 require_once __DIR__ . '/Db.php';
 require_once __DIR__ . '/Schema.php';
 require_once __DIR__ . '/Api.php';
@@ -63,9 +65,13 @@ function withSettings(Db $db, array $cfg): array
         $cfg['trial_days'] = $days;
     }
     foreach (['secret_key' => 'stripe_secret_key', 'webhook_secret' => 'stripe_webhook_secret'] as $k => $meta) {
-        $v = Admin::unseal($cfg, $db->metaGet($meta));
+        $stored = $db->metaGet($meta);
+        $v = Admin::unseal($cfg, $stored);
         if ($v !== '') {
             $cfg['stripe'][$k] = $v;
+            if (!segreto_e_cifrato((string)$stored) && segreto_attivo()) {
+                $db->metaSet($meta, segreto_cifra($v));   // migrazione automatica al formato standard
+            }
         }
     }
     return $cfg;

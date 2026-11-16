@@ -6,3 +6,5 @@ data.db
 .vite
 /php/server/config.php
 *.db
+php/server/config.key.php
+config.key.php

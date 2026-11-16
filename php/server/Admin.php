@@ -111,8 +111,17 @@ final class Admin
         return $v !== null && ctype_digit($v) && (int)$v >= 1 ? (int)$v : null;
     }
 
-    /** Cifra un valore con la chiave segreta del sito (le chiavi Stripe non stanno in chiaro nel database). */
+    /**
+     * Cifra un valore (le chiavi Stripe non stanno in chiaro nel database).
+     * Standard: segreti.php (AES-256-GCM, prefisso enc1:, chiave in config.key.php); se la chiave non si può creare si usa il vecchio metodo.
+     */
     public static function seal(array $cfg, string $plain): string
+    {
+        return segreto_attivo() ? segreto_cifra($plain) : self::sealLegacy($cfg, $plain);
+    }
+
+    /** Vecchio metodo (prefisso enc:), con la chiave ricavata da config.php. Resta per leggere i valori già salvati. */
+    public static function sealLegacy(array $cfg, string $plain): string
     {
         $key = hash('sha256', 'seal|' . Notify::secret($cfg), true);
         $iv = random_bytes(12);
@@ -122,6 +131,9 @@ final class Admin
 
     public static function unseal(array $cfg, ?string $stored): string
     {
+        if ($stored !== null && segreto_e_cifrato($stored)) {
+            return segreto_decifra($stored);
+        }
         if ($stored === null || !str_starts_with($stored, 'enc:')) {
             return '';
         }

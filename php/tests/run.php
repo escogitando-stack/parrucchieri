@@ -880,7 +880,7 @@ check('stripe: valori non validi rifiutati', Admin::setStripe($db, $cfgS, 'abc',
 check('stripe: salvataggio e applicazione', Admin::setStripe($db, $cfgS, $skT, $whT) === null && \App\withSettings($db, $cfgS)['stripe']['secret_key'] === $skT && \App\withSettings($db, $cfgS)['stripe']['webhook_secret'] === $whT && Billing::enabled(\App\withSettings($db, $cfgS)));
 check('stripe: in chiaro nel database non compare', !str_contains((string)$db->metaGet('stripe_secret_key'), $skT) && !str_contains((string)$db->metaGet('stripe_webhook_secret'), $whT));
 check('stripe: campo vuoto lascia com\'è', Admin::setStripe($db, $cfgS, '', '') === null && \App\withSettings($db, $cfgS)['stripe']['secret_key'] === $skT);
-check('stripe: chiave di un altro sito non si legge', Admin::unseal(['secret' => 'altro'], $db->metaGet('stripe_secret_key')) === '');
+check('stripe: chiave di un altro sito non si legge', Admin::unseal(['secret' => 'altro'], Admin::sealLegacy($cfgS, $skT)) === '' && str_starts_with((string)$db->metaGet('stripe_secret_key'), 'enc1:') && Admin::unseal($cfgS, Admin::sealLegacy($cfgS, $skT)) === $skT);
 Admin::clearStripe($db);
 check('stripe: rimozione', \App\withSettings($db, $cfgS)['stripe'] === [] && !Billing::enabled(\App\withSettings($db, $cfgS)));
 check('stripe: il box admin mostra l\'indirizzo del webhook', str_contains(Pages::admin(['base_url' => 'https://x.it', 'trial_days' => 30], [], ['total' => 0, 'pending' => 0, 'trial' => 0, 'active' => 0, 'expired' => 0, 'clients' => 0, 'appointments' => 0], ['q' => '', 'plan' => ''], 'tok', 1), 'https://x.it/stripe-webhook'));

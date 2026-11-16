@@ -104,6 +104,8 @@ jobs:
             **/.git*
             **/.git*/**
             .cpanel.yml
+            **/config.php
+            **/config.key.php
 
       # Facoltativo: aggiorna e distribuisce da solo su cPanel (UAPI).
       # Funziona solo se configuri questi secrets: CPANEL_HOST (es. server.tuohost.it),
