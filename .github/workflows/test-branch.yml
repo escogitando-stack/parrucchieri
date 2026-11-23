@@ -12,6 +12,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
       - uses: shivammathur/setup-php@v2
         with:
           php-version: "8.3"
@@ -22,3 +31,24 @@ jobs:
 
       - name: Test (API PHP)
         run: php php/tests/run.php
+
+      - name: Dipendenze
+        run: pnpm install --frozen-lockfile
+
+      - name: Test (TypeScript)
+        run: pnpm test
+
+      - name: Compila l'interfaccia
+        run: pnpm build
+
+      # Anteprima del sito con SQLite: gh run download <id> -n anteprima
+      - name: Assembla il sito
+        run: scripts/assemble.sh "$RUNNER_TEMP/site"
+
+      - name: Salva l'anteprima
+        uses: actions/upload-artifact@v4
+        with:
+          name: anteprima
+          path: ${{ runner.temp }}/site
+          include-hidden-files: true
+          retention-days: 7

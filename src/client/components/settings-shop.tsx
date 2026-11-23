@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { shopPath } from "@/lib/demo";
 
 const selectClass = "h-11 w-full rounded-md border border-input bg-background px-3 text-sm sm:h-10";
 const MAX_LOGO_SIDE = 320;
@@ -189,7 +190,7 @@ export function ShopSettings() {
           </p>
           <div className="flex items-center gap-4">
             {account.has_logo ? (
-              <img src={`/${account.slug}/logo?v=${Date.now()}`} alt="Logo" className="h-16 w-16 rounded-lg border bg-white object-contain" />
+              <img src={`${shopPath(account.slug)}/logo?v=${Date.now()}`} alt="Logo" className="h-16 w-16 rounded-lg border bg-white object-contain" />
             ) : (
               <div className="flex h-16 w-16 items-center justify-center rounded-lg border bg-muted text-xs text-muted-foreground">Nessun logo</div>
             )}
@@ -201,7 +202,7 @@ export function ShopSettings() {
           </div>
           <div className="flex items-center gap-4">
             {account.has_cover ? (
-              <img src={`/${account.slug}/copertina?v=${Date.now()}`} alt="Copertina" className="h-20 w-16 rounded-t-full rounded-b-md border bg-white object-cover" />
+              <img src={`${shopPath(account.slug)}/copertina?v=${Date.now()}`} alt="Copertina" className="h-20 w-16 rounded-t-full rounded-b-md border bg-white object-cover" />
             ) : (
               <div className="flex h-20 w-16 items-center justify-center rounded-t-full rounded-b-md border bg-muted px-1 text-center text-[10px] text-muted-foreground">Nessuna foto</div>
             )}
@@ -237,7 +238,7 @@ export function ShopSettings() {
             <div className="flex flex-wrap gap-2">
               {(account.photos ?? []).map((id) => (
                 <div key={id} className="relative">
-                  <img src={`/${account.slug}/foto/${id}`} alt="" className="h-20 w-20 rounded-md border object-cover" />
+                  <img src={`${shopPath(account.slug)}/foto/${id}`} alt="" className="h-20 w-20 rounded-md border object-cover" />
                   <button type="button" disabled={photoBusy} onClick={() => removePhoto(id)} className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full border bg-white text-xs shadow" aria-label="Togli la foto">✕</button>
                 </div>
               ))}

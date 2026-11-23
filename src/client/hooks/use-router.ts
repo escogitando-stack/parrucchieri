@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "preact/hooks";
 import type { View } from "../types";
+import { stripBase, withBase } from "../lib/demo";
 
 export interface RouteState {
   view: View;
@@ -20,7 +21,7 @@ const VIEW_ROUTES: Record<string, View> = {
 };
 
 function parseRoute(path: string): RouteState {
-  const clean = path.replace(/^\/+|\/+$/g, "");
+  const clean = stripBase(path).replace(/^\/+|\/+$/g, "");
   const segments = clean.split("/");
   const viewKey = segments[0] || "";
   const view = VIEW_ROUTES[viewKey] || "dashboard";
@@ -32,7 +33,7 @@ export function useRouter() {
   const [route, setRoute] = useState<RouteState>(() => parseRoute(window.location.pathname));
 
   const navigate = useCallback((to: string) => {
-    window.history.pushState(null, "", to);
+    window.history.pushState(null, "", withBase(to));
     setRoute(parseRoute(to));
   }, []);
 

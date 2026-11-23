@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import type { View } from "../types";
+import { IS_DEMO } from "@/lib/demo";
 
 const navItems: { view: View; path: string; label: string; icon: typeof LayoutDashboard }[] = [
   { view: "dashboard", path: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -35,6 +36,7 @@ function useNavItems() {
 
 /** Pagine del sito (fuori dall'app): statistiche e pacchetti. */
 function ExtraLinks() {
+  if (IS_DEMO) return null;
   const cls = "flex min-h-11 w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-0";
   return (
     <>
@@ -66,6 +68,13 @@ function AdminLink() {
 
 function TrialBanner() {
   const account = useAccount();
+  if (IS_DEMO) {
+    return (
+      <a href="/registrati" className="mx-2 mb-2 block rounded-md bg-primary px-3 py-2 text-center text-xs font-semibold text-primary-foreground hover:bg-primary/90">
+        Ti piace? Inizia la prova gratuita
+      </a>
+    );
+  }
   if (!account || account.plan.state !== "trial") return null;
   const days = account.plan.days_left;
   return (
@@ -138,11 +147,11 @@ function SidebarContent({ currentView, onNavigate }: { currentView: View; onNavi
         <TrialBanner />
         <AdminLink />
         <a
-          href="/logout"
+          href={IS_DEMO ? "/" : "/logout"}
           className="flex min-h-11 w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-0"
         >
           <LogOut className="h-4 w-4" />
-          Esci
+          {IS_DEMO ? "Esci dalla demo" : "Esci"}
         </a>
       </div>
     </div>

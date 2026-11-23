@@ -17,6 +17,7 @@ import { Settings } from "./components/settings";
 import { Guide } from "./components/guide";
 import { ErrorBanner } from "./components/error-banner";
 import { useAccount } from "@/lib/account";
+import { IS_DEMO } from "@/lib/demo";
 
 export function App() {
   const isAgent = useMemo(() => {
@@ -62,6 +63,12 @@ export function App() {
 
   return (
     <AppContext.Provider value={appState}>
+      {IS_DEMO && (
+        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-amber-100 px-4 py-2 text-center text-sm text-amber-900">
+          <span>Questo è un esempio con dati finti: prova pure a cambiare tutto, niente viene salvato davvero.</span>
+          <a className="font-semibold underline" href="/registrati">Prova gratis con la tua attività</a>
+        </div>
+      )}
       {account?.impersonating && (
         <div className="flex items-center justify-between gap-3 bg-amber-100 px-4 py-2 text-sm text-amber-900">
           <span>Stai guardando il negozio “{account.business_name}” come amministratore.</span>

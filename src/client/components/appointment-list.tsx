@@ -10,6 +10,7 @@ import { StatusBadge } from "./status-badge";
 import { Pagination } from "./pagination";
 import { CreateAppointment } from "./create-appointment";
 import { formatDateIt, formatEuro } from "@/lib/format";
+import { IS_DEMO } from "@/lib/demo";
 
 export function AppointmentList() {
   const t = useTerms();
@@ -26,9 +27,11 @@ export function AppointmentList() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Appuntamenti</h1>
         <div className="flex items-center gap-2">
-          <Button asChild variant="outline" size="sm" className="min-h-11 sm:min-h-0">
-            <a href="/export/appuntamenti.csv" download>Esporta CSV</a>
-          </Button>
+          {!IS_DEMO && (
+            <Button asChild variant="outline" size="sm" className="min-h-11 sm:min-h-0">
+              <a href="/export/appuntamenti.csv" download>Esporta CSV</a>
+            </Button>
+          )}
           <Button size="sm" className="min-h-11 sm:min-h-0" onClick={() => setShowCreate(true)}>
             <Plus className="mr-1 h-3.5 w-3.5" /> Nuova prenotazione
           </Button>

@@ -8,3 +8,4 @@ data.db
 *.db
 php/server/config.key.php
 config.key.php
+php/server/demo/

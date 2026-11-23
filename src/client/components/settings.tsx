@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { ShopSettings } from "./settings-shop";
 import { WorkingHours } from "./settings-hours";
 import { Closures, Notifications } from "./settings-closures";
+import { IS_DEMO } from "@/lib/demo";
 
 const selectClass = "h-11 w-full rounded-md border border-input bg-background px-3 text-sm sm:h-10";
 
@@ -109,7 +110,7 @@ export function Settings() {
       <Closures />
       <Notifications />
 
-      <Card>
+      {!IS_DEMO && <Card>
         <CardContent className="space-y-3 p-4 sm:p-6">
           <h2 className="text-lg font-semibold">Abbonamento</h2>
           <p className="text-sm text-muted-foreground">{planText(account)}</p>
@@ -117,9 +118,9 @@ export function Settings() {
             <a href="/abbonamento">{account.plan.state === "active" ? "Gestisci abbonamento" : "Scegli un piano"}</a>
           </Button>
         </CardContent>
-      </Card>
+      </Card>}
 
-      <Card>
+      {!IS_DEMO && <Card>
         <CardContent className="space-y-4 p-4 sm:p-6">
           <h2 className="text-lg font-semibold">Password</h2>
           <p className="text-sm text-muted-foreground">Email di accesso: {account.email}</p>
@@ -136,7 +137,7 @@ export function Settings() {
             {passwordSaved && <span className="text-sm text-emerald-700">Password aggiornata</span>}
           </div>
         </CardContent>
-      </Card>
+      </Card>}
     </div>
   );
 }

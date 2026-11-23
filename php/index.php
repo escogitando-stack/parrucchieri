@@ -37,8 +37,39 @@ if ($method === 'POST' && $path !== '/stripe-webhook' && ($_SERVER['HTTP_SEC_FET
     exit('Richiesta non consentita');
 }
 
-$db = App\connect($cfg);
-$cfg = App\withSettings($db, $cfg);
+// Demo pubblica: /esempio è il pannello del titolare con dati finti, su un database usa e getta.
+$isDemoApp = $path === App\Demo::BASE || preg_match('#^' . App\Demo::BASE . '/(dashboard|calendar|appointments|clients|staff|services|products|settings|guida)(/\d+)?$#', $path) === 1;
+if ($isDemoApp) {
+    header('X-Robots-Tag: noindex, nofollow');
+    $app = __DIR__ . '/app.html';
+    if (!App\Demo::available() || !is_file($app)) {
+        http_response_code(503);
+        echo Pages::demoUnavailable($cfg);
+        exit;
+    }
+    App\Demo::openOrCreate($cfg);
+    header('Content-Type: text/html; charset=utf-8');
+    echo App\Demo::appHtml((string)file_get_contents($app));
+    exit;
+}
+// La pagina di prenotazione del negozio demo (/esempio/negozio) usa le stesse rotte di /nome-negozio.
+$demoShop = null;
+if (preg_match('#^' . App\Demo::BASE . '/negozio(/.*)?$#', $path, $dm)) {
+    header('X-Robots-Tag: noindex, nofollow');
+    $demoShop = App\Demo::available() ? App\Demo::open() : null;
+    if ($demoShop === null) {
+        redirect(App\Demo::BASE);
+    }
+    $cfg = App\Demo::cfg($cfg);
+    $demoSlug = '/' . (string)($demoShop[0]->row('SELECT slug FROM accounts WHERE id = ?', [$demoShop[1]])['slug'] ?? '');
+    $path = $demoSlug . ($dm[1] ?? '');
+    ob_start(static fn(string $out): string => str_replace(["'" . $demoSlug, '"' . $demoSlug], ["'" . App\Demo::BASE . '/negozio', '"' . App\Demo::BASE . '/negozio'], $out));
+}
+
+$db = $demoShop !== null ? $demoShop[0] : App\connect($cfg);
+if ($demoShop === null) {
+    $cfg = App\withSettings($db, $cfg);
+}
 
 // Pagine di presentazione per categoria: /per/dentista, /per/gommista...
 if (preg_match('#^/per/([a-z0-9-]{2,32})$#', $path, $pm)) {
@@ -55,7 +86,7 @@ if (preg_match('#^/per/([a-z0-9-]{2,32})$#', $path, $pm)) {
 // Indicazioni per i motori di ricerca: home e pagine dei negozi attivi, mai le demo.
 if ($path === '/robots.txt') {
     header('Content-Type: text/plain; charset=utf-8');
-    echo "User-agent: *\nDisallow: /admin\nDisallow: /api/\nSitemap: " . baseUrl($cfg) . "/sitemap.xml\n";
+    echo "User-agent: *\nDisallow: /admin\nDisallow: /api/\nDisallow: /esempio\nSitemap: " . baseUrl($cfg) . "/sitemap.xml\n";
     exit;
 }
 if ($path === '/sitemap.xml') {
@@ -406,6 +437,12 @@ if (preg_match('#^/([a-z0-9][a-z0-9-]{1,78}[a-z0-9])(?:/(logo|copertina|giorni|o
         }
         $json(405, ['error' => 'Metodo non consentito']);
     }
+}
+if ($demoShop !== null) {
+    // Nella demo esistono solo le pagine del negozio: niente sessioni vere su questo database.
+    http_response_code(404);
+    echo Shop::notFound($cfg);
+    exit;
 }
 
 if ($accountId === null) {

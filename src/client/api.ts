@@ -6,13 +6,20 @@ export class ApiError extends Error {
   }
 }
 
+import { BASE, IS_DEMO } from "./lib/demo";
+
 export async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
   const opts: RequestInit = { method, headers: {} };
   if (body) {
     (opts.headers as Record<string, string>)["Content-Type"] = "application/json";
     opts.body = JSON.stringify(body);
   }
-  const r = await fetch(path, opts);
+  const r = await fetch(BASE + path, opts);
+  if (r.status === 401 && IS_DEMO) {
+    // Demo scaduta: si ricarica e ne parte una nuova.
+    window.location.href = BASE;
+    throw new Error("Demo scaduta");
+  }
   if (r.status === 401) {
     // Sessione scaduta: si torna alla pagina di accesso.
     window.location.href = "/login";

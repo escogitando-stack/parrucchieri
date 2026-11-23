@@ -1276,5 +1276,33 @@ check('pagina pacchetti', str_contains($pp, '5 pieghe') && str_contains($pp, 'Sc
 Auth::logout();
 check('elimina account: anche pacchetti e carnet', Admin::delete($db, $oid) && (int)$db->row('SELECT COUNT(*) AS c FROM client_packages')['c'] === 0 && (int)$db->row('SELECT COUNT(*) AS c FROM packages')['c'] === 0);
 
+// ── Demo pubblica (/esempio) ──
+fwrite(STDOUT, "Demo pubblica\n");
+$sentBefore = count(\App\Mailer::$sent);
+$dbD = \App\connect(['db' => ['driver' => 'sqlite', 'path' => ':memory:']]);
+$demoId = \App\Demo::seed($dbD, \App\Demo::cfg([]));
+$cnt = static fn(string $sql): int => (int)$dbD->row($sql)['c'];
+check('demo: un negozio, tre collaboratori, sedici clienti, sei prodotti', $cnt('SELECT COUNT(*) AS c FROM accounts') === 1 && $cnt('SELECT COUNT(*) AS c FROM staff') === 3 && $cnt('SELECT COUNT(*) AS c FROM clients') === 16 && $cnt('SELECT COUNT(*) AS c FROM products') === 6);
+check('demo: agenda piena e tre richieste da approvare', $cnt('SELECT COUNT(*) AS c FROM appointments') > 80 && $cnt("SELECT COUNT(*) AS c FROM appointments WHERE status = 'requested'") === 3 && $cnt("SELECT COUNT(*) AS c FROM appointments WHERE status = 'completed'") > 20);
+$apiD = new \App\Api($dbD, $demoId, \App\Demo::cfg([]));
+[$stD, $statsD] = $apiD->handle('GET', '/api/stats');
+check('demo: statistiche dall\'API vera', $stD === 200 && $statsD['pending_requests'] === 3 && $statsD['revenue'] > 0 && $statsD['low_stock_products'] >= 1);
+$reqD = $dbD->row("SELECT id FROM appointments WHERE status = 'requested' ORDER BY id LIMIT 1");
+[$stA] = $apiD->handle('POST', '/api/appointments/' . (int)$reqD['id'] . '/approve', [], ['allow_conflict' => true]);
+check('demo: si può approvare una richiesta senza inviare email', $stA === 200 && count(\App\Mailer::$sent) === $sentBefore);
+[$stAcc, $accD] = $apiD->handle('GET', '/api/account');
+check('demo: account in prova, non amministratore', $stAcc === 200 && $accD['account']['plan']['state'] === 'trial' && $accD['account']['is_admin'] === false);
+check('demo: pagina dell\'app con la modalità demo', str_contains(\App\Demo::appHtml('<html><head><title>x</title></head><body></body></html>'), 'window.A4M_DEMO={base:"/esempio"}</script></head>') && str_contains(\App\Demo::appHtml('<html><head></head></html>'), 'noindex'));
+check('home: pulsante Vedi un esempio', str_contains(Pages::landing(['trial_days' => 30]), 'href="/esempio">Vedi un esempio</a>') && str_contains(Pages::landing(['trial_days' => 30]), 'href="/registrati">Inizia la prova gratuita</a>'));
+@mkdir(\App\Demo::dir(), 0750, true);
+$old = \App\Demo::dir() . '/' . str_repeat('a', 32) . '.sqlite';
+$new = \App\Demo::dir() . '/' . str_repeat('b', 32) . '.sqlite';
+file_put_contents($old, 'x'); touch($old, time() - 4 * 3600);
+file_put_contents($new, 'x');
+\App\Demo::cleanup();
+check('demo: le demo scadute si cancellano, le altre restano', !is_file($old) && is_file($new));
+@unlink($new);
+@rmdir(\App\Demo::dir());
+
 fwrite(STDOUT, "\n$passed ok, $failed falliti\n");
 exit($failed === 0 ? 0 : 1);

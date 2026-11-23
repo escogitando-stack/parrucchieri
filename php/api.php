@@ -17,13 +17,25 @@ function respond(int $status, array $data): never
     exit;
 }
 
-$accountId = Auth::accountId();
-if ($accountId === null) {
-    respond(401, ['error' => 'Non autorizzato: effettua di nuovo l\'accesso']);
-}
-
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $path = (string)parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
+
+// Demo pubblica (/esempio/api/...): stessa API, ma sul database usa e getta del visitatore.
+$demo = null;
+if (str_starts_with($path, App\Demo::BASE . '/api/')) {
+    $demo = App\Demo::available() ? App\Demo::open() : null;
+    if ($demo === null) {
+        respond(401, ['error' => 'La demo è scaduta: ricarica la pagina per ricominciare.', 'code' => 'demo_expired']);
+    }
+    $path = substr($path, strlen(App\Demo::BASE));
+    $cfg = App\Demo::cfg($cfg);
+    $accountId = $demo[1];
+} else {
+    $accountId = Auth::accountId();
+    if ($accountId === null) {
+        respond(401, ['error' => 'Non autorizzato: effettua di nuovo l\'accesso']);
+    }
+}
 
 $body = null;
 if ($method !== 'GET' && $method !== 'HEAD') {
@@ -44,7 +56,7 @@ if ($method !== 'GET' && $method !== 'HEAD') {
 }
 
 try {
-    $db = App\connect($cfg);
+    $db = $demo !== null ? $demo[0] : App\connect($cfg);
     $acct = Auth::account($db, $accountId);
     if ($acct === null) {
         respond(401, ['error' => 'Non autorizzato: effettua di nuovo l\'accesso']);
@@ -58,6 +70,11 @@ try {
     }
     $api = new App\Api($db, $accountId, $cfg);
     [$status, $data] = $api->handle($method, $path, $_GET, $body);
+    if ($demo !== null && isset($data['account']) && is_array($data['account'])) {
+        // Nella demo la pagina del negozio è quella di prova, non un indirizzo vero.
+        $data['account']['shop_url'] = App\Demo::shopUrl($cfg);
+        $data['account']['email'] = 'demo@example.com';
+    }
     respond($status, $data);
 } catch (Throwable $e) {
     error_log('[appuntamenti] ' . $e);

@@ -4,6 +4,7 @@ import { useAccount } from "@/lib/account";
 import { Copy, Printer } from "lucide-preact";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { shopPath } from "@/lib/demo";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -59,7 +60,7 @@ export function ShareCard() {
   if (!account) return null;
 
   const url = account.shop_url;
-  const qr = `/${account.slug}/qr.svg`;
+  const qr = `${shopPath(account.slug)}/qr.svg`;
 
   const copy = async () => {
     try {

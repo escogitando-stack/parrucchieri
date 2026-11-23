@@ -88,6 +88,7 @@ $head<style>
   .btn{display:inline-block;background:#be185d;color:#fff!important;border:0;border-radius:10px;padding:13px 22px;font-size:16px;font-weight:600;text-decoration:none;cursor:pointer}
   .btn:hover{background:#9d174d}
   .btn.alt{background:#fff;color:#be185d!important;border:1px solid #e7c5d4}
+  .hero-cta{display:flex;flex-wrap:wrap;gap:12px;justify-content:center}
   .hero{padding:56px 0 36px;text-align:center}
   .hero h1{font-size:clamp(30px,5vw,48px);line-height:1.15;margin:0 0 16px;letter-spacing:-.02em}
   .hero p{font-size:19px;color:#57534e;max-width:640px;margin:0 auto 26px}
@@ -320,6 +321,14 @@ SVG;
         ];
     }
 
+    /** La demo non può partire (server senza SQLite o deploy incompleto). @param array<string,mixed> $cfg */
+    public static function demoUnavailable(array $cfg): string
+    {
+        $body = '<div class="box"><h1>Esempio non disponibile</h1><p class="sub">In questo momento la demo non si può aprire. Puoi provare l\'agenda gratis creando un account: ti serve un minuto.</p>'
+            . '<div class="cta"><a class="btn" href="/registrati">Prova gratis</a> <a class="btn alt" href="/">Torna alla home</a></div></div>';
+        return self::layout($cfg, 'Esempio non disponibile', $body, true);
+    }
+
     /** @param array<string,mixed> $cfg */
     public static function landing(array $cfg, array $dbPlans = [], array $examples = []): string
     {
@@ -393,8 +402,8 @@ SVG;
 <section class="hero">
   <h1>L'agenda degli appuntamenti per il tuo negozio</h1>
   <p>Una pagina di prenotazione tutta tua, conferme e promemoria automatici, clienti e incassi in un unico posto. Funziona da telefono, tablet e computer. Provalo gratis per $days giorni.</p>
-  <a class="btn" href="/registrati">Inizia la prova gratuita</a>
-  <p style="font-size:14px;margin:12px auto 0;color:#78716c">Nessuna carta di credito richiesta.</p>
+  <div class="hero-cta"><a class="btn" href="/registrati">Inizia la prova gratuita</a><a class="btn alt" href="/esempio">Vedi un esempio</a></div>
+  <p style="font-size:14px;margin:12px auto 0;color:#78716c">Nessuna carta di credito richiesta. L'esempio si apre subito, senza registrarti.</p>
   <div class="shot">$hero</div>
   <div class="chips">$chips</div>
 </section>
