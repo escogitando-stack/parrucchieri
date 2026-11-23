@@ -52,3 +52,14 @@ jobs:
           path: ${{ runner.temp }}/site
           include-hidden-files: true
           retention-days: 7
+
+      - name: Prova la demo /esempio
+        run: scripts/demo-smoke.sh "$RUNNER_TEMP/site" "$RUNNER_TEMP/demo"
+
+      - name: Salva gli screenshot della demo
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-screenshot
+          path: ${{ runner.temp }}/demo
+          retention-days: 7
