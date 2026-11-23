@@ -86,6 +86,18 @@ final class Plans
         return (fmod($price, 1.0) === 0.0 ? number_format($price, 0, ',', '.') : number_format($price, 2, ',', '.')) . ' €';
     }
 
+    /** Prezzo come si mostra ai negozi: i piani sono salvati IVA esclusa. */
+    public static function netLabel(float $price): string
+    {
+        return self::priceLabel($price) . ' + IVA';
+    }
+
+    /** Totale con IVA al 22%, quello che il cliente paga davvero su Stripe. */
+    public static function grossLabel(float $price): string
+    {
+        return self::priceLabel(round($price * 1.22, 2)) . ' IVA inclusa';
+    }
+
     public static function durationLabel(int $days): string
     {
         return match (true) {

@@ -1,0 +1,24 @@
+name: Test PHP (branch)
+
+# Prova l'API PHP sui branch di lavoro senza pubblicare nulla:
+# la pubblicazione resta solo su main (deploy.yml).
+on:
+  push:
+    branches-ignore: [main, master, deploy]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: pdo_sqlite, mbstring
+
+      - name: Sintassi
+        run: find php -name '*.php' -print0 | xargs -0 -n1 php -l > /dev/null
+
+      - name: Test (API PHP)
+        run: php php/tests/run.php

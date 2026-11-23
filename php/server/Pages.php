@@ -278,7 +278,7 @@ SVG;
      * @param array<string,mixed> $cfg
      * @return array<int,array{0:string,1:string}>
      */
-    public static function faq(array $cfg): array
+    public static function faq(array $cfg, array $dbPlans = []): array
     {
         $days = (int)($cfg['trial_days'] ?? 30);
         $pricing = $cfg['pricing'] ?? [];
@@ -293,6 +293,12 @@ SVG;
         }
         $cost = "Provi tutto gratis per $days giorni. Poi " . ($prices ? implode(' e ', $prices) . '.' : 'scegli tra il piano mensile e quello annuale.')
             . ' Il prezzo è lo stesso per tutte le funzioni, senza limiti di clienti, appuntamenti o collaboratori.';
+        if ($dbPlans !== []) {
+            $list = array_map(static fn(array $p): string => $p['name'] . ' a ' . Plans::netLabel($p['price']) . ' ' . Plans::durationLabel($p['duration_days']), $dbPlans);
+            $cost = "Provi tutto gratis per $days giorni. Poi "
+                . (count($list) === 1 ? "c'è un solo piano: " . $list[0] . '.' : 'scegli tra: ' . implode(', ', $list) . '.')
+                . ' Il prezzo è lo stesso per tutte le funzioni, senza limiti di clienti, appuntamenti o collaboratori.';
+        }
         $contact = !empty($cfg['contact_email'])
             ? 'Scrivici a ' . (string)$cfg['contact_email'] . ': ti rispondiamo appena possibile.'
             : 'Contattaci dal sito: ti rispondiamo appena possibile.';
@@ -334,6 +340,8 @@ SVG;
             . '<p style="margin-top:16px"><a class="btn" href="/registrati">Inizia gratis</a></p></div>';
         if ($dbPlans !== []) {
             // Piani gestiti dall'amministratore (nome, durata e prezzo).
+            // Con un solo piano non c'è un "più conveniente": la card resta evidenziata come piano unico.
+            $single = count($dbPlans) === 1;
             $bestId = 0;
             foreach ($dbPlans as $p) {
                 if ($p['duration_days'] >= 365) {
@@ -341,8 +349,10 @@ SVG;
                 }
             }
             foreach ($dbPlans as $p) {
-                $isBest = $p['id'] === $bestId;
-                $plansHtml .= '<div class="card plan' . ($isBest ? ' best' : '') . '">' . ($isBest ? '<span class="tag">Il più conveniente</span>' : '') . '<h3>' . self::h($p['name']) . '</h3><div class="price">' . self::h(Plans::priceLabel($p['price'])) . ' <small>' . self::h(Plans::durationLabel($p['duration_days'])) . '</small></div>' . $included . '</div>';
+                $isBest = $single || $p['id'] === $bestId;
+                $tag = $single ? 'Tutto incluso' : 'Il più conveniente';
+                $plansHtml .= '<div class="card plan' . ($isBest ? ' best' : '') . '">' . ($isBest ? '<span class="tag">' . $tag . '</span>' : '') . '<h3>' . self::h($p['name']) . '</h3><div class="price">' . self::h(Plans::netLabel($p['price'])) . ' <small>' . self::h(Plans::durationLabel($p['duration_days'])) . '</small></div>' . $included
+                    . '<p class="note" style="text-align:left">Dopo la prova gratuita di ' . $days . ' giorni. ' . self::h(Plans::grossLabel($p['price'])) . '.</p></div>';
             }
         } else {
             if ($monthly !== '') {
@@ -357,7 +367,7 @@ SVG;
 
         $faqHtml = '';
         $faqLd = [];
-        foreach (self::faq($cfg) as [$q, $a]) {
+        foreach (self::faq($cfg, $dbPlans) as [$q, $a]) {
             $faqHtml .= '<details><summary>' . self::h($q) . '</summary><p>' . self::h($a) . '</p></details>';
             $faqLd[] = ['@type' => 'Question', 'name' => $q, 'acceptedAnswer' => ['@type' => 'Answer', 'text' => $a]];
         }
@@ -650,7 +660,8 @@ HTML;
                     continue;
                 }
                 $buttons .= '<form method="post" action="/abbonamento/acquista" style="margin:10px 0"><input type="hidden" name="piano" value="' . (int)$p['id'] . '"><button class="btn" style="width:100%">'
-                    . 'Scegli ' . self::h($p['name']) . ' · ' . self::h(Plans::priceLabel($p['price'])) . ' ' . self::h(Plans::durationLabel($p['duration_days'])) . '</button></form>';
+                    . 'Scegli ' . self::h($p['name']) . ' · ' . self::h(Plans::netLabel($p['price'])) . ' ' . self::h(Plans::durationLabel($p['duration_days'])) . '</button></form>'
+                    . '<p class="note" style="margin:-4px 0 10px;text-align:center">' . self::h(Plans::grossLabel($p['price'])) . '</p>';
             }
             if ($buttons === '') {
                 $buttons = '<p class="sub">Contattaci per attivare l\'abbonamento: ' . self::h(self::contactEmail($cfg)) . '</p>';
