@@ -829,7 +829,7 @@ check('etichette', Plans::priceLabel(19.0) === '19 €' && Plans::priceLabel(190
 check('piano modificato', Plans::save($dbL, $byName['Mensile']['id'], ['name' => 'Mensile Plus', 'duration_days' => 30, 'price' => '25', 'active' => '1']) === null && count(Plans::active($dbL)) === 2 && Plans::find($dbL, $byName['Mensile']['id'])['name'] === 'Mensile Plus');
 $landP = Pages::landing(['trial_days' => 30], Plans::all($dbL));
 check('home: piani dal database', str_contains($landP, 'Annuale') && str_contains($landP, '190,50 €') && str_contains($landP, 'all&#039;anno'));
-check('home: prezzi IVA esclusa con totale', str_contains($landP, '190,50 € + IVA') && str_contains($landP, '232,41 € IVA inclusa') && str_contains($landP, 'scegli tra: Annuale a 190,50 € + IVA'));
+check('home: prezzi IVA esclusa con totale', str_contains($landP, '190,50 € + IVA') && !str_contains($landP, 'IVA inclusa') && str_contains($landP, 'scegli tra: Annuale a 190,50 € + IVA'));
 $one = [Plans::find($dbL, $byName['Annuale']['id'])];
 $landOne = Pages::landing(['trial_days' => 30], $one);
 check('home: piano unico', str_contains($landOne, 'Tutto incluso') && !str_contains($landOne, 'Il più conveniente') && str_contains($landOne, 'c&#039;è un solo piano: Annuale a 190,50 € + IVA all&#039;anno') && str_contains($landOne, 'prova gratuita di 30 giorni'));

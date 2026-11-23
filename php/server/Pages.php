@@ -361,7 +361,7 @@ SVG;
                 $isBest = $single || $p['id'] === $bestId;
                 $tag = $single ? 'Tutto incluso' : 'Il più conveniente';
                 $plansHtml .= '<div class="card plan' . ($isBest ? ' best' : '') . '">' . ($isBest ? '<span class="tag">' . $tag . '</span>' : '') . '<h3>' . self::h($p['name']) . '</h3><div class="price">' . self::h(Plans::netLabel($p['price'])) . ' <small>' . self::h(Plans::durationLabel($p['duration_days'])) . '</small></div>' . $included
-                    . '<p class="note" style="text-align:left">Dopo la prova gratuita di ' . $days . ' giorni. ' . self::h(Plans::grossLabel($p['price'])) . '.</p></div>';
+                    . '<p class="note" style="text-align:left">Dopo la prova gratuita di ' . $days . ' giorni.</p></div>';
             }
         } else {
             if ($monthly !== '') {
