@@ -23,10 +23,12 @@ code() { curl -s -o /dev/null -w '%{http_code}' -b "$J" -c "$J" "$@"; }
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1 (atteso $3, avuto $2)"; fail=1; fi; }
 check "home" "$(code http://127.0.0.1:8099/)" 200
-curl -s http://127.0.0.1:8099/ | grep -q 'href="/esempio">Vedi un esempio' && echo "ok   pulsante in home" || { echo "FAIL pulsante in home"; fail=1; }
+curl -s http://127.0.0.1:8099/ > "$OUT/home.html"
+grep -q 'href="/esempio">Vedi un esempio' "$OUT/home.html" && echo "ok   pulsante in home" || { echo "FAIL pulsante in home"; fail=1; }
 check "api demo senza sessione" "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8099/esempio/api/stats)" 401
 check "pagina /esempio" "$(code http://127.0.0.1:8099/esempio)" 200
-curl -s -b "$J" http://127.0.0.1:8099/esempio | grep -q 'A4M_DEMO' && echo "ok   modalità demo accesa" || { echo "FAIL modalità demo"; fail=1; }
+curl -s -b "$J" http://127.0.0.1:8099/esempio > "$OUT/esempio.html"
+grep -q 'A4M_DEMO' "$OUT/esempio.html" && echo "ok   modalità demo accesa" || { echo "FAIL modalità demo"; fail=1; }
 check "api demo con sessione" "$(code http://127.0.0.1:8099/esempio/api/stats)" 200
 curl -s -b "$J" http://127.0.0.1:8099/esempio/api/stats; echo
 check "api vera non toccata dalla demo" "$(code http://127.0.0.1:8099/api/stats)" 401
