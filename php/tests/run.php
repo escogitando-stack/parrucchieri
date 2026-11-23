@@ -1288,8 +1288,12 @@ $apiD = new \App\Api($dbD, $demoId, \App\Demo::cfg([]));
 [$stD, $statsD] = $apiD->handle('GET', '/api/stats');
 check('demo: statistiche dall\'API vera', $stD === 200 && $statsD['pending_requests'] === 3 && $statsD['revenue'] > 0 && $statsD['low_stock_products'] >= 1);
 $reqD = $dbD->row("SELECT id FROM appointments WHERE status = 'requested' ORDER BY id LIMIT 1");
+// Senza il driver forzato dei test: deve valere quello delle impostazioni demo ("array" = registrata, mai spedita).
+$drvBefore = \App\Mailer::$driver;
+\App\Mailer::$driver = null;
 [$stA] = $apiD->handle('POST', '/api/appointments/' . (int)$reqD['id'] . '/approve', [], ['allow_conflict' => true]);
-check('demo: si può approvare una richiesta senza inviare email', $stA === 200 && count(\App\Mailer::$sent) === $sentBefore);
+\App\Mailer::$driver = $drvBefore;
+check('demo: si può approvare una richiesta, l\'email resta solo registrata', $stA === 200 && count(\App\Mailer::$sent) === $sentBefore + 1);
 [$stAcc, $accD] = $apiD->handle('GET', '/api/account');
 check('demo: account in prova, non amministratore', $stAcc === 200 && $accD['account']['plan']['state'] === 'trial' && $accD['account']['is_admin'] === false);
 check('demo: pagina dell\'app con la modalità demo', str_contains(\App\Demo::appHtml('<html><head><title>x</title></head><body></body></html>'), 'window.A4M_DEMO={base:"/esempio"}</script></head>') && str_contains(\App\Demo::appHtml('<html><head></head></html>'), 'noindex'));
