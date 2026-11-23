@@ -1297,6 +1297,7 @@ check('demo: si può approvare una richiesta, l\'email resta solo registrata', $
 [$stAcc, $accD] = $apiD->handle('GET', '/api/account');
 check('demo: account in prova, non amministratore', $stAcc === 200 && $accD['account']['plan']['state'] === 'trial' && $accD['account']['is_admin'] === false);
 check('demo: pagina dell\'app con la modalità demo', str_contains(\App\Demo::appHtml('<html><head><title>x</title></head><body></body></html>'), 'window.A4M_DEMO={base:"/esempio"}</script></head>') && str_contains(\App\Demo::appHtml('<html><head></head></html>'), 'noindex'));
+check('home: voce di menu Prezzi', str_contains(Pages::landing(['trial_days' => 30]), '<a href="#costi">Prezzi</a>') && !str_contains(Pages::landing(['trial_days' => 30]), '>Costi</a>'));
 check('home: pulsante Vedi un esempio', str_contains(Pages::landing(['trial_days' => 30]), 'href="/esempio">Vedi un esempio</a>') && str_contains(Pages::landing(['trial_days' => 30]), 'href="/registrati">Inizia la prova gratuita</a>'));
 @mkdir(\App\Demo::dir(), 0750, true);
 $old = \App\Demo::dir() . '/' . str_repeat('a', 32) . '.sqlite';
