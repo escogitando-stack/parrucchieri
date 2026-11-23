@@ -31,16 +31,18 @@ check "api demo con sessione" "$(code http://127.0.0.1:8099/esempio/api/stats)" 
 curl -s -b "$J" http://127.0.0.1:8099/esempio/api/stats; echo
 check "api vera non toccata dalla demo" "$(code http://127.0.0.1:8099/api/stats)" 401
 check "pagina negozio demo" "$(code http://127.0.0.1:8099/esempio/negozio)" 200
-curl -s -b "$J" http://127.0.0.1:8099/esempio/negozio | grep -q "var BASE='/esempio/negozio'" && echo "ok   prenotazione sul negozio demo" || { echo "FAIL base negozio demo"; fail=1; }
+curl -s -b "$J" http://127.0.0.1:8099/esempio/negozio > "$OUT/negozio.html"
+grep -q "var BASE='/esempio/negozio'" "$OUT/negozio.html" && echo "ok   prenotazione sul negozio demo" || { echo "FAIL base negozio demo"; fail=1; }
 check "rotta demo sconosciuta" "$(code http://127.0.0.1:8099/esempio/negozio/boh)" 404
-# Screenshot con Chrome (sessione nuova per ogni pagina: la demo si crea da sola).
+# Screenshot con Chrome: un profilo condiviso tiene il cookie, quindi tutte le pagine sono della stessa demo.
 CH=$(command -v google-chrome || command -v chromium || true)
 if [ -n "$CH" ]; then
   for page in "esempio" "esempio/calendar" "esempio/clients" "esempio/negozio" ""; do
     name=$(echo "${page:-home}" | tr '/' '-')
-    "$CH" --headless=new --no-sandbox --disable-gpu --hide-scrollbars --window-size=1366,900 --virtual-time-budget=6000 --screenshot="$OUT/$name.png" "http://127.0.0.1:8099/$page" > /dev/null 2>&1 || true
-    "$CH" --headless=new --no-sandbox --disable-gpu --hide-scrollbars --window-size=390,844 --virtual-time-budget=6000 --screenshot="$OUT/$name-mobile.png" "http://127.0.0.1:8099/$page" > /dev/null 2>&1 || true
+    "$CH" --user-data-dir="$OUT/profilo" --headless=new --no-sandbox --disable-gpu --hide-scrollbars --window-size=1366,900 --virtual-time-budget=6000 --screenshot="$OUT/$name.png" "http://127.0.0.1:8099/$page" > /dev/null 2>&1 || true
+    "$CH" --user-data-dir="$OUT/profilo" --headless=new --no-sandbox --disable-gpu --hide-scrollbars --window-size=390,844 --virtual-time-budget=6000 --screenshot="$OUT/$name-mobile.png" "http://127.0.0.1:8099/$page" > /dev/null 2>&1 || true
   done
 fi
+rm -rf "$OUT/profilo"
 grep -i -E "fatal|warning|error" "$OUT/server.log" | grep -v " 40[14] " | head -20 || true
 exit $fail

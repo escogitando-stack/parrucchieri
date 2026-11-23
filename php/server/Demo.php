@@ -136,7 +136,7 @@ final class Demo
             [
                 'demo@example.com', password_hash(bin2hex(random_bytes(8)), PASSWORD_DEFAULT), 'Salone Esempio',
                 date('Y-m-d H:i:s', $now + 30 * 86400), '0565 000000', 'Via Roma 1, Piombino',
-                'Taglio, colore e piega su appuntamento. Prenota online in un minuto.', "Mar-Sab 9-13 e 15-19",
+                'Taglio, colore e piega su appuntamento. Prenota online in un minuto.', "Lun-Sab 9-13 e 15-19",
             ]
         );
         $acct = $db->lastId();
@@ -158,7 +158,7 @@ final class Demo
             $staff[] = (int)$call('POST', '/api/staff', ['name' => $n, 'title' => $t, 'color' => $c])['staff']['id'];
         }
         $week = [];
-        foreach ([2, 3, 4, 5, 6] as $d) {
+        foreach ([1, 2, 3, 4, 5, 6] as $d) {
             $week[] = ['weekday' => $d, 'start_time' => '09:00', 'end_time' => '13:00'];
             $week[] = ['weekday' => $d, 'start_time' => '15:00', 'end_time' => '19:00'];
         }
@@ -188,7 +188,8 @@ final class Demo
             $clients[] = (int)$call('POST', '/api/clients', ['name' => $name, 'phone' => '+39 ' . $phone, 'email' => $email, 'notes' => $note])['client']['id'];
         }
 
-        // Agenda: schema fisso per giorno, ripetuto da 14 giorni fa a 10 giorni avanti (martedì-sabato).
+        // Agenda: schema fisso per giorno, ripetuto da 14 giorni fa a 10 giorni avanti (lunedì-sabato,
+        // più oggi anche se è domenica, così chi apre la demo trova sempre la giornata piena).
         $pattern = [
             [0, '09:00', ['Taglio donna']], [0, '10:00', ['Colore', 'Piega']], [0, '15:00', ['Taglio donna']], [0, '17:00', ['Piega']],
             [1, '09:30', ['Taglio uomo', 'Barba']], [1, '11:00', ['Taglio uomo']], [1, '15:30', ['Taglio uomo']], [1, '16:30', ['Taglio donna']],
@@ -199,7 +200,7 @@ final class Demo
         for ($off = -14; $off <= 10; $off++) {
             $ts = $now + $off * 86400;
             $dow = (int)date('N', $ts);
-            if ($dow === 1 || $dow === 7) {
+            if ($dow === 7 && $off !== 0) {
                 continue;
             }
             $date = date('Y-m-d', $ts);
@@ -230,8 +231,8 @@ final class Demo
         // Richieste online da approvare.
         foreach ([[1, '12:00', ['Taglio donna'], 'Se possibile con Giulia, grazie!'], [2, '18:00', ['Taglio uomo'], ''], [3, '11:30', ['Piega'], 'Ho un matrimonio il giorno dopo.']] as $i => [$days, $time, $names, $note]) {
             $ts = $now + $days * 86400;
-            if ((int)date('N', $ts) === 1 || (int)date('N', $ts) === 7) {
-                $ts += 2 * 86400;
+            if ((int)date('N', $ts) === 7) {
+                $ts += 86400;
             }
             $apt = $call('POST', '/api/appointments', [
                 'client_id' => $clients[(10 + $i) % count($clients)], 'staff_id' => null, 'scheduled_date' => date('Y-m-d', $ts),
