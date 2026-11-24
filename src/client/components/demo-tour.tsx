@@ -65,7 +65,7 @@ export function DemoTour() {
       const el = step.target ? document.querySelector(`[data-tour="${step.target}"]`) : null;
       if (el) {
         el.classList.add("tour-focus");
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.scrollIntoView({ behavior: "smooth", block: "nearest" });
         lastFocus.current = el;
       } else {
         document.querySelector("main")?.scrollTo({ top: 0, behavior: "smooth" });
