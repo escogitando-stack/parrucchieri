@@ -496,6 +496,7 @@ final class Admin
     }
 
     public const ACTION_LABELS = [
+        'site_save' => 'Dati del sito salvati',
         'approve' => 'Approvato', 'impersonate' => 'Entrato nel negozio', 'extend' => 'Prova prolungata', 'assign' => 'Piano assegnato',
         'activate' => 'Attivato fino a una data', 'suspend' => 'Sospeso / riattivato', 'reset' => 'Nuova password', 'delete' => 'Eliminato',
         'email' => 'Email di accesso cambiata', 'deliver' => 'Demo consegnata', 'duplicate' => 'Demo creata', 'showcase' => 'Esempi della home',

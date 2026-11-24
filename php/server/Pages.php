@@ -17,21 +17,21 @@ final class Pages
         return (string)($cfg['site_name'] ?? 'Appuntamenti4me');
     }
 
+    /** true sulle pagine di presentazione (home, categorie, contatti, legali): mostra il pulsante WhatsApp. */
+    public static bool $marketing = false;
+
     /** @param array<string,mixed> $cfg */
     public static function layout(array $cfg, string $title, string $body, bool $narrow = false, bool $wide = false, ?string $nav = null, string $head = '', ?string $brand = null, ?string $footer = null): string
     {
         $name = self::h(self::name($cfg));
-        $brandHtml = $brand ?? '<a class="brand" href="/">📅 ' . $name . '</a>';
+        $brandHtml = $brand ?? '<a class="brand" href="/" aria-label="' . $name . ', home">' . Site::logoSvg(28) . '<span>' . $name . '</span></a>';
         $t = self::h($title);
         $wrap = $narrow ? 'wrap narrow' : ($wide ? 'wrap wide' : 'wrap');
         $nav ??= '<a href="/login">Accedi</a><a href="/registrati">Prova gratis</a>';
-        $links = ' · <a href="/contatti">Contatti</a>';
-        foreach (['terms_url' => 'Termini', 'privacy_url' => 'Privacy'] as $k => $label) {
-            if (!empty($cfg[$k])) {
-                $links .= ' · <a href="' . self::h((string)$cfg[$k]) . '">' . $label . '</a>';
-            }
-        }
-        $footerHtml = $footer ?? ('© ' . $name . $links);
+        $footerHtml = $footer !== null
+            ? $footer . '<p class="legal-mini"><a href="/privacy-policy">Privacy</a> · <a href="/cookie-policy">Cookie</a> · <a href="#" data-cookie-prefs>Preferenze cookie</a></p>'
+            : self::siteFooter($cfg);
+        $chrome = self::cookieBanner() . (self::$marketing ? self::whatsappFab() : '');
         return <<<HTML
 <!DOCTYPE html>
 <html lang="it">
@@ -39,6 +39,8 @@ final class Pages
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>$t</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#be185d">
 $head<style>
   *{box-sizing:border-box}
   html{scroll-behavior:smooth}
@@ -46,6 +48,29 @@ $head<style>
   a{color:#be185d}
   header.top{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;max-width:1040px;margin:0 auto;padding:18px 20px}
   header.top .brand{font-weight:700;font-size:18px;color:#1c1917;text-decoration:none}
+  header.top .brand{display:inline-flex;align-items:center;gap:8px}
+  .sitefoot{border-top:1px solid #e7e5e4;padding-top:24px;display:grid;gap:14px;justify-items:center}
+  .sitefoot nav{display:flex;flex-wrap:wrap;gap:6px 18px;justify-content:center}
+  .sitefoot nav a{text-decoration:none;font-weight:600;padding:4px 0}
+  .social{display:flex;gap:10px;justify-content:center}
+  .social a{width:40px;height:40px;border-radius:50%;border:1px solid #e7c5d4;background:#fff;display:flex;align-items:center;justify-content:center;color:#be185d}
+  .social a:hover{background:#fce7f3}
+  .sitefoot p{margin:0}
+  .legal-mini{margin-top:8px!important;font-size:13px}
+  .wa-fab{position:fixed;right:18px;bottom:18px;z-index:40;width:56px;height:56px;border-radius:50%;background:#25d366;color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 24px rgba(0,0,0,.2)}
+  .wa-fab svg{width:30px;height:30px}
+  .legal{background:#fff;border:1px solid #e7e5e4;border-radius:14px;padding:8px 26px 22px;margin:10px 0}
+  .legal h2{text-align:left;font-size:20px;margin:24px 0 6px}
+  .legal p,.legal li{color:#44403c;font-size:15px}
+  #cookie-banner{position:fixed;left:12px;right:12px;bottom:12px;z-index:50;max-width:720px;margin:0 auto;background:#fff;border:1px solid #e7e5e4;border-radius:16px;box-shadow:0 18px 50px rgba(0,0,0,.18);padding:18px 20px;font-size:14px;color:#44403c}
+  #cookie-banner[hidden]{display:none}
+  #cookie-banner h2{font-size:17px;text-align:left;margin:0 0 6px}
+  #cookie-banner p{margin:0 0 12px}
+  #cookie-banner .cb-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  #cookie-banner .cb-actions button{margin:0;width:100%;padding:11px 10px;font-size:15px;border-radius:10px;font-weight:600;cursor:pointer;border:1px solid #be185d;background:#fff;color:#be185d}
+  #cookie-banner .cb-prefs{margin:0 0 12px;display:grid;gap:8px}
+  #cookie-banner .cb-prefs label{margin:0;font-weight:400;display:flex;gap:8px;align-items:flex-start;font-size:14px}
+  @media(max-width:520px){#cookie-banner .cb-actions{grid-template-columns:1fr}}
   header.top nav a{margin-left:16px;text-decoration:none;font-weight:600;font-size:15px;white-space:nowrap}
   @media(max-width:700px){
     header.top{padding:14px 16px;gap:10px}
@@ -150,11 +175,116 @@ $head<style>
 $body
 </div>
 <footer>$footerHtml</footer>
+$chrome
 </body>
 </html>
 HTML;
     }
 
+
+    /** Piè di pagina del sito: link, legali, social, dati fiscali e credits. */
+    private static function siteFooter(array $cfg): string
+    {
+        $name = self::h(self::name($cfg));
+        $social = '';
+        foreach (Site::socials() as $net => $url) {
+            $social .= '<a href="' . self::h($url) . '" target="_blank" rel="noopener" aria-label="' . self::h(ucfirst($net)) . '">' . Site::socialIcon($net) . '</a>';
+        }
+        $wa = Site::whatsappUrl();
+        if ($wa !== '') {
+            $social .= '<a href="' . self::h($wa) . '" target="_blank" rel="noopener" aria-label="WhatsApp">' . Site::socialIcon('whatsapp') . '</a>';
+        }
+        return '<div class="sitefoot">'
+            . '<nav aria-label="Link del sito"><a href="/#vantaggi">Funzioni</a><a href="/#costi">Prezzi</a><a href="/#faq">Domande frequenti</a><a href="/esempio">Esempio</a><a href="/contatti">Contatti</a><a href="/registrati">Prova gratis</a></nav>'
+            . ($social !== '' ? '<div class="social">' . $social . '</div>' : '')
+            . '<p>© ' . date('Y') . ' ' . $name . ' · ' . self::h(Site::ownerLine()) . '</p>'
+            . '<p><a href="/privacy-policy">Privacy Policy</a> · <a href="/cookie-policy">Cookie Policy</a> · <a href="#" data-cookie-prefs>Preferenze cookie</a></p>'
+            . '<p>Realizzato da <a href="https://www.sh1ftup.it" target="_blank" rel="noopener">Sh1ftup Adv</a></p>'
+            . '</div>';
+    }
+
+    private static function whatsappFab(): string
+    {
+        $wa = Site::whatsappUrl();
+        return $wa === '' ? '' : '<a class="wa-fab" href="' . self::h($wa) . '" target="_blank" rel="noopener" aria-label="Scrivici su WhatsApp">' . Site::socialIcon('whatsapp') . '</a>';
+    }
+
+    /**
+     * Banner cookie (Garante privacy): Accetta / Rifiuta / Personalizza con lo stesso peso.
+     * Gli script statistici o di marketing vanno inseriti come <script type="text/plain" data-cookie-category="statistici|marketing">:
+     * vengono attivati solo dopo il consenso.
+     */
+    private static function cookieBanner(): string
+    {
+        return <<<'HTML'
+<div id="cookie-banner" role="dialog" aria-live="polite" aria-labelledby="cb-title" hidden>
+  <h2 id="cb-title">Cookie</h2>
+  <p>Usiamo cookie tecnici necessari al funzionamento del sito. Con il tuo consenso potremmo usare anche cookie statistici e di marketing. Dettagli nella <a href="/cookie-policy">Cookie Policy</a>.</p>
+  <div class="cb-prefs" hidden>
+    <label><input type="checkbox" checked disabled> Necessari (sempre attivi)</label>
+    <label><input type="checkbox" data-cat="statistici"> Statistici</label>
+    <label><input type="checkbox" data-cat="marketing"> Marketing</label>
+  </div>
+  <div class="cb-actions">
+    <button type="button" data-cb="reject">Rifiuta</button>
+    <button type="button" data-cb="custom">Personalizza</button>
+    <button type="button" data-cb="accept">Accetta</button>
+  </div>
+</div>
+<script>
+(function(){
+  var K='a4m_consent',b=document.getElementById('cookie-banner');if(!b)return;
+  var prefs=b.querySelector('.cb-prefs'),boxes=b.querySelectorAll('[data-cat]');
+  function read(){var m=document.cookie.match(/(?:^|; )a4m_consent=([^;]*)/);try{return m?JSON.parse(decodeURIComponent(m[1])):null}catch(e){return null}}
+  function apply(c){document.querySelectorAll('script[type="text/plain"][data-cookie-category]').forEach(function(s){if(c[s.getAttribute('data-cookie-category')]){var n=document.createElement('script');for(var i=0;i<s.attributes.length;i++){var a=s.attributes[i];if(a.name!=='type')n.setAttribute(a.name,a.value)}n.text=s.text;s.replaceWith(n)}})}
+  function save(c){c.t=Date.now();document.cookie=K+'='+encodeURIComponent(JSON.stringify(c))+'; Max-Age=15552000; Path=/; SameSite=Lax'+(location.protocol==='https:'?'; Secure':'');b.hidden=true;apply(c)}
+  function open(){var c=read()||{};boxes.forEach(function(x){x.checked=!!c[x.getAttribute('data-cat')]});b.hidden=false}
+  b.addEventListener('click',function(e){var a=e.target.getAttribute&&e.target.getAttribute('data-cb');if(!a)return;
+    if(a==='accept')save({statistici:true,marketing:true});
+    else if(a==='reject')save({statistici:false,marketing:false});
+    else if(prefs.hidden){prefs.hidden=false;e.target.textContent='Salva scelte'}
+    else{var c={};boxes.forEach(function(x){c[x.getAttribute('data-cat')]=x.checked});save(c)}});
+  document.addEventListener('click',function(e){var l=e.target.closest&&e.target.closest('[data-cookie-prefs]');if(l){e.preventDefault();prefs.hidden=false;b.querySelector('[data-cb=custom]').textContent='Salva scelte';open()}});
+  var c=read();if(c)apply(c);else b.hidden=false;
+})();
+</script>
+HTML;
+    }
+
+    /** Canonical, Open Graph e Twitter card per le pagine pubbliche. */
+    public static function shareMeta(array $cfg, string $url, string $title, string $desc): string
+    {
+        $img = Notify::baseUrl($cfg) . '/og-image.png';
+        return '<link rel="canonical" href="' . self::h($url) . '">' . "\n"
+            . '<meta property="og:type" content="website">' . "\n"
+            . '<meta property="og:locale" content="it_IT">' . "\n"
+            . '<meta property="og:site_name" content="' . self::h(self::name($cfg)) . '">' . "\n"
+            . '<meta property="og:url" content="' . self::h($url) . '">' . "\n"
+            . '<meta property="og:title" content="' . self::h($title) . '">' . "\n"
+            . '<meta property="og:description" content="' . self::h($desc) . '">' . "\n"
+            . '<meta property="og:image" content="' . self::h($img) . '">' . "\n"
+            . '<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">' . "\n"
+            . '<meta name="twitter:card" content="summary_large_image">' . "\n";
+    }
+
+    /** Pagine Privacy Policy e Cookie Policy (testi modificabili da /admin). */
+    public static function legal(array $cfg, string $which): string
+    {
+        $s = Site::settings();
+        $email = self::contactEmail($cfg);
+        $isPrivacy = $which === 'privacy';
+        $text = $isPrivacy ? $s['privacy_text'] : $s['cookie_text'];
+        if (trim($text) === '') {
+            $text = $isPrivacy ? Site::defaultPrivacy($email) : Site::defaultCookie($email);
+        }
+        $title = $isPrivacy ? 'Privacy Policy' : 'Cookie Policy';
+        $url = Notify::baseUrl($cfg) . ($isPrivacy ? '/privacy-policy' : '/cookie-policy');
+        $body = '<section class="hero" style="padding-bottom:10px"><h1>' . $title . '</h1><p>' . ($isPrivacy ? 'Come trattiamo i dati personali di negozi e clienti.' : 'Quali cookie usa il sito e come gestire le tue scelte.') . '</p></section>'
+            . '<article class="legal">' . Site::textToHtml($text) . '</article>';
+        $head = '<meta name="description" content="' . self::h($title . ' di ' . self::name($cfg) . ': titolare, dati trattati, finalità, diritti e contatti.') . '">' . "\n"
+            . self::shareMeta($cfg, $url, $title . ' · ' . self::name($cfg), $title . ' di ' . self::name($cfg));
+        return self::layout($cfg, $title . ' · ' . self::name($cfg), $body, false, false, null, $head);
+    }
 
     /** Illustrazione della home: agenda sul computer e prenotazione sul telefono (disegno originale). */
     public static function heroImage(): string
@@ -382,10 +512,24 @@ SVG;
         }
         $ld = json_encode(['@context' => 'https://schema.org', '@type' => 'FAQPage', 'mainEntity' => $faqLd], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP);
 
-        $desc = "Agenda online per parrucchieri, centri estetici, unghie, officine e studi di tatuaggi: appuntamenti, clienti, collaboratori e incassi. Prova gratis per $days giorni.";
+        $desc = "Agenda appuntamenti online e prenotazioni 24/7 per parrucchieri, estetisti, barbieri, officine e studi: clienti, promemoria e incassi. Prova gratis $days giorni.";
+        $base = Notify::baseUrl($cfg);
+        $title = 'Agenda appuntamenti online per negozi · ' . $name;
+        $offers = [['@type' => 'Offer', 'name' => 'Prova gratuita di ' . $days . ' giorni', 'price' => '0', 'priceCurrency' => 'EUR']];
+        foreach ($dbPlans as $p) {
+            $offers[] = ['@type' => 'Offer', 'name' => (string)$p['name'], 'price' => number_format((float)$p['price'], 2, '.', ''), 'priceCurrency' => 'EUR',
+                'priceSpecification' => ['@type' => 'UnitPriceSpecification', 'price' => number_format((float)$p['price'], 2, '.', ''), 'priceCurrency' => 'EUR', 'valueAddedTaxIncluded' => false, 'billingDuration' => 'P' . (int)$p['duration_days'] . 'D']];
+        }
+        $graph = json_encode(['@context' => 'https://schema.org', '@graph' => [
+            ['@type' => 'Organization', '@id' => $base . '/#org', 'name' => $name, 'url' => $base . '/', 'logo' => $base . '/favicon.svg', 'email' => self::contactEmail($cfg),
+                'sameAs' => array_values(Site::socials()), 'parentOrganization' => ['@type' => 'Organization', 'name' => 'Sh1ftup Adv', 'url' => 'https://www.sh1ftup.it']],
+            ['@type' => 'WebSite', '@id' => $base . '/#website', 'url' => $base . '/', 'name' => $name, 'inLanguage' => 'it-IT', 'publisher' => ['@id' => $base . '/#org']],
+            ['@type' => 'SoftwareApplication', 'name' => $name, 'url' => $base . '/', 'applicationCategory' => 'BusinessApplication', 'applicationSubCategory' => 'Agenda appuntamenti e prenotazioni online',
+                'operatingSystem' => 'Web, iOS, Android, Windows, macOS', 'inLanguage' => 'it-IT', 'description' => $desc, 'image' => $base . '/og-image.png', 'offers' => $offers, 'publisher' => ['@id' => $base . '/#org']],
+        ]], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP);
         $head = '<meta name="description" content="' . self::h($desc) . '">' . "\n"
-            . '<meta property="og:title" content="' . self::h($name) . ' · Agenda appuntamenti per il tuo negozio">' . "\n"
-            . '<meta property="og:description" content="' . self::h($desc) . '">' . "\n"
+            . self::shareMeta($cfg, $base . '/', $title, $desc)
+            . '<script type="application/ld+json">' . $graph . '</script>' . "\n"
             . '<script type="application/ld+json">' . $ld . '</script>' . "\n";
 
         $i_grid = self::icon('grid');
@@ -453,7 +597,7 @@ $costs
 <div class="cta"><a class="btn" href="/registrati">Crea il tuo account gratis</a><p class="note">$days giorni di prova, nessuna carta di credito.</p></div>
 HTML;
         $nav = '<a href="#vantaggi">Vantaggi</a><a href="#clienti">Per i clienti</a><a href="#costi">Prezzi</a><a href="#faq">Domande</a><a href="/contatti">Contatti</a><a href="/login">Accedi</a><a class="btn" style="color:#fff;padding:8px 16px;margin-left:16px" href="/registrati">Prova gratis</a>';
-        return self::layout($cfg, $name . ' · Agenda appuntamenti per il tuo negozio', $body, false, false, $nav, $head);
+        return self::layout($cfg, $title, $body, false, false, $nav, $head);
     }
 
     /**
@@ -470,25 +614,28 @@ HTML;
             $tel = preg_replace('/[^0-9+]/', '', $phone);
             $rows .= '<li><span class="ico">' . self::icon('phone') . '</span><span><small>Telefono</small><a href="tel:' . self::h((string)$tel) . '">' . self::h($phone) . '</a></span></li>';
         }
-        $wa = preg_replace('/\D/', '', (string)($c['whatsapp'] ?? ''));
+        $cfgWa = preg_replace('/\D/', '', (string)($c['whatsapp'] ?? '')) ?? '';
+        $wa = $cfgWa !== '' ? 'https://wa.me/' . $cfgWa : Site::whatsappUrl();
         if ($wa !== '') {
-            $rows .= '<li><span class="ico">' . self::icon('chat') . '</span><span><small>WhatsApp</small><a href="https://wa.me/' . self::h((string)$wa) . '" rel="noopener">Scrivici su WhatsApp</a></span></li>';
+            $rows .= '<li><span class="ico">' . Site::socialIcon('whatsapp') . '</span><span><small>WhatsApp</small><a href="' . self::h($wa) . '" target="_blank" rel="noopener">Scrivici su WhatsApp</a></span></li>';
+        }
+        foreach (Site::socials() as $net => $url) {
+            $rows .= '<li><span class="ico">' . Site::socialIcon($net) . '</span><span><small>' . self::h(ucfirst($net)) . '</small><a href="' . self::h($url) . '" target="_blank" rel="noopener">' . self::h(preg_replace('#^https://(www\.)?#', '', $url)) . '</a></span></li>';
         }
         $name = trim((string)($c['name'] ?? ''));
         $address = trim((string)($c['address'] ?? ''));
         $vat = trim((string)($c['vat'] ?? ''));
-        $who = '';
-        if ($name !== '' || $address !== '' || $vat !== '') {
-            $who = '<div class="card" style="margin-top:16px"><h3>Riferimenti</h3><p>'
-                . ($name !== '' ? '<b>' . self::h($name) . '</b><br>' : '')
-                . ($address !== '' ? self::h($address) . '<br>' : '')
-                . ($vat !== '' ? 'P. IVA ' . self::h($vat) : '')
-                . '</p></div>';
-        }
+        $who = '<div class="card" style="margin-top:16px"><h3>Riferimenti</h3><p>'
+            . ($name !== '' || $address !== '' || $vat !== ''
+                ? ($name !== '' ? '<b>' . self::h($name) . '</b><br>' : '') . ($address !== '' ? self::h($address) . '<br>' : '') . ($vat !== '' ? 'P. IVA ' . self::h($vat) : '')
+                : self::h(Site::ownerLine()))
+            . '</p></div>';
         $body = '<section class="hero" style="padding-bottom:10px"><h1>Contatti</h1><p>Hai domande o vuoi una mano a iniziare? Scrivici: rispondiamo appena possibile.</p></section>'
             . '<div class="card"><ul class="contact-list">' . $rows . '</ul></div>' . $who
             . '<div class="cta"><a class="btn" href="/registrati">Prova gratis</a> <a class="btn alt" href="/">Torna alla home</a></div>';
-        $head = '<meta name="description" content="' . self::h('Contatta ' . self::name($cfg) . ': ' . $email) . '">' . "\n";
+        $cdesc = 'Contatta ' . self::name($cfg) . ' per informazioni sull\'agenda appuntamenti online: email, WhatsApp e social. Ti aiutiamo a iniziare.';
+        $head = '<meta name="description" content="' . self::h($cdesc) . '">' . "\n"
+            . self::shareMeta($cfg, Notify::baseUrl($cfg) . '/contatti', 'Contatti · ' . self::name($cfg), $cdesc);
         return self::layout($cfg, 'Contatti · ' . self::name($cfg), $body, true, false, null, $head);
     }
 
@@ -535,6 +682,7 @@ HTML;
   <div class="hp" aria-hidden="true"><label>Sito web <input name="website" tabindex="-1" autocomplete="off"></label></div>
   $terms
   <button class="btn" type="submit">Crea account e inizia</button>
+  <p class="muted" style="margin:12px 0 0;text-align:center">Creando l'account dichiari di aver letto la <a href="/privacy-policy" target="_blank" rel="noopener">Privacy Policy</a>.</p>
 </form>
 <p class="alt-link">Hai già un account? <a href="/login">Accedi</a></p>
 HTML;
@@ -837,7 +985,7 @@ HTML;
             . '<p class="sub" style="text-align:left;margin:8px 0 12px;font-size:14px">Nome, durata in giorni e prezzo. I piani attivi compaiono nella home del sito e nella pagina Abbonamento; con il codice Stripe il cliente può pagare online, senza codice li assegni tu da "Azioni".</p>'
             . $planRows . '</details>';
         $demoBox = self::adminInsights((array)($extra['insights'] ?? []), $csrf) . self::adminDemoBox($csrf, $extra);
-        $catBox = self::adminCategoriesBox($csrf, $extra) . self::adminToolsBox($csrf, (array)($extra['log'] ?? []));
+        $catBox = self::adminCategoriesBox($csrf, $extra) . self::adminSiteBox($csrf) . self::adminToolsBox($csrf, (array)($extra['log'] ?? []));
         $n = $notice ? '<p class="ok">' . $notice . '</p>' : ''; // già escapato da chi lo costruisce
         $e = $error ? '<p class="err">' . self::h($error) . '</p>' : '';
         $q = self::h($f['q']);
@@ -1106,6 +1254,7 @@ HTML;
         }
         $ex = $ex !== '' ? '<p class="cl-exs">Guarda una pagina vera: ' . $ex . '</p>' : '';
         $faqs = '';
+        $faqLd = [];
         foreach ([
             ['Quanto ci vuole per partire?', 'Pochi minuti: ti registri, trovi già il listino con ' . count($services) . ' voci tipiche per ' . $lower . ', con durate e prezzi indicativi; lo adatti e condividi il link della tua pagina.'],
             ['Posso cambiare ' . $svcWord . ', prezzi e orari?', 'Sì, tutto: aggiungi, togli o modifichi voci del listino, durate, prezzi, orari di lavoro e chiusure per ferie.'],
@@ -1113,14 +1262,22 @@ HTML;
             ['Quanto costa?', 'Provi gratis per ' . $days . ' giorni con tutte le funzioni, senza carta di credito. Poi scegli il piano che preferisci.'],
         ] as [$q, $a]) {
             $faqs .= '<details><summary>' . self::h($q) . '</summary><p>' . self::h($a) . '</p></details>';
+            $faqLd[] = ['@type' => 'Question', 'name' => $q, 'acceptedAnswer' => ['@type' => 'Answer', 'text' => $a]];
         }
-        $title = 'Gestionale appuntamenti per ' . $lower . ' · ' . $site;
+        $title = 'Gestionale appuntamenti per '  . $lower . ' · ' . $site;
         $desc = 'Agenda online e prenotazioni 24/7 per ' . $lower . ': ' . $svcWord . ' già pronti, promemoria automatici e pagina di prenotazione. Prova gratis ' . $days . ' giorni.';
-        $ld = json_encode(['@context' => 'https://schema.org', '@type' => 'SoftwareApplication', 'name' => $site . ' per ' . $lower, 'applicationCategory' => 'BusinessApplication', 'operatingSystem' => 'Web', 'description' => $desc, 'offers' => ['@type' => 'Offer', 'price' => '0', 'priceCurrency' => 'EUR', 'description' => 'Prova gratuita di ' . $days . ' giorni']], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG);
+        $pageUrl = Notify::baseUrl($cfg) . '/per/' . $key;
+        $ld = json_encode(['@context' => 'https://schema.org', '@graph' => [
+            ['@type' => 'SoftwareApplication', 'name' => $site . ' per ' . $lower, 'url' => $pageUrl, 'applicationCategory' => 'BusinessApplication', 'operatingSystem' => 'Web', 'inLanguage' => 'it-IT', 'description' => $desc, 'offers' => ['@type' => 'Offer', 'price' => '0', 'priceCurrency' => 'EUR', 'description' => 'Prova gratuita di ' . $days . ' giorni']],
+            ['@type' => 'BreadcrumbList', 'itemListElement' => [
+                ['@type' => 'ListItem', 'position' => 1, 'name' => $site, 'item' => Notify::baseUrl($cfg) . '/'],
+                ['@type' => 'ListItem', 'position' => 2, 'name' => 'Per ' . $lower, 'item' => $pageUrl],
+            ]],
+            ['@type' => 'FAQPage', 'mainEntity' => $faqLd],
+        ]], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP);
         $vars = '--bg:' . $st['bg'] . ';--surface:' . $st['surface'] . ';--ink:' . $st['ink'] . ';--muted:' . $st['muted'] . ';--acc:' . $st['acc'] . ';--acc2:' . $st['acc2'] . ';--soft:' . $st['soft'] . ';--on-acc:' . ($dark ? '#1a1716' : '#fff') . ';--line:' . ($dark ? 'rgba(255,255,255,.12)' : 'rgba(0,0,0,.09)') . ';--fh:' . $font;
         $head = '<meta name="description" content="' . self::h($desc) . '">' . "\n"
-            . '<meta property="og:title" content="' . self::h($title) . '">' . "\n"
-            . '<link rel="canonical" href="' . self::h(Notify::baseUrl($cfg) . '/per/' . $key) . '">' . "\n"
+            . self::shareMeta($cfg, $pageUrl, $title, $desc)
             . '<script type="application/ld+json">' . $ld . '</script>' . "\n"
             . '<style>:root{' . $vars . '}' . <<<'CSS'
 html body{background:var(--bg);color:var(--ink)}html body header.top .brand,html body header.top nav a{color:var(--ink)}html body footer,html body footer a{color:var(--muted)}
@@ -1163,6 +1320,24 @@ CSS . '</style>';
     }
 
     /** Riquadro "Sicurezza e backup": registro delle azioni e download del backup. @param array<int,array<string,mixed>> $log */
+    /** Dati del sito: titolare, WhatsApp, social e testi di Privacy/Cookie Policy. */
+    private static function adminSiteBox(string $csrf): string
+    {
+        $s = Site::settings();
+        $f = static fn(string $k, string $label, string $ph = '', string $type = 'text'): string
+            => '<label>' . $label . '<input type="' . $type . '" name="' . $k . '" value="' . self::h($s[$k]) . '" placeholder="' . self::h($ph) . '"></label>';
+        $t = static fn(string $k, string $label): string
+            => '<label style="grid-column:1/-1">' . $label . '<textarea name="' . $k . '" rows="10" style="width:100%;font:14px/1.5 system-ui,sans-serif;padding:10px;border:1px solid #d6d3d1;border-radius:10px" placeholder="Lascia vuoto per usare il testo standard. ## Titolo, - elenco, riga vuota tra i paragrafi.">' . self::h($s[$k]) . '</textarea></label>';
+        return '<details class="card" id="sito" style="margin:0 0 18px"><summary style="cursor:pointer;font-weight:700">Sito, contatti e pagine legali</summary>'
+            . '<p class="muted" style="margin:10px 0">Questi dati compaiono nel piè di pagina, nella pagina Contatti, nel pulsante WhatsApp e nelle pagine <a href="/privacy-policy" target="_blank">Privacy Policy</a> e <a href="/cookie-policy" target="_blank">Cookie Policy</a>.</p>'
+            . '<form method="post" action="/admin#sito"><input type="hidden" name="csrf" value="' . self::h($csrf) . '"><div class="grid2">'
+            . $f('owner_name', 'Titolare (ragione sociale)') . $f('owner_cf', 'Codice fiscale') . $f('owner_vat', 'Partita IVA', 'facoltativa') . $f('owner_address', 'Sede', 'facoltativa')
+            . $f('whatsapp', 'Numero WhatsApp', '393331234567') . $f('whatsapp_text', 'Messaggio WhatsApp precompilato')
+            . $f('facebook', 'Facebook', 'https://', 'url') . $f('instagram', 'Instagram', 'https://', 'url') . $f('youtube', 'YouTube', 'https://', 'url') . $f('linkedin', 'LinkedIn', 'https://', 'url')
+            . $t('privacy_text', 'Testo Privacy Policy') . $t('cookie_text', 'Testo Cookie Policy')
+            . '</div><p style="margin:14px 0 0"><button class="mini" name="azione" value="site_save" style="background:#be185d;color:#fff">Salva dati del sito</button></p></form></details>';
+    }
+
     private static function adminToolsBox(string $csrf, array $log): string
     {
         $rows = '';

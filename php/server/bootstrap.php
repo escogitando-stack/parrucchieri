@@ -25,6 +25,7 @@ require_once __DIR__ . '/Automation.php';
 require_once __DIR__ . '/Qr.php';
 require_once __DIR__ . '/Export.php';
 require_once __DIR__ . '/Demo.php';
+require_once __DIR__ . '/Site.php';
 
 /**
  * @return array<string,mixed>

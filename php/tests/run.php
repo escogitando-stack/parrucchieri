@@ -445,13 +445,38 @@ check('vetrina: prezzi dal file di configurazione', str_contains($land, '19 € 
 check('vetrina: senza prezzi niente cifre inventate', !str_contains(Pages::landing(['trial_days' => 30]), '€ al mese') && str_contains(Pages::landing(['trial_days' => 30]), 'Prova gratuita'));
 check('FAQ: dati dinamici e limiti dichiarati', str_contains(Pages::landing($pub), 'Quanto costa?') && str_contains(Pages::landing($pub), 'Come vengono avvisati i clienti?') && str_contains(Pages::landing($pub), 'faq@example.com') === false);
 check('FAQ: email di assistenza se impostata', str_contains(Pages::landing($pub + ['contact_email' => 'aiuto@example.com']), 'aiuto@example.com'));
-check('vetrina: dati strutturati validi', (function () use ($land) { preg_match('#<script type="application/ld\+json">(.*?)</script>#s', $land, $m); $j = json_decode($m[1] ?? '', true); return is_array($j) && $j['@type'] === 'FAQPage' && count($j['mainEntity']) >= 10; })());
-check('vetrina: il testo dell\'utente non rompe lo script', (function () use ($pub) { $h = Pages::landing($pub + ['pricing' => ['monthly_label' => '</script><b>x']]); return substr_count($h, '</script>') === 1 && !str_contains($h, '<b>x'); })());
+check('vetrina: dati strutturati validi', (function () use ($land) {
+    preg_match_all('#<script type="application/ld\+json">(.*?)</script>#s', $land, $m);
+    $types = [];
+    $faq = 0;
+    foreach ($m[1] as $raw) {
+        $j = json_decode($raw, true);
+        if (!is_array($j)) {
+            return false;
+        }
+        foreach (($j['@graph'] ?? [$j]) as $node) {
+            $types[] = $node['@type'];
+            if ($node['@type'] === 'FAQPage') {
+                $faq = count($node['mainEntity']);
+            }
+        }
+    }
+    return $faq >= 10 && in_array('Organization', $types, true) && in_array('SoftwareApplication', $types, true) && in_array('WebSite', $types, true);
+})());
+check('vetrina: il testo dell\'utente non rompe lo script', (function () use ($pub, $land) { $h = Pages::landing($pub + ['pricing' => ['monthly_label' => '</script><b>x']]); return substr_count($h, '</script>') === substr_count($land, '</script>') && !str_contains($h, '<b>x'); })());
+check('vetrina: canonical, Open Graph, favicon SVG', str_contains($land, 'rel="canonical"') && str_contains($land, 'property="og:image"') && str_contains($land, 'href="/favicon.svg"') && substr_count($land, '<h1') === 1);
+check('vetrina: footer con titolare, credits, legali e social', str_contains($land, 'C.F. CLLFNC01E22G702P') && str_contains($land, 'href="https://www.sh1ftup.it"') && str_contains($land, 'href="/privacy-policy"') && str_contains($land, 'href="/cookie-policy"') && str_contains($land, 'instagram.com/sh1ftup'));
+check('vetrina: banner cookie con Accetta, Rifiuta e Personalizza', str_contains($land, 'id="cookie-banner"') && str_contains($land, 'data-cb="accept"') && str_contains($land, 'data-cb="reject"') && str_contains($land, 'data-cb="custom"') && str_contains($land, 'data-cookie-prefs'));
+Pages::$marketing = true;
+check('vetrina: pulsante WhatsApp fisso', str_contains(Pages::landing($pub), 'class="wa-fab" href="https://wa.me/393381587990?text='));
+Pages::$marketing = false;
+check('pagine legali: privacy e cookie con titolare', str_contains(Pages::legal($pub, 'privacy'), '<h1>Privacy Policy</h1>') && str_contains(Pages::legal($pub, 'privacy'), 'Sh1ftup Adv') && str_contains(Pages::legal($pub, 'cookie'), 'a4m_consent'));
+check('pagine legali: testo admin trasformato in HTML sicuro', \App\Site::textToHtml("## Titolo\n- uno\n- <b>due</b>\n\nTesto") === '<h2>Titolo</h2><ul><li>uno</li><li>&lt;b&gt;due&lt;/b&gt;</li></ul><p>Testo</p>');
 check('vetrina: immagine e icone presenti', str_contains($land, 'class="shot"') && str_contains($land, '<svg viewBox="0 0 960 540"') && substr_count($land, 'class="ico"') === 9);
 check('vetrina: link ai contatti', str_contains($land, 'href="/contatti"'));
 $ct = Pages::contact($pub);
 check('contatti: email predefinita', str_contains($ct, 'mailto:info@appuntamenti4me.it'));
-check('contatti: senza config niente riferimenti inventati', !str_contains($ct, 'Telefono') && !str_contains($ct, 'P. IVA') && !str_contains($ct, 'WhatsApp'));
+check('contatti: senza config usa i dati del sito (titolare e WhatsApp)', !str_contains($ct, 'Telefono') && str_contains($ct, 'C.F. CLLFNC01E22G702P') && str_contains($ct, 'wa.me/393381587990'));
 $ct2 = Pages::contact($pub + ['contact_email' => 'x@y.it', 'contact' => ['name' => 'Mario <b>Rossi</b>', 'phone' => '+39 333 123', 'whatsapp' => '+39 333 123', 'address' => 'Via Roma 1', 'vat' => '123']]);
 check('contatti: riferimenti da config, escapati', str_contains($ct2, 'mailto:x@y.it') && str_contains($ct2, 'tel:+39333123') && str_contains($ct2, 'wa.me/39333123') && str_contains($ct2, 'P. IVA 123') && !str_contains($ct2, '<b>Rossi'));
 $reg = Pages::register($pub, 'Errore <b>x</b>', ['business' => '"><script>', 'email' => 'a@b.it', 'category' => 'tattoo']);
