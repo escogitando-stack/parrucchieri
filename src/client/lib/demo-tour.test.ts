@@ -16,7 +16,8 @@ test("tour: passi con percorso, titolo e testo", () => {
 test("tour: usa i nomi del tipo di attività", () => {
   const steps = tourSteps({ services: "Interventi", staffs: "Meccanici" });
   assert.ok(steps.some((s) => s.title.includes("Interventi")));
-  assert.ok(steps.some((s) => s.text.includes("meccanici")));
+  assert.ok(steps.some((s) => s.text.includes("(meccanici)")));
+  assert.ok(!steps.some((s) => /dei tuoi personale/.test(s.text)));
 });
 
 test("tour: avanti e indietro restano nei limiti", () => {

@@ -45,7 +45,7 @@ export function tourSteps(t: TourTerms): TourStep[] {
     {
       path: "/calendar",
       title: "L'agenda a colonne",
-      text: `Una colonna per ognuno dei tuoi ${staffs}. Tocchi uno spazio libero per fissare un appuntamento e l'app ti avvisa se due si sovrappongono.`,
+      text: `Una colonna per ogni persona (${staffs}), con i suoi orari. Tocchi uno spazio libero per fissare un appuntamento e l'app ti avvisa se due si sovrappongono.`,
     },
     {
       path: "/appointments",
