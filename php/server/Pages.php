@@ -70,7 +70,8 @@ $head<style>
   #cookie-banner .cb-actions button{margin:0;width:100%;padding:11px 10px;font-size:15px;border-radius:10px;font-weight:600;cursor:pointer;border:1px solid #be185d;background:#fff;color:#be185d}
   #cookie-banner .cb-prefs{margin:0 0 12px;display:grid;gap:8px}
   #cookie-banner .cb-prefs label{margin:0;font-weight:400;display:flex;gap:8px;align-items:flex-start;font-size:14px}
-  @media(max-width:520px){#cookie-banner .cb-actions{grid-template-columns:1fr}}
+  #cookie-banner .cb-prefs[hidden]{display:none}
+  @media(max-width:520px){#cookie-banner{padding:14px 14px;font-size:13px}#cookie-banner p{margin-bottom:10px}#cookie-banner .cb-actions{gap:6px}#cookie-banner .cb-actions button{padding:10px 4px;font-size:14px}}
   header.top nav a{margin-left:16px;text-decoration:none;font-weight:600;font-size:15px;white-space:nowrap}
   @media(max-width:700px){
     header.top{padding:14px 16px;gap:10px}
