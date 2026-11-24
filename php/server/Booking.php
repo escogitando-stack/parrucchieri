@@ -7,7 +7,7 @@ namespace App;
 final class Booking
 {
     /** Parole che non possono essere usate come indirizzo (servono al sito). */
-    private const RESERVED = ['admin', 'api', 'login', 'registrati', 'register', 'contatti', 'abbonamento', 'prenota', 'annulla', 'gestisci', 'calendario', 'sposta', 'password-dimenticata', 'reimposta', 'app', 'logout', 'dashboard', 'calendar', 'appointments', 'clients', 'staff', 'services', 'products', 'settings', 'guida', 'stripe-webhook', 'logo', 'assets', 'favicon', 'robots', 'sitemap', 'index', 'public', 'static', 'www', 'mail', 'test', 'per', 'sitemap.xml', 'robots.txt'];
+    private const RESERVED = ['admin', 'api', 'login', 'registrati', 'register', 'contatti', 'abbonamento', 'prenota', 'annulla', 'gestisci', 'calendario', 'sposta', 'password-dimenticata', 'reimposta', 'app', 'logout', 'dashboard', 'calendar', 'appointments', 'clients', 'staff', 'services', 'products', 'settings', 'guida', 'stripe-webhook', 'logo', 'assets', 'favicon', 'robots', 'sitemap', 'index', 'public', 'static', 'www', 'mail', 'test', 'per', 'sitemap.xml', 'robots.txt', 'privacy-policy', 'cookie-policy', 'esempio', 'statistiche', 'pacchetti', 'export', 'favicon.svg', 'og-image.png'];
 
     /** Ricava un indirizzo breve e unico (a-z, 0-9, trattini) dal nome dell'attività. */
     public static function makeSlug(Db $db, string $name): string

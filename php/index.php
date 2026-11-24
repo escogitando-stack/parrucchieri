@@ -31,6 +31,26 @@ function baseUrl(array $cfg): string
     return (Auth::isHttps() ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost');
 }
 
+// Un solo indirizzo per i motori di ricerca: www.dominio → dominio (base_url), solo per le pagine lette (GET/HEAD).
+if (!empty($cfg['base_url']) && in_array($method, ['GET', 'HEAD'], true)) {
+    $canonHost = (string)parse_url((string)$cfg['base_url'], PHP_URL_HOST);
+    $reqHost = strtolower((string)($_SERVER['HTTP_HOST'] ?? ''));
+    if ($canonHost !== '' && $reqHost === 'www.' . $canonHost) {
+        header('Location: ' . rtrim((string)$cfg['base_url'], '/') . ($_SERVER['REQUEST_URI'] ?? '/'), true, 301);
+        exit;
+    }
+}
+
+// Le pagine private e i link personali non vanno nei risultati di ricerca.
+if (preg_match('#^/(login|password-dimenticata|reimposta|annulla|gestisci|sposta|approva|calendario|abbonamento|admin|statistiche|pacchetti|export)(/|$)#', $path)) {
+    header('X-Robots-Tag: noindex, nofollow');
+}
+
+if ($path === '/favicon.ico') {
+    header('Location: /favicon.svg', true, 301);
+    exit;
+}
+
 // I moduli devono arrivare dal nostro sito (il webhook di Stripe non è un modulo).
 if ($method === 'POST' && $path !== '/stripe-webhook' && ($_SERVER['HTTP_SEC_FETCH_SITE'] ?? 'same-origin') === 'cross-site') {
     http_response_code(403);
@@ -69,6 +89,15 @@ if (preg_match('#^' . App\Demo::BASE . '/negozio(/.*)?$#', $path, $dm)) {
 $db = $demoShop !== null ? $demoShop[0] : App\connect($cfg);
 if ($demoShop === null) {
     $cfg = App\withSettings($db, $cfg);
+    App\Site::boot($db);
+}
+
+// Pagine di presentazione: pulsante WhatsApp visibile.
+Pages::$marketing = $demoShop === null && preg_match('#^/($|per/|contatti$|privacy-policy$|cookie-policy$|registrati$)#', $path) === 1;
+
+if ($path === '/privacy-policy' || $path === '/cookie-policy') {
+    echo Pages::legal($cfg, $path === '/privacy-policy' ? 'privacy' : 'cookie');
+    exit;
 }
 
 // Pagine di presentazione per categoria: /per/dentista, /per/gommista...
@@ -93,9 +122,12 @@ if ($path === '/sitemap.xml') {
     header('Content-Type: application/xml; charset=utf-8');
     $base = baseUrl($cfg);
     $xml = '<?xml version="1.0" encoding="UTF-8"?>' . "\n" . '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n";
-    $xml .= '<url><loc>' . htmlspecialchars($base . '/', ENT_XML1) . '</loc></url>' . "\n";
+    $xml .= '<url><loc>' . htmlspecialchars($base . '/', ENT_XML1) . '</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>' . "\n";
     foreach (array_keys(App\Categories::options()) as $ck) {
-        $xml .= '<url><loc>' . htmlspecialchars($base . '/per/' . $ck, ENT_XML1) . '</loc></url>' . "\n";
+        $xml .= '<url><loc>' . htmlspecialchars($base . '/per/' . $ck, ENT_XML1) . '</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>' . "\n";
+    }
+    foreach (['/contatti', '/registrati', '/privacy-policy', '/cookie-policy'] as $sp) {
+        $xml .= '<url><loc>' . htmlspecialchars($base . $sp, ENT_XML1) . '</loc><changefreq>yearly</changefreq><priority>0.4</priority></url>' . "\n";
     }
     foreach ($db->all("SELECT id, email, slug, plan_status, trial_ends_at, paid_until, suspended, approved FROM accounts WHERE approved = 1 AND suspended = 0 AND slug <> '' ORDER BY id") as $a) {
         if (Admin::isDemo($db, (int)$a['id']) || Auth::isAdmin($cfg, $a) || !in_array(Auth::plan($a)['state'], ['trial', 'active'], true)) {
@@ -455,7 +487,14 @@ if ($accountId === null) {
         echo Pages::landing($cfg, App\Plans::active($db), Admin::showcase($db));
         exit;
     }
-    redirect('/login');
+    // Pagine dell'app: servono il login. Ogni altro indirizzo inesistente è una vera pagina 404.
+    if (preg_match('#^/(dashboard|calendar|appointments|clients|staff|services|products|settings|guida|abbonamento|statistiche|pacchetti|export|admin)(/|$)#', $path)) {
+        redirect('/login');
+    }
+    http_response_code(404);
+    header('X-Robots-Tag: noindex');
+    echo Shop::notFound($cfg);
+    exit;
 }
 
 $acct = Auth::account($db, $accountId);
@@ -561,6 +600,16 @@ if ($path === '/admin') {
             } else {
                 $error = $err;
                 $catOld = $_POST;
+            }
+            goto render_admin;
+        }
+        if ($action === 'site_save') {
+            $err = App\Site::save($db, $_POST);
+            if ($err === null) {
+                $notice = 'Dati del sito salvati: footer, contatti e pagine legali sono aggiornati.';
+                Admin::log($db, (string)$acct['email'], 'site_save', 0, 'Sito e pagine legali', (string)($_SERVER['REMOTE_ADDR'] ?? ''));
+            } else {
+                $error = $err;
             }
             goto render_admin;
         }
