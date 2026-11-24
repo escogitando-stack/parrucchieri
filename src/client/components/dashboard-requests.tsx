@@ -58,7 +58,7 @@ export function PendingRequests() {
   if (items.length === 0 && !result) return null;
 
   return (
-    <Card className="border-amber-300">
+    <Card data-tour="richieste" className="border-amber-300">
       <CardContent className="space-y-3 p-4">
         <h2 className="text-lg font-semibold">Richieste da approvare</h2>
         {result && (
