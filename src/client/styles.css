@@ -86,3 +86,9 @@
     font-family: "Inter", system-ui, -apple-system, sans-serif;
   }
 }
+
+/* Tour guidato della demo */
+@keyframes tour-progress { from { width: 0% } to { width: 100% } }
+@keyframes tour-pulse { 0%, 100% { box-shadow: 0 0 0 3px var(--color-primary, #be185d) } 50% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--color-primary, #be185d) 35%, transparent) } }
+.tour-focus { position: relative; z-index: 1; border-radius: 0.75rem; animation: tour-pulse 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .tour-focus { animation: none; box-shadow: 0 0 0 3px var(--color-primary, #be185d) } }

@@ -16,6 +16,8 @@ import { ProductList } from "./components/product-list";
 import { Settings } from "./components/settings";
 import { Guide } from "./components/guide";
 import { ErrorBanner } from "./components/error-banner";
+import { DemoTour } from "./components/demo-tour";
+import { OPEN_EVENT } from "@/lib/demo-tour";
 import { useAccount } from "@/lib/account";
 import { IS_DEMO } from "@/lib/demo";
 
@@ -66,6 +68,7 @@ export function App() {
       {IS_DEMO && (
         <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-amber-100 px-4 py-2 text-center text-sm text-amber-900">
           <span>Questo è un esempio con dati finti: prova pure a cambiare tutto, niente viene salvato davvero.</span>
+          <button type="button" className="font-semibold underline" onClick={() => window.dispatchEvent(new Event(OPEN_EVENT))}>▶ Guarda il tour</button>
           <a className="font-semibold underline" href="/registrati">Prova gratis con la tua attività</a>
         </div>
       )}
@@ -86,6 +89,7 @@ export function App() {
         </main>
       </div>
       <ErrorBanner />
+      {IS_DEMO && <DemoTour />}
     </AppContext.Provider>
   );
 }

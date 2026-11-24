@@ -32,7 +32,7 @@ export function Dashboard() {
 
       <PendingRequests />
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+      <div data-tour="riepilogo" className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         {statCards.map((stat) => (
           <Card
             key={stat.label}
