@@ -1,0 +1,254 @@
+<?php
+declare(strict_types=1);
+
+namespace App;
+
+require_once __DIR__ . '/scheduling.php';
+
+/** Orari liberi di un negozio: orari di lavoro dei collaboratori meno appuntamenti e blocchi. */
+final class Availability
+{
+    /** Servizi prenotabili online. @return array<int,array<string,mixed>> */
+    public static function services(Db $db, int $accountId): array
+    {
+        return $db->all('SELECT id, name, description, duration, price, category, auto_confirm FROM services WHERE account_id = ? AND active = 1 AND online = 1 ORDER BY category, name', [$accountId]);
+    }
+
+    /** @return array<int,array<string,mixed>> */
+    public static function staff(Db $db, int $accountId): array
+    {
+        return $db->all('SELECT id, name, title, color FROM staff WHERE account_id = ? AND active = 1 ORDER BY name', [$accountId]);
+    }
+
+    /**
+     * Durata complessiva dei servizi scelti (solo quelli prenotabili online del negozio).
+     *
+     * @param array<int,mixed> $ids
+     * @return array{ids:array<int,int>,duration:int,price:float,auto:bool}|null null se la scelta non è valida
+     */
+    public static function pick(Db $db, int $accountId, array $ids): ?array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static fn(int $i): bool => $i > 0)));
+        if ($ids === [] || count($ids) > 8) {
+            return null;
+        }
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        $rows = $db->all("SELECT id, duration, price, auto_confirm FROM services WHERE account_id = ? AND active = 1 AND online = 1 AND id IN ($in)", array_merge([$accountId], $ids));
+        if (count($rows) !== count($ids)) {
+            return null;
+        }
+        $duration = array_sum(array_map(static fn($r): int => (int)$r['duration'], $rows));
+        if ($duration <= 0 || $duration > 600) {
+            return null;
+        }
+        $auto = true;
+        foreach ($rows as $r) {
+            $auto = $auto && (int)$r['auto_confirm'] === 1;
+        }
+        return ['ids' => $ids, 'duration' => $duration, 'price' => (float)array_sum(array_map(static fn($r): float => (float)$r['price'], $rows)), 'auto' => $auto];
+    }
+
+    /** Fasce di lavoro [inizio, fine] in minuti per un collaboratore in una data. @return array<int,array{0:int,1:int}> */
+    private static function ranges(Db $db, int $accountId, int $staffId, string $date): array
+    {
+        $weekday = (int)date('N', (int)strtotime($date . ' 12:00:00'));
+        $out = [];
+        foreach ($db->all('SELECT start_time, end_time FROM working_hours WHERE account_id = ? AND staff_id = ? AND weekday = ? ORDER BY start_time', [$accountId, $staffId, $weekday]) as $r) {
+            $s = toMinutes((string)$r['start_time']);
+            $e = toMinutes((string)$r['end_time']);
+            if ($s !== null && $e !== null && $e > $s) {
+                $out[] = [$s, $e];
+            }
+        }
+        return $out;
+    }
+
+    /** Appuntamenti (anche in attesa di conferma) e blocchi del collaboratore. @return array<int,array{kind:string,start_time:string,end_time:string,label:string}> */
+    public static function busy(Db $db, int $accountId, int $staffId, string $date, ?int $excludeId = null): array
+    {
+        $busy = [];
+        foreach ($db->all("SELECT start_time, end_time FROM appointments WHERE account_id = ? AND staff_id = ? AND scheduled_date = ? AND status <> 'cancelled' AND id <> ?", [$accountId, $staffId, $date, $excludeId ?? 0]) as $a) {
+            $busy[] = ['kind' => 'appointment', 'start_time' => (string)$a['start_time'], 'end_time' => (string)$a['end_time'], 'label' => 'occupato'];
+        }
+        foreach ($db->all('SELECT start_time, end_time FROM blocked_slots WHERE account_id = ? AND staff_id = ? AND blocked_date = ?', [$accountId, $staffId, $date]) as $b) {
+            $busy[] = ['kind' => 'blocked', 'start_time' => (string)$b['start_time'], 'end_time' => (string)$b['end_time'], 'label' => 'bloccato'];
+        }
+        return $busy;
+    }
+
+    /** La data si può prenotare (non passata, entro l'orizzonte)? @param array<string,mixed> $acct */
+    public static function dateAllowed(array $acct, string $date, ?int $now = null): bool
+    {
+        $now ??= time();
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) || !checkdate((int)substr($date, 5, 2), (int)substr($date, 8, 2), (int)substr($date, 0, 4))) {
+            return false;
+        }
+        $horizon = max(1, (int)($acct['booking_horizon_days'] ?? 60));
+        return $date >= date('Y-m-d', $now) && $date <= date('Y-m-d', $now + $horizon * 86400);
+    }
+
+    /**
+     * Orari di inizio liberi per un collaboratore.
+     *
+     * @param array<string,mixed> $acct
+     * @return array<int,string> "HH:MM"
+     */
+    public static function slotsForStaff(Db $db, array $acct, int $staffId, string $date, int $duration, ?int $now = null, ?int $excludeId = null): array
+    {
+        $now ??= time();
+        if (!self::dateAllowed($acct, $date, $now) || $duration <= 0) {
+            return [];
+        }
+        $accountId = (int)$acct['id'];
+        $step = max(5, (int)($acct['slot_minutes'] ?? 30));
+        $earliest = $now + max(0, (int)($acct['booking_notice_hours'] ?? 0)) * 3600;
+        $busy = self::busy($db, $accountId, $staffId, $date, $excludeId);
+        $out = [];
+        foreach (self::ranges($db, $accountId, $staffId, $date) as [$from, $to]) {
+            for ($t = $from; $t + $duration <= $to; $t += $step) {
+                $start = sprintf('%02d:%02d', intdiv($t, 60), $t % 60);
+                if ((int)strtotime("$date $start:00") < $earliest) {
+                    continue;
+                }
+                if (findConflicts($start, addMinutes($start, $duration), $busy) === []) {
+                    $out[] = $start;
+                }
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Orari liberi del giorno: con un collaboratore preciso o, se $staffId è null, con il primo libero.
+     *
+     * @param array<string,mixed> $acct
+     * @return array<string,int> orario → id del collaboratore
+     */
+    public static function slots(Db $db, array $acct, string $date, int $duration, ?int $staffId, ?int $now = null, ?int $excludeId = null): array
+    {
+        $accountId = (int)$acct['id'];
+        $ids = $staffId !== null ? [$staffId] : array_map(static fn($s): int => (int)$s['id'], self::staff($db, $accountId));
+        $out = [];
+        foreach ($ids as $id) {
+            if ($staffId !== null && $db->row('SELECT id FROM staff WHERE id = ? AND account_id = ? AND active = 1', [$id, $accountId]) === null) {
+                return [];
+            }
+            foreach (self::slotsForStaff($db, $acct, $id, $date, $duration, $now, $excludeId) as $time) {
+                $out[$time] ??= $id;
+            }
+        }
+        ksort($out);
+        return $out;
+    }
+
+    /**
+     * Giorni del mese con almeno un orario libero.
+     *
+     * @param array<string,mixed> $acct
+     * @return array<int,string> date "YYYY-MM-DD"
+     */
+    public static function days(Db $db, array $acct, string $month, int $duration, ?int $staffId, ?int $now = null, ?int $excludeId = null): array
+    {
+        if (!preg_match('/^(\d{4})-(\d{2})$/', $month, $m) || (int)$m[2] < 1 || (int)$m[2] > 12) {
+            return [];
+        }
+        $n = (int)date('t', (int)strtotime($month . '-01 12:00:00'));
+        $out = [];
+        for ($d = 1; $d <= $n; $d++) {
+            $date = sprintf('%s-%02d', $month, $d);
+            if (self::dateAllowed($acct, $date, $now) && self::slots($db, $acct, $date, $duration, $staffId, $now, $excludeId) !== []) {
+                $out[] = $date;
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Primo giorno e orario liberi a partire da oggi (entro l'orizzonte di prenotazione).
+     *
+     * @param array<string,mixed> $acct
+     * @return array{date:string,time:string}|null
+     */
+    public static function first(Db $db, array $acct, int $duration, ?int $staffId, ?int $now = null, ?int $excludeId = null): ?array
+    {
+        $now ??= time();
+        $horizon = max(1, (int)($acct['booking_horizon_days'] ?? 60));
+        for ($i = 0; $i <= $horizon; $i++) {
+            $date = date('Y-m-d', $now + $i * 86400);
+            $slots = self::slots($db, $acct, $date, $duration, $staffId, $now, $excludeId);
+            if ($slots !== []) {
+                return ['date' => $date, 'time' => (string)array_key_first($slots)];
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Orari di apertura reali, ricavati dagli orari dei collaboratori attivi: righe come
+     * "Lun–Ven" => "9:00–13:00, 15:00–19:00". Giorni consecutivi con gli stessi orari sono uniti.
+     *
+     * @return array<int,array{0:string,1:string}>
+     */
+    public static function hoursSummary(Db $db, int $accountId): array
+    {
+        $byDay = [];
+        $rows = $db->all(
+            'SELECT w.weekday, w.start_time, w.end_time FROM working_hours w JOIN staff s ON s.id = w.staff_id
+             WHERE w.account_id = ? AND s.active = 1 ORDER BY w.weekday, w.start_time',
+            [$accountId]
+        );
+        foreach ($rows as $r) {
+            $byDay[(int)$r['weekday']][] = [toMinutes((string)$r['start_time']), toMinutes((string)$r['end_time'])];
+        }
+        $fmt = static fn(int $m): string => intdiv($m, 60) . ':' . str_pad((string)($m % 60), 2, '0', STR_PAD_LEFT);
+        $text = [];
+        for ($d = 1; $d <= 7; $d++) {
+            $ranges = $byDay[$d] ?? [];
+            usort($ranges, static fn($a, $b) => $a[0] <=> $b[0]);
+            $merged = [];
+            foreach ($ranges as [$a, $b]) {
+                if ($merged !== [] && $a <= $merged[count($merged) - 1][1]) {
+                    $merged[count($merged) - 1][1] = max($merged[count($merged) - 1][1], $b);
+                } else {
+                    $merged[] = [$a, $b];
+                }
+            }
+            $text[$d] = implode(', ', array_map(static fn($r) => $fmt($r[0]) . '–' . $fmt($r[1]), $merged));
+        }
+        $names = [1 => 'Lun', 2 => 'Mar', 3 => 'Mer', 4 => 'Gio', 5 => 'Ven', 6 => 'Sab', 7 => 'Dom'];
+        $out = [];
+        $d = 1;
+        while ($d <= 7) {
+            if ($text[$d] === '') {
+                $d++;
+                continue;
+            }
+            $e = $d;
+            while ($e < 7 && $text[$e + 1] === $text[$d]) {
+                $e++;
+            }
+            $label = $d === $e ? $names[$d] : ($e === $d + 1 ? $names[$d] . ', ' . $names[$e] : $names[$d] . '–' . $names[$e]);
+            $out[] = [$label, $text[$d]];
+            $d = $e + 1;
+        }
+        return $out;
+    }
+
+    /**
+     * Imposta gli stessi orari di lavoro a tutti i collaboratori del negozio.
+     *
+     * @param array<int,int> $days giorni della settimana (1 = lunedì ... 7 = domenica)
+     * @param array<int,array{0:string,1:string}> $ranges fasce orarie HH:MM
+     */
+    public static function setShopHours(Db $db, int $accountId, array $days, array $ranges): void
+    {
+        foreach ($db->all('SELECT id FROM staff WHERE account_id = ?', [$accountId]) as $st) {
+            $db->exec('DELETE FROM working_hours WHERE account_id = ? AND staff_id = ?', [$accountId, (int)$st['id']]);
+            foreach ($days as $day) {
+                foreach ($ranges as [$from, $to]) {
+                    $db->exec('INSERT INTO working_hours (account_id, staff_id, weekday, start_time, end_time) VALUES (?, ?, ?, ?, ?)', [$accountId, (int)$st['id'], $day, $from, $to]);
+                }
+            }
+        }
+    }
+}
