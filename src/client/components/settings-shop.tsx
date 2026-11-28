@@ -37,7 +37,14 @@ function resizeToDataUrl(file: File, maxSide: number, type: string, quality?: nu
       }
       ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
       URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL(type, quality));
+      let out = canvas.toDataURL(type, quality);
+      // Foto ancora pesante (oltre ~900 KB): si abbassa la qualità finché è leggera.
+      let q = quality ?? 0.82;
+      while (type === "image/jpeg" && out.length > 1_200_000 && q > 0.5) {
+        q -= 0.08;
+        out = canvas.toDataURL(type, q);
+      }
+      resolve(out);
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Immagine non leggibile")); };
     img.src = url;

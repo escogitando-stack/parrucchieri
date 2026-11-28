@@ -1151,6 +1151,20 @@ $first = \App\Shop::photoIds($db, $gid)[0];
 check('galleria: foto leggibile solo dal suo negozio', \App\Shop::photo($db, $gid, $first) !== null && \App\Shop::photo($db, $gid + 1, $first) === null);
 [, $d] = call($gapi, 'PUT', '/api/account', [], ['remove_photo' => $first]);
 check('galleria: foto tolta', count($d['account']['photos']) === 7);
+// ridimensionamento automatico di peso e dimensioni
+if (function_exists('imagecreatetruecolor')) {
+    $big = imagecreatetruecolor(4200, 3000);
+    for ($x = 0; $x < 4200; $x += 3) { for ($y = 0; $y < 3000; $y += 3) { imagesetpixel($big, $x, $y, rand(0, 0xFFFFFF)); } }
+    ob_start(); imagepng($big); $bigPng = ob_get_clean();
+    $bigUrl = 'data:image/png;base64,' . base64_encode($bigPng);
+    $pi = \App\Shop::parseImage($bigUrl, 1500, 1400);
+    $sz = $pi !== null ? getimagesizeFromString(base64_decode($pi['data'])) : false;
+    check('foto: grande ridimensionata a 1400 px', $pi !== null && $sz !== false && max($sz[0], $sz[1]) <= 1400);
+    check('foto: dopo il ridimensionamento pesa meno di 1,5 MB', $pi !== null && strlen(base64_decode($pi['data'])) <= 1500 * 1024 && strlen($bigPng) > 500 * 1024);
+    check('foto: senza ridimensionamento resta rifiutata', \App\Shop::parseImage($bigUrl, 1500) === null);
+    $bid = addAccount($db, 'big@example.com', 'unghie');
+    check('foto: caricamento di una foto enorme accettato', \App\Shop::addPhoto($db, $bid, $bigUrl) === null && count(\App\Shop::photoIds($db, $bid)) === 1);
+}
 // limite foto in demo/prova scelto dall'admin
 check('admin: foto demo non impostate', Admin::demoMaxPhotos($db) === null);
 check('admin: foto demo fuori range rifiutate', !Admin::setDemoMaxPhotos($db, 31) && !Admin::setDemoMaxPhotos($db, -1));

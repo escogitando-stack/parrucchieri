@@ -33,9 +33,9 @@ final class Shop
         if (count(self::photoIds($db, $accountId)) >= $limit) {
             return 'Puoi caricare al massimo ' . $limit . ' foto' . ($limit < self::MAX_PHOTOS ? ' durante la prova (con l\'abbonamento fino a ' . self::MAX_PHOTOS . ')' : '') . ': togline una prima di aggiungerne altre.';
         }
-        $img = self::parseImage($dataUrl, 1500);
+        $img = self::parseImage($dataUrl, 1500, 1400);
         if ($img === null) {
-            return 'Foto non valida: usa un\'immagine PNG, JPEG o WebP fino a 1,5 MB.';
+            return 'Foto non valida o troppo grande: usa un\'immagine PNG, JPEG o WebP.';
         }
         $max = (int)($db->row('SELECT COALESCE(MAX(sort_order), 0) AS m FROM shop_photos WHERE account_id = ?', [$accountId])['m'] ?? 0);
         $db->exec('INSERT INTO shop_photos (account_id, mime, data, sort_order) VALUES (?, ?, ?, ?)', [$accountId, $img['mime'], $img['data'], $max + 1]);
@@ -83,20 +83,94 @@ final class Shop
     }
 
     /** Come parseLogo, con un limite di peso a scelta (in KB). @return array{mime:string,data:string}|null */
-    public static function parseImage(string $dataUrl, int $maxKb): ?array
+    public static function parseImage(string $dataUrl, int $maxKb, ?int $maxSide = null): ?array
     {
         if (!preg_match('#^data:(image/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/=\s]+)$#', $dataUrl, $m)) {
             return null;
         }
         $raw = base64_decode(preg_replace('/\s+/', '', $m[2]) ?? '', true);
-        if ($raw === false || $raw === '' || strlen($raw) > $maxKb * 1024) {
+        if ($raw === false || $raw === '') {
+            return null;
+        }
+        // Con $maxSide la foto si ridimensiona da sola: si accettano file più grandi e li riduciamo noi.
+        $resize = $maxSide !== null && function_exists('imagecreatefromstring');
+        if (strlen($raw) > ($resize ? 12 * 1024 : $maxKb) * 1024) {
             return null;
         }
         $info = @getimagesizeFromString($raw);
-        if ($info === false || ($info['mime'] ?? '') !== $m[1] || $info[0] > 4000 || $info[1] > 4000) {
+        $maxDim = $resize ? 10000 : 4000;
+        if ($info === false || ($info['mime'] ?? '') !== $m[1] || $info[0] > $maxDim || $info[1] > $maxDim) {
+            return null;
+        }
+        if ($resize && ($info[0] > $maxSide || $info[1] > $maxSide || strlen($raw) > 500 * 1024)) {
+            $small = self::shrink($raw, (int)$maxSide, $maxKb * 1024);
+            if ($small !== null) {
+                return $small;
+            }
+        }
+        if (strlen($raw) > $maxKb * 1024) {
             return null;
         }
         return ['mime' => $m[1], 'data' => base64_encode($raw)];
+    }
+
+    /**
+     * Ridimensiona (lato lungo massimo $maxSide) e ricomprime una foto finché pesa meno di $maxBytes.
+     * JPEG per le foto, PNG se ha trasparenze. null se non riesce (manca GD o immagine illeggibile).
+     *
+     * @return array{mime:string,data:string}|null
+     */
+    public static function shrink(string $raw, int $maxSide, int $maxBytes): ?array
+    {
+        if (!function_exists('imagecreatefromstring') || !function_exists('imagejpeg')) {
+            return null;
+        }
+        $src = @imagecreatefromstring($raw);
+        if ($src === false) {
+            return null;
+        }
+        $w = imagesx($src);
+        $h = imagesy($src);
+        $alpha = false;
+        $info = @getimagesizeFromString($raw);
+        if ($info !== false && in_array($info['mime'] ?? '', ['image/png', 'image/webp', 'image/gif'], true)) {
+            for ($x = 0; $x < min($w, 40) && !$alpha; $x++) {
+                for ($y = 0; $y < min($h, 40); $y++) {
+                    if ((imagecolorat($src, (int)($x * $w / min($w, 40)), (int)($y * $h / min($h, 40))) >> 24) & 0x7F) {
+                        $alpha = true;
+                        break;
+                    }
+                }
+            }
+        }
+        $side = $maxSide;
+        $quality = 82;
+        for ($i = 0; $i < 8; $i++) {
+            $scale = min(1, $side / max($w, $h));
+            $nw = max(1, (int)round($w * $scale));
+            $nh = max(1, (int)round($h * $scale));
+            $dst = imagecreatetruecolor($nw, $nh);
+            if ($alpha) {
+                imagealphablending($dst, false);
+                imagesavealpha($dst, true);
+                imagefill($dst, 0, 0, imagecolorallocatealpha($dst, 0, 0, 0, 127));
+            } else {
+                imagefill($dst, 0, 0, imagecolorallocate($dst, 255, 255, 255));
+            }
+            imagecopyresampled($dst, $src, 0, 0, 0, 0, $nw, $nh, $w, $h);
+            ob_start();
+            $alpha ? imagepng($dst, null, 8) : imagejpeg($dst, null, $quality);
+            $out = (string)ob_get_clean();
+            imagedestroy($dst);
+            if ($out !== '' && strlen($out) <= $maxBytes) {
+                imagedestroy($src);
+                return ['mime' => $alpha ? 'image/png' : 'image/jpeg', 'data' => base64_encode($out)];
+            }
+            $quality = max(55, $quality - 8);
+            $side = (int)($side * 0.85);
+        }
+        imagedestroy($src);
+        return null;
     }
 
     /** @param array<string,mixed> $cfg @param array<string,mixed> $acct */

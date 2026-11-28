@@ -355,7 +355,7 @@ final class Api
         }
         $coverUrl = $this->optString($b, 'cover');
         if ($coverUrl !== null && $coverUrl !== '') {
-            $cover = Shop::parseImage($coverUrl, 1500);
+            $cover = Shop::parseImage($coverUrl, 1500, 1400);
             if ($cover === null) {
                 throw new HttpError(400, 'Foto non valida: usa un\'immagine PNG, JPEG o WebP fino a 1,5 MB.');
             }

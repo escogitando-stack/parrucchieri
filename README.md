@@ -233,3 +233,7 @@ Chiave Stripe e segreto del webhook stanno nel database **cifrati** (AES-256-GCM
 ## Foto nelle demo e in prova
 
 Dal pannello amministratore (sezione Abbonamenti, accanto ai giorni di prova) si sceglie quante foto della galleria può inserire chi prova l'app: la demo pubblica `/esempio` e i negozi in prova gratuita (0–30, valore salvato in `demo_max_photos`). Chi ha l'abbonamento attivo può caricarne fino a 8. Se il valore non è impostato resta il massimo di 8.
+
+### Ridimensionamento automatico delle foto
+
+Le foto della galleria e la copertina si ottimizzano da sole: il browser le riduce a 1400 px (JPEG, qualità calante finché restano leggere) prima dell'invio e il server rifà il controllo con GD (`Shop::shrink`): lato lungo massimo 1400 px, ricompressione fino a stare sotto 1,5 MB, PNG solo se hanno trasparenze. Accetta file fino a 12 MB; senza GD valgono i vecchi limiti (1,5 MB).
