@@ -241,6 +241,9 @@ final class Api
             'review_url' => (string)($acct['review_url'] ?? ''),
             'photos' => Shop::photoIds($this->db, $this->acct),
             'photo_limit' => $this->photoLimit($acct),
+            'ai_available' => Assistant::available($this->cfg) || !empty($this->cfg['ai_available']),
+            'ai_enabled' => (int)($acct['ai_enabled'] ?? 0),
+            'ai_notes' => (string)($acct['ai_notes'] ?? ''),
             'impersonating' => Auth::impersonator() !== null,
             'daily_summary' => $this->db->metaGet('nosummary_' . $this->acct) !== '1',
         ];
@@ -301,6 +304,7 @@ final class Api
             throw new HttpError(400, 'Il periodo prenotabile deve essere tra 1 e 365 giorni');
         }
         $enabled = $this->optInt($b, 'booking_enabled');
+        $aiOn = $this->optInt($b, 'ai_enabled');
         if (array_key_exists('daily_summary', $b)) {
             $this->db->metaSet('nosummary_' . $this->acct, $b['daily_summary'] ? '0' : '1');
         }
@@ -318,6 +322,8 @@ final class Api
             'booking_notice_hours' => $notice,
             'booking_horizon_days' => $horizon,
             'booking_enabled' => $enabled !== null ? ($enabled ? 1 : 0) : null,
+            'ai_enabled' => $aiOn !== null ? ($aiOn ? 1 : 0) : null,
+            'ai_notes' => $this->text($b, 'ai_notes', 2000),
         ];
         if (($b['remove_logo'] ?? false) === true) {
             $values['logo_mime'] = '';

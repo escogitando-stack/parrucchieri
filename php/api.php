@@ -60,7 +60,9 @@ if ($method !== 'GET' && $method !== 'HEAD') {
 try {
     $db = $demo !== null ? $demo[0] : App\connect($cfg);
     try {   // foto consentite in demo/prova: le sceglie l'amministratore (si legge dal database vero)
-        $cfg['demo_max_photos'] = App\Admin::demoMaxPhotos($demo !== null ? App\connect($cfgReal) : $db);
+        $realDb = $demo !== null ? App\connect($cfgReal) : $db;
+        $cfg['demo_max_photos'] = App\Admin::demoMaxPhotos($realDb);
+        $cfg['ai_available'] = App\Assistant::available(App\withSettings($realDb, $cfgReal));
     } catch (Throwable $e) {
         $cfg['demo_max_photos'] = null;
     }

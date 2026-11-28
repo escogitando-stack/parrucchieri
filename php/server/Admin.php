@@ -169,6 +169,37 @@ final class Admin
         return null;
     }
 
+    /**
+     * Salva le impostazioni dell'assistente virtuale. Chiave vuota = lascia com'è. Messaggio d'errore o null.
+     * @param array<string,mixed> $cfg
+     */
+    public static function setAi(Db $db, array $cfg, string $key, string $model, int $cap, bool $off): ?string
+    {
+        $key = trim($key);
+        $model = trim($model);
+        if ($key !== '' && !preg_match('/^sk-ant-[A-Za-z0-9_-]{20,}$/', $key)) {
+            return 'La chiave Anthropic deve iniziare con sk-ant-.';
+        }
+        if ($model !== '' && !preg_match('/^[a-z0-9][a-z0-9._-]{2,59}$/', $model)) {
+            return 'Il nome del modello non è valido (es. claude-haiku-5-5).';
+        }
+        if ($cap < 1 || $cap > 5000) {
+            return 'Il limite giornaliero per negozio deve essere tra 1 e 5000 messaggi.';
+        }
+        if ($key !== '') {
+            $db->metaSet('ai_api_key', self::seal($cfg, $key));
+        }
+        $db->metaSet('ai_model', $model);
+        $db->metaSet('ai_daily_cap', (string)$cap);
+        $db->metaSet('ai_off', $off ? '1' : '0');
+        return null;
+    }
+
+    public static function clearAi(Db $db): void
+    {
+        $db->exec("DELETE FROM _meta WHERE meta_key = 'ai_api_key'");
+    }
+
     public static function clearStripe(Db $db): void
     {
         $db->exec("DELETE FROM _meta WHERE meta_key IN ('stripe_secret_key', 'stripe_webhook_secret')");

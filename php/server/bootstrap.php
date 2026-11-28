@@ -15,6 +15,7 @@ require_once __DIR__ . '/Owner.php';
 require_once __DIR__ . '/Booking.php';
 require_once __DIR__ . '/Availability.php';
 require_once __DIR__ . '/Shop.php';
+require_once __DIR__ . '/Assistant.php';
 require_once __DIR__ . '/Plans.php';
 require_once __DIR__ . '/Mailer.php';
 require_once __DIR__ . '/Notify.php';
@@ -65,6 +66,16 @@ function withSettings(Db $db, array $cfg): array
     $days = Admin::trialDays($db);
     if ($days !== null) {
         $cfg['trial_days'] = $days;
+    }
+    $aiKey = $db->metaGet('ai_api_key');
+    $cfg['ai'] = [
+        'key' => Admin::unseal($cfg, $aiKey),
+        'model' => (string)($db->metaGet('ai_model') ?? ''),
+        'daily_cap' => max(1, (int)($db->metaGet('ai_daily_cap') ?: Assistant::DAILY_CAP_DEFAULT)),
+        'off' => $db->metaGet('ai_off') === '1',
+    ];
+    if ($aiKey !== null && $aiKey !== '' && !segreto_e_cifrato($aiKey) && segreto_attivo() && $cfg['ai']['key'] !== '') {
+        $db->metaSet('ai_api_key', segreto_cifra($cfg['ai']['key']));   // migrazione automatica al formato standard
     }
     $dp = Admin::demoMaxPhotos($db);
     if ($dp !== null) {

@@ -56,6 +56,7 @@ export function ShopSettings() {
   const account = useAccount();
   const [f, setF] = useState<Record<string, string>>({});
   const [enabled, setEnabled] = useState(true);
+  const [aiOn, setAiOn] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [logoBusy, setLogoBusy] = useState(false);
@@ -72,8 +73,10 @@ export function ShopSettings() {
       shop_whatsapp: account.shop_whatsapp, shop_email: account.shop_email, shop_address: account.shop_address,
       shop_hours: account.shop_hours, review_url: account.review_url ?? "", slot_minutes: String(account.slot_minutes),
       booking_notice_hours: String(account.booking_notice_hours), booking_horizon_days: String(account.booking_horizon_days),
+      ai_notes: account.ai_notes ?? "",
     });
     setEnabled(!!account.booking_enabled);
+    setAiOn(!!account.ai_enabled);
   }, [account?.slug, account?.shop_url]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!account) return null;
@@ -93,6 +96,7 @@ export function ShopSettings() {
         booking_notice_hours: Math.max(0, parseInt(f.booking_notice_hours) || 0),
         booking_horizon_days: Math.max(1, parseInt(f.booking_horizon_days) || 60),
         booking_enabled: enabled ? 1 : 0,
+        ...(account.ai_available ? { ai_enabled: aiOn ? 1 : 0, ai_notes: f.ai_notes ?? "" } : {}),
       });
       setAccount(data.account);
       setSaved(true);
@@ -270,6 +274,24 @@ export function ShopSettings() {
           </div>
         </CardContent>
       </Card>
+
+      {account.ai_available && (
+        <Card>
+          <CardContent className="space-y-4 p-4 sm:p-6">
+            <h2 className="text-lg font-semibold">Assistente virtuale</h2>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={aiOn} onChange={(e) => setAiOn((e.target as HTMLInputElement).checked)} />
+              Sulla mia pagina compare una chat dove i clienti fanno domande e l'assistente risponde al posto mio
+            </label>
+            <div className="space-y-1.5">
+              <Label htmlFor="ai-notes">Cosa deve sapere l'assistente (facoltativo)</Label>
+              <textarea id="ai-notes" rows={5} maxLength={2000} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={f.ai_notes ?? ""} onInput={set("ai_notes")} placeholder={"es. Parcheggio gratuito davanti al negozio. Accettiamo carte e contanti. Per i bambini sotto i 10 anni serve un adulto. Disdette entro 24 ore."} />
+              <p className="text-xs text-muted-foreground">Orari, indirizzo, servizi e prezzi li conosce già dalla tua pagina. Qui aggiungi regole, risposte alle domande più frequenti e tutto ciò che vuoi far sapere. Se non sa rispondere, invita il cliente a contattarti. L'assistente non prenota: manda il cliente al modulo "Prenota ora".</p>
+            </div>
+            <p className="text-xs text-muted-foreground">Ricorda di premere "Salva pagina e prenotazioni" qui sotto.</p>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardContent className="space-y-4 p-4 sm:p-6">

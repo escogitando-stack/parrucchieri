@@ -971,6 +971,21 @@ HTML;
         $mask = static fn(string $v): string => $v === '' ? 'non impostata' : '••••' . substr($v, -4);
         $hook = rtrim((string)(($cfg['base_url'] ?? '') ?: ''), '/') . '/stripe-webhook';
         $hidden = '<input type="hidden" name="csrf" value="' . self::h($csrf) . '"><input type="hidden" name="id" value="0">';
+        $ai = (array)($cfg['ai'] ?? []);
+        $ak = (string)($ai['key'] ?? '');
+        $aiBox = '<div class="card" style="margin:0 0 14px;padding:16px">'
+            . '<h3 style="margin:0 0 6px;font-size:16px">Assistente virtuale (chat per i clienti)</h3>'
+            . '<p class="muted" style="margin:0 0 12px;font-size:13px">Stato: ' . ($ak !== '' && empty($ai['off']) ? '<b style="color:#15803d">attivo</b>' : ($ak !== '' ? '<b style="color:#b45309">spento</b>' : '<b style="color:#b45309">manca la chiave</b>'))
+            . ' · chiave Anthropic: ' . self::h($mask($ak)) . '. Ogni negozio lo accende dalle proprie impostazioni e può aggiungere le sue informazioni.</p>'
+            . '<form method="post" action="/admin" autocomplete="off" style="display:grid;gap:10px">' . $hidden
+            . '<label style="font-weight:600;font-size:14px">Chiave API Anthropic<input name="ai_key" type="password" placeholder="sk-ant-… (vuoto = non cambiare)" autocomplete="new-password" style="display:block;width:100%;margin-top:4px"></label>'
+            . '<label style="font-weight:600;font-size:14px">Modello<input name="ai_model" value="' . self::h((string)($ai['model'] ?? '')) . '" placeholder="' . self::h(Assistant::MODEL_DEFAULT) . '" style="display:block;width:100%;margin-top:4px"></label>'
+            . '<label style="font-weight:600;font-size:14px">Messaggi al giorno per negozio<input name="ai_cap" type="number" min="1" max="5000" value="' . (int)($ai['daily_cap'] ?? Assistant::DAILY_CAP_DEFAULT) . '" style="display:block;width:120px;margin-top:4px"></label>'
+            . '<label class="check" style="margin:0"><input type="checkbox" name="ai_off" value="1"' . (!empty($ai['off']) ? ' checked' : '') . '>Spegni l\'assistente su tutta la piattaforma</label>'
+            . '<div class="pk-row"><button class="mini" name="azione" value="ai_save">Salva</button>'
+            . '<button class="mini" name="azione" value="ai_test">Prova collegamento</button>'
+            . '<button class="mini" name="azione" value="ai_clear" onclick="return confirm(\'Rimuovere la chiave salvata?\')">Rimuovi chiave</button></div></form>'
+            . '<p class="muted" style="margin:10px 0 0;font-size:13px">La chiave si crea su console.anthropic.com → API keys. Costo: pochi centesimi ogni 100 domande; il limite giornaliero e quello per visitatore (20 all\'ora) tengono la spesa sotto controllo.</p></div>';
         $stripeBox = '<div class="card" style="margin:0 0 14px;padding:16px">'
             . '<h3 style="margin:0 0 6px;font-size:16px">Pagamenti Stripe</h3>'
             . '<p class="muted" style="margin:0 0 12px;font-size:13px">Stato: ' . ($sk !== '' && $wh !== '' ? '<b style="color:#15803d">attivo</b>' : '<b style="color:#b45309">incompleto</b>')
@@ -988,7 +1003,7 @@ HTML;
             . '<li>Copia il <b>segreto di firma</b> (whsec_…) del webhook e incollalo qui, poi premi "Prova collegamento".</li>'
             . '<li>Su ogni piano inserisci il codice prezzo Stripe (<code>price_…</code>) per far pagare online.</li></ol></div></div>';
         $planBox = '<details class="card" style="margin:0 0 18px"' . ($plans === [] ? ' open' : '') . '><summary style="cursor:pointer;font-weight:700">Piani di abbonamento e prova (' . count($plans) . ')</summary>'
-            . '<div style="margin-top:12px">' . $stripeBox . $trialForm . $photoForm . '</div>'
+            . '<div style="margin-top:12px">' . $stripeBox . $aiBox . $trialForm . $photoForm . '</div>'
             . '<p class="sub" style="text-align:left;margin:8px 0 12px;font-size:14px">Nome, durata in giorni e prezzo. I piani attivi compaiono nella home del sito e nella pagina Abbonamento; con il codice Stripe il cliente può pagare online, senza codice li assegni tu da "Azioni".</p>'
             . $planRows . '</details>';
         $demoBox = self::adminInsights((array)($extra['insights'] ?? []), $csrf) . self::adminDemoBox($csrf, $extra);

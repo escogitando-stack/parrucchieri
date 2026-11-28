@@ -370,7 +370,7 @@ if (preg_match('#^/calendario/([a-f0-9]{32})\.ics$#', $path, $mm)) {
 }
 
 // Pagina pubblica del negozio: /nome, con logo, orari e prenotazione online.
-if (preg_match('#^/([a-z0-9][a-z0-9-]{1,78}[a-z0-9])(?:/(logo|copertina|giorni|orari|prenota|privacy|primo|qr\.svg|foto/\d{1,9}))?$#', $path, $mm)) {
+if (preg_match('#^/([a-z0-9][a-z0-9-]{1,78}[a-z0-9])(?:/(logo|copertina|giorni|orari|prenota|chat|privacy|primo|qr\.svg|foto/\d{1,9}))?$#', $path, $mm)) {
     $shopAcct = Booking::accountBySlug($db, $mm[1]);
     if ($shopAcct !== null) {
         $sub = $mm[2] ?? '';
@@ -384,6 +384,7 @@ if (preg_match('#^/([a-z0-9][a-z0-9-]{1,78}[a-z0-9])(?:/(logo|copertina|giorni|o
             $shopAcct['_hours'] = Availability::hoursSummary($db, (int)$shopAcct['id']);
             $shopAcct['_demo'] = Admin::isDemo($db, (int)$shopAcct['id']);
             $shopAcct['_photos'] = Shop::photoIds($db, (int)$shopAcct['id']);
+            $shopAcct['_ai'] = Assistant::enabledFor($cfg, $shopAcct);
             if ($shopAcct['_demo']) {
                 header('X-Robots-Tag: noindex, nofollow');
             }
@@ -402,6 +403,7 @@ if (preg_match('#^/([a-z0-9][a-z0-9-]{1,78}[a-z0-9])(?:/(logo|copertina|giorni|o
             exit;
         }
         if ($sub === 'privacy') {
+            $shopAcct['_ai'] = Assistant::enabledFor($cfg, $shopAcct);
             echo Shop::privacyPage($cfg, $shopAcct);
             exit;
         }
@@ -426,6 +428,19 @@ if (preg_match('#^/([a-z0-9][a-z0-9-]{1,78}[a-z0-9])(?:/(logo|copertina|giorni|o
             echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             exit;
         };
+        if ($sub === 'chat') {
+            // Assistente virtuale: solo POST JSON dallo stesso sito.
+            $site = $_SERVER['HTTP_SEC_FETCH_SITE'] ?? 'same-origin';
+            if ($method !== 'POST' || !in_array($site, ['same-origin', 'none'], true) || !str_starts_with(strtolower($_SERVER['CONTENT_TYPE'] ?? ''), 'application/json')) {
+                $json(405, ['error' => 'Metodo non consentito']);
+            }
+            $in = json_decode((string)file_get_contents('php://input'), true);
+            if (!is_array($in)) {
+                $json(400, ['error' => 'Richiesta non valida.']);
+            }
+            $res = Assistant::reply($db, $cfg, $shopAcct, (array)($in['messages'] ?? []), (string)($_SERVER['REMOTE_ADDR'] ?? ''));
+            $json($res['ok'] ? 200 : (int)($res['status'] ?? 400), $res['ok'] ? ['reply' => $res['reply']] : ['error' => $res['error'] ?? 'Errore']);
+        }
         $staffParam = (int)($_GET['staff'] ?? 0) ?: null;
         $pick = $sub === 'prenota' ? null : Availability::pick($db, (int)$shopAcct['id'], explode(',', (string)($_GET['servizi'] ?? '')));
         if ($sub === 'giorni' && $method === 'GET') {
@@ -620,6 +635,31 @@ if ($path === '/admin') {
                 $cfg = App\withSettings($db, $cfg);
             } else {
                 $error = $err;
+            }
+            goto render_admin;
+        }
+        if ($action === 'ai_save') {
+            $err = Admin::setAi($db, $cfg, (string)($_POST['ai_key'] ?? ''), (string)($_POST['ai_model'] ?? ''), (int)($_POST['ai_cap'] ?? 0), !empty($_POST['ai_off']));
+            if ($err === null) {
+                $notice = 'Impostazioni dell\'assistente salvate.';
+                $cfg = App\withSettings($db, $cfg);
+            } else {
+                $error = $err;
+            }
+            goto render_admin;
+        }
+        if ($action === 'ai_clear') {
+            Admin::clearAi($db);
+            $cfg = App\withSettings($db, $cfg);
+            $notice = 'Chiave dell\'assistente rimossa: la chat sulle pagine dei negozi si nasconde.';
+            goto render_admin;
+        }
+        if ($action === 'ai_test') {
+            [$okA, $msgA] = Assistant::test($cfg);
+            if ($okA) {
+                $notice = $msgA;
+            } else {
+                $error = 'Assistente: ' . $msgA;
             }
             goto render_admin;
         }

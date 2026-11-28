@@ -324,10 +324,48 @@ final class Shop
             $script = $bar . '<script>' . str_replace('__BASE__', '/' . $slug, self::js()) . '</script>';
         }
 
+        if (!empty($acct['_ai'])) {
+            $script .= self::chatWidget($slug, $name);
+        }
         $brand = '<a class="brand" href="/' . self::h($slug) . '">' . self::h($name) . '</a>';
         $footer = 'Prenotazioni gestite con <a href="/">' . self::h((string)($cfg['site_name'] ?? 'Appuntamenti4me')) . '</a>';
         $body = '<div class="shop tp">' . $head_html . '<div class="shop-grid" id="prenota"><div>' . $book . '</div><div>' . $contacts . '</div></div></div>' . $script;
         return Pages::layout($cfg, $name, $body, false, false, '', $head, $brand, $footer);
+    }
+
+    /** Chat dell'assistente virtuale: bottone in basso a destra e pannello con la conversazione. */
+    private static function chatWidget(string $slug, string $name): string
+    {
+        $css = '#ai-b{position:fixed;right:16px;bottom:16px;z-index:60;display:flex;align-items:center;gap:8px;border:0;border-radius:999px;padding:12px 18px;background:var(--acc);color:var(--on-acc);font:600 15px/1 inherit;box-shadow:0 6px 20px rgba(0,0,0,.25);cursor:pointer}'
+            . '#ai-p{position:fixed;right:16px;bottom:16px;z-index:61;width:min(380px,calc(100vw - 32px));height:min(520px,calc(100vh - 32px));display:flex;flex-direction:column;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:18px;box-shadow:0 12px 40px rgba(0,0,0,.3);overflow:hidden}'
+            . '#ai-p[hidden]{display:none}#ai-h{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:var(--acc);color:var(--on-acc);font-weight:700}'
+            . '#ai-h button{background:none;border:0;color:inherit;font-size:20px;cursor:pointer;line-height:1}'
+            . '#ai-m{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px}'
+            . '#ai-m div{max-width:86%;padding:8px 12px;border-radius:14px;font-size:14.5px;line-height:1.45;white-space:pre-wrap;word-break:break-word}'
+            . '#ai-m .u{align-self:flex-end;background:var(--acc);color:var(--on-acc);border-bottom-right-radius:4px}'
+            . '#ai-m .a{align-self:flex-start;background:var(--soft);color:var(--ink);border-bottom-left-radius:4px}'
+            . '#ai-n{padding:4px 12px;font-size:11.5px;color:var(--muted)}'
+            . '#ai-f{display:flex;gap:8px;padding:10px;border-top:1px solid var(--line)}'
+            . '#ai-f input{flex:1;min-width:0;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:16px;background:var(--bg);color:var(--ink)}'
+            . '#ai-f button{border:0;border-radius:10px;padding:0 14px;background:var(--acc);color:var(--on-acc);font-weight:700;cursor:pointer}'
+            . '@media(max-width:640px){#ai-b{bottom:76px}}';
+        $js = <<<'JS'
+(function(){
+var B='__BASE__',b=document.getElementById('ai-b'),p=document.getElementById('ai-p'),m=document.getElementById('ai-m'),f=document.getElementById('ai-f'),i=document.getElementById('ai-i'),h=[],busy=false;
+function add(c,t){var d=document.createElement('div');d.className=c;d.textContent=t;m.appendChild(d);m.scrollTop=m.scrollHeight;return d}
+b.onclick=function(){p.hidden=false;b.hidden=true;if(!m.children.length)add('a',__HELLO__);i.focus()};
+document.getElementById('ai-x').onclick=function(){p.hidden=true;b.hidden=false};
+f.onsubmit=function(e){e.preventDefault();var t=i.value.trim();if(!t||busy)return;i.value='';add('u',t);h.push({role:'user',content:t});busy=true;var w=add('a','…');
+fetch(B+'/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:h.slice(-10)})}).then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j}})}).then(function(x){var r=x.ok?x.j.reply:(x.j.error||'Errore, riprova.');w.textContent=r;if(x.ok)h.push({role:'assistant',content:r});else h.pop()}).catch(function(){w.textContent='Connessione assente, riprova.';h.pop()}).then(function(){busy=false;m.scrollTop=m.scrollHeight})};
+})();
+JS;
+        $hello = json_encode('Ciao! Sono l\'assistente virtuale di ' . $name . '. Chiedimi orari, servizi, prezzi o come trovarci. Per prenotare usa il modulo "Prenota ora".', JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP);
+        return '<style>' . $css . '</style>'
+            . '<button type="button" id="ai-b" aria-label="Apri la chat con l\'assistente">💬 Chiedi all\'assistente</button>'
+            . '<section id="ai-p" hidden role="dialog" aria-label="Assistente virtuale"><div id="ai-h"><span>Assistente di ' . self::h($name) . '</span><button type="button" id="ai-x" aria-label="Chiudi">×</button></div>'
+            . '<div id="ai-m" aria-live="polite"></div><div id="ai-n">Assistente automatico: può sbagliare. Non scrivere dati personali.</div>'
+            . '<form id="ai-f"><input id="ai-i" maxlength="' . Assistant::MAX_MESSAGE . '" placeholder="Scrivi una domanda…" autocomplete="off" aria-label="La tua domanda"><button>Invia</button></form></section>'
+            . '<script>' . str_replace(['__BASE__', '__HELLO__'], ['/' . $slug, $hello], $js) . '</script>';
     }
 
     /** @param array<int,array<string,mixed>> $services @param array<int,array<string,mixed>> $staff */
@@ -633,6 +671,7 @@ JS;
             . '<p><b>Titolare del trattamento</b>: ' . $name . ' (contatto: ' . self::h($contact) . (trim((string)($acct['shop_phone'] ?? '')) !== '' ? ', tel. ' . self::h((string)$acct['shop_phone']) : '') . ').</p>'
             . '<p><b>Dati raccolti</b>: nome, telefono e/o email, note facoltative, servizio, data e ora richiesti. Per prevenire abusi viene conservata anche una sigla anonima (hash) dell\'indirizzo di rete usato per inviare la richiesta.</p>'
             . '<p><b>Finalità e base giuridica</b>: gestire la tua prenotazione, contattarti per confermarla, modificarla o annullarla, inviarti promemoria (base: esecuzione della richiesta e tuo consenso).</p>'
+            . (!empty($acct['_ai']) ? '<p><b>Assistente virtuale</b>: se usi la chat, le domande che scrivi vengono elaborate in automatico da un servizio di intelligenza artificiale (Anthropic) solo per risponderti, senza essere salvate dalla piattaforma. Non scrivere dati personali o sensibili nella chat: per prenotare usa il modulo.</p>' : '')
             . '<p><b>Conservazione</b>: per il tempo necessario a gestire il rapporto e gli obblighi di legge; puoi chiedere la cancellazione in qualsiasi momento.</p>'
             . '<p><b>Destinatari</b>: i dati sono visibili al titolare e al suo personale. La piattaforma ' . $site . ' li ospita e li tratta per conto del titolare come fornitore del servizio. Non vengono ceduti a terzi per marketing.</p>'
             . '<p><b>I tuoi diritti</b>: accesso, rettifica, cancellazione, limitazione, opposizione e portabilità, scrivendo al contatto indicato sopra. Puoi anche proporre reclamo al Garante per la protezione dei dati personali.</p>'

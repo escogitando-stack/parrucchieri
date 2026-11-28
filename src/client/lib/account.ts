@@ -38,6 +38,9 @@ export interface AccountInfo {
   review_url: string;
   photos: number[];
   photo_limit?: number;
+  ai_available?: boolean;
+  ai_enabled?: number;
+  ai_notes?: string;
   daily_summary: boolean;
   impersonating?: boolean;
 }

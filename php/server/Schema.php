@@ -23,7 +23,7 @@ namespace App;
  */
 final class Schema
 {
-    public const VERSION = 13;
+    public const VERSION = 14;
 
     /** Tabelle i cui dati appartengono a un negozio. */
     private const OWNED = ['clients', 'staff', 'services', 'appointments', 'blocked_slots', 'products', 'working_hours'];
@@ -78,6 +78,16 @@ final class Schema
                     $db->exec($sql);
                 }
             }
+            $db->metaSet('schema_version', '13');
+        }
+        if ($version < 14) {
+            $int = $db->driver === 'sqlite' ? 'INTEGER' : 'INT';
+            if (!$db->columnExists('accounts', 'ai_enabled')) {
+                $db->exec("ALTER TABLE accounts ADD COLUMN ai_enabled $int NOT NULL DEFAULT 0");
+            }
+            if (!$db->columnExists('accounts', 'ai_notes')) {
+                $db->exec("ALTER TABLE accounts ADD COLUMN ai_notes VARCHAR(2000) NOT NULL DEFAULT ''");
+            }
             $db->metaSet('schema_version', (string)self::VERSION);
         }
     }
@@ -129,6 +139,8 @@ final class Schema
                 cover_mime VARCHAR(32) NOT NULL DEFAULT '',
                 cover_data MEDIUMTEXT NULL,
                 review_url VARCHAR(500) NOT NULL DEFAULT '',
+                ai_enabled $int NOT NULL DEFAULT 0,
+                ai_notes VARCHAR(2000) NOT NULL DEFAULT '',
                 trial_mail_stage $int NOT NULL DEFAULT 0,
                 onboard_mail $int NOT NULL DEFAULT 0,
                 created_at $ts

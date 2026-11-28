@@ -237,3 +237,14 @@ Dal pannello amministratore (sezione Abbonamenti, accanto ai giorni di prova) si
 ### Ridimensionamento automatico delle foto
 
 Le foto della galleria e la copertina si ottimizzano da sole: il browser le riduce a 1400 px (JPEG, qualità calante finché restano leggere) prima dell'invio e il server rifà il controllo con GD (`Shop::shrink`): lato lungo massimo 1400 px, ricompressione fino a stare sotto 1,5 MB, PNG solo se hanno trasparenze. Accetta file fino a 12 MB; senza GD valgono i vecchi limiti (1,5 MB).
+
+## Assistente virtuale (chat per i clienti)
+
+Sulla pagina pubblica del negozio compare un pulsante "Chiedi all'assistente": il cliente scrive una domanda e l'assistente risponde al posto del titolare (orari, servizi, prezzi, indirizzo, regole). Non prenota: rimanda al modulo "Prenota ora". Usa l'API Anthropic (`server/Assistant.php`).
+
+- **Amministratore** (pannello admin → Assistente virtuale): chiave API Anthropic (`sk-ant-…`, cifrata a riposo con lo standard `segreti.php`), modello (default `claude-haiku-5-5`), limite giornaliero di messaggi per negozio (default 200), interruttore per spegnerlo su tutta la piattaforma, pulsante "Prova collegamento". Senza chiave la chat non compare e le opzioni del titolare restano nascoste.
+- **Titolare** (Pagina e prenotazioni → Assistente virtuale): lo accende e scrive "cosa deve sapere" (FAQ, regole, parcheggio, disdette…). Il resto lo ricava dalla pagina.
+- **Cosa conosce**: solo dati pubblici del negozio (nome, presentazione, contatti, orari, servizi online con durata e prezzo, operatori) più le note del titolare. Se non sa, lo dice e invita a contattare il negozio. Ignora i tentativi di cambiargli le regole.
+- **Limiti e costi**: 20 domande all'ora per visitatore, tetto giornaliero per negozio, messaggi di massimo 500 caratteri, ultimi 10 turni, risposte brevi (400 token). Nessuna conversazione viene salvata; solo contatori anonimi in `_meta`.
+- **Privacy**: la pagina privacy del negozio cita l'assistente solo quando è attivo, e la chat avvisa di non scrivere dati personali.
+- Schema v14: colonne `accounts.ai_enabled` e `accounts.ai_notes`.
