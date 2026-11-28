@@ -22,6 +22,7 @@ $path = (string)parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
 
 // Demo pubblica (/esempio/api/...): stessa API, ma sul database usa e getta del visitatore.
 $demo = null;
+$cfgReal = null;
 if (str_starts_with($path, App\Demo::BASE . '/api/')) {
     $demo = App\Demo::available() ? App\Demo::open() : null;
     if ($demo === null) {
@@ -60,9 +61,10 @@ if ($method !== 'GET' && $method !== 'HEAD') {
 try {
     $db = $demo !== null ? $demo[0] : App\connect($cfg);
     try {   // foto consentite in demo/prova: le sceglie l'amministratore (si legge dal database vero)
-        $realDb = $demo !== null ? App\connect($cfgReal) : $db;
+        $realCfg = $cfgReal ?? $cfg;
+        $realDb = $demo !== null ? App\connect($realCfg) : $db;
         $cfg['demo_max_photos'] = App\Admin::demoMaxPhotos($realDb);
-        $cfg['ai_available'] = App\Assistant::available(App\withSettings($realDb, $cfgReal));
+        $cfg['ai_available'] = App\Assistant::available(App\withSettings($realDb, $realCfg));
     } catch (Throwable $e) {
         $cfg['demo_max_photos'] = null;
     }
