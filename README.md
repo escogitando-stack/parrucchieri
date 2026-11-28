@@ -229,3 +229,7 @@ AGPL-3.0
 
 ## Sicurezza: segreti cifrati
 Chiave Stripe e segreto del webhook stanno nel database **cifrati** (AES-256-GCM, prefisso `enc1:`). La chiave di cifratura è in `server/config.key.php`, creato da solo alla prima richiesta, escluso da Git e dal deploy: **non cancellarlo** (se lo perdi basta reinserire le chiavi dal backoffice) e salvalo nei backup separatamente dal database. I valori salvati col vecchio metodo (`enc:`) restano leggibili e passano da soli al nuovo formato. Su Stripe conviene usare una *Restricted key* (`rk_live_…`).
+
+## Foto nelle demo e in prova
+
+Dal pannello amministratore (sezione Abbonamenti, accanto ai giorni di prova) si sceglie quante foto della galleria può inserire chi prova l'app: la demo pubblica `/esempio` e i negozi in prova gratuita (0–30, valore salvato in `demo_max_photos`). Chi ha l'abbonamento attivo può caricarne fino a 8. Se il valore non è impostato resta il massimo di 8.

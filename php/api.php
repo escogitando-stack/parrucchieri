@@ -28,7 +28,9 @@ if (str_starts_with($path, App\Demo::BASE . '/api/')) {
         respond(401, ['error' => 'La demo è scaduta: ricarica la pagina per ricominciare.', 'code' => 'demo_expired']);
     }
     $path = substr($path, strlen(App\Demo::BASE));
+    $cfgReal = $cfg;
     $cfg = App\Demo::cfg($cfg);
+    $cfg['is_demo'] = true;
     $accountId = $demo[1];
 } else {
     $accountId = Auth::accountId();
@@ -57,6 +59,11 @@ if ($method !== 'GET' && $method !== 'HEAD') {
 
 try {
     $db = $demo !== null ? $demo[0] : App\connect($cfg);
+    try {   // foto consentite in demo/prova: le sceglie l'amministratore (si legge dal database vero)
+        $cfg['demo_max_photos'] = App\Admin::demoMaxPhotos($demo !== null ? App\connect($cfgReal) : $db);
+    } catch (Throwable $e) {
+        $cfg['demo_max_photos'] = null;
+    }
     $acct = Auth::account($db, $accountId);
     if ($acct === null) {
         respond(401, ['error' => 'Non autorizzato: effettua di nuovo l\'accesso']);

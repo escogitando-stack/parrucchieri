@@ -234,7 +234,7 @@ export function ShopSettings() {
             <div className="space-y-1.5"><Label htmlFor="shop-address">Indirizzo</Label><Input id="shop-address" className="h-11 sm:h-10" value={f.shop_address ?? ""} onInput={set("shop_address")} /></div>
           </div>
           <div className="space-y-2">
-            <Label>Galleria dei tuoi lavori ({(account.photos ?? []).length}/8)</Label>
+            <Label>Galleria dei tuoi lavori ({(account.photos ?? []).length}/{account.photo_limit ?? 8})</Label>
             <div className="flex flex-wrap gap-2">
               {(account.photos ?? []).map((id) => (
                 <div key={id} className="relative">
@@ -242,14 +242,14 @@ export function ShopSettings() {
                   <button type="button" disabled={photoBusy} onClick={() => removePhoto(id)} className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full border bg-white text-xs shadow" aria-label="Togli la foto">✕</button>
                 </div>
               ))}
-              {(account.photos ?? []).length < 8 && (
+              {(account.photos ?? []).length < (account.photo_limit ?? 8) && (
                 <button type="button" disabled={photoBusy} onClick={() => photoRef.current?.click()} className="flex h-20 w-20 items-center justify-center rounded-md border border-dashed text-xs text-muted-foreground">
                   {photoBusy ? "..." : "+ Aggiungi"}
                 </button>
               )}
               <input ref={photoRef} type="file" multiple accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => addPhotos((e.target as HTMLInputElement).files)} />
             </div>
-            <p className="text-xs text-muted-foreground">Fino a 8 foto del negozio o dei tuoi lavori: compaiono nella tua pagina sotto i servizi. La prima è la più grande.</p>
+            <p className="text-xs text-muted-foreground">Fino a {account.photo_limit ?? 8} foto del negozio o dei tuoi lavori: compaiono nella tua pagina sotto i servizi. La prima è la più grande.</p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="shop-review">Link per le recensioni Google</Label>

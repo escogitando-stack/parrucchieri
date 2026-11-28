@@ -174,6 +174,23 @@ final class Admin
         $db->exec("DELETE FROM _meta WHERE meta_key IN ('stripe_secret_key', 'stripe_webhook_secret')");
     }
 
+    /** Foto che si possono caricare nella demo (/esempio) e durante la prova (null se non impostato: vale il massimo normale). */
+    public static function demoMaxPhotos(Db $db): ?int
+    {
+        $v = $db->metaGet('demo_max_photos');
+        return $v !== null && ctype_digit($v) ? (int)$v : null;
+    }
+
+    /** Imposta le foto consentite in demo e in prova (0–30). */
+    public static function setDemoMaxPhotos(Db $db, int $n): bool
+    {
+        if ($n < 0 || $n > 30) {
+            return false;
+        }
+        $db->metaSet('demo_max_photos', (string)$n);
+        return true;
+    }
+
     /** Imposta i giorni di prova dei NUOVI iscritti (1–365). */
     public static function setTrialDays(Db $db, int $days): bool
     {

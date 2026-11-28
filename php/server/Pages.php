@@ -960,6 +960,12 @@ HTML;
             . '<input id="td" name="trial_days" type="number" min="1" max="365" value="' . (int)($cfg['trial_days'] ?? 30) . '" required style="width:90px">'
             . '<button class="mini" name="azione" value="trial_days">Salva</button>'
             . '<span class="muted" style="font-size:13px">Vale per i nuovi iscritti e per i testi del sito; chi è già in prova mantiene la sua scadenza (la puoi allungare da "Azioni").</span></form>';
+        $photoForm = '<form method="post" action="/admin" class="pk-row" style="margin:0 0 14px;align-items:center">'
+            . '<input type="hidden" name="csrf" value="' . self::h($csrf) . '"><input type="hidden" name="id" value="0">'
+            . '<label for="dp" style="font-weight:600">Foto nella demo e in prova</label>'
+            . '<input id="dp" name="demo_photos" type="number" min="0" max="30" value="' . (int)($cfg['demo_max_photos'] ?? Shop::MAX_PHOTOS) . '" required style="width:90px">'
+            . '<button class="mini" name="azione" value="demo_photos">Salva</button>'
+            . '<span class="muted" style="font-size:13px">Quante foto della galleria può inserire chi prova l\'app (demo /esempio e negozi in prova). Chi ha l\'abbonamento attivo ne ha fino a ' . Shop::MAX_PHOTOS . '.</span></form>';
         $sk = (string)($cfg['stripe']['secret_key'] ?? '');
         $wh = (string)($cfg['stripe']['webhook_secret'] ?? '');
         $mask = static fn(string $v): string => $v === '' ? 'non impostata' : '••••' . substr($v, -4);
@@ -982,7 +988,7 @@ HTML;
             . '<li>Copia il <b>segreto di firma</b> (whsec_…) del webhook e incollalo qui, poi premi "Prova collegamento".</li>'
             . '<li>Su ogni piano inserisci il codice prezzo Stripe (<code>price_…</code>) per far pagare online.</li></ol></div></div>';
         $planBox = '<details class="card" style="margin:0 0 18px"' . ($plans === [] ? ' open' : '') . '><summary style="cursor:pointer;font-weight:700">Piani di abbonamento e prova (' . count($plans) . ')</summary>'
-            . '<div style="margin-top:12px">' . $stripeBox . $trialForm . '</div>'
+            . '<div style="margin-top:12px">' . $stripeBox . $trialForm . $photoForm . '</div>'
             . '<p class="sub" style="text-align:left;margin:8px 0 12px;font-size:14px">Nome, durata in giorni e prezzo. I piani attivi compaiono nella home del sito e nella pagina Abbonamento; con il codice Stripe il cliente può pagare online, senza codice li assegni tu da "Azioni".</p>'
             . $planRows . '</details>';
         $demoBox = self::adminInsights((array)($extra['insights'] ?? []), $csrf) . self::adminDemoBox($csrf, $extra);

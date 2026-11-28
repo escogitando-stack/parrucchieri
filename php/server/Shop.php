@@ -28,10 +28,10 @@ final class Shop
     }
 
     /** Aggiunge una foto (data URL, max 1,5 MB). Restituisce un errore oppure null. */
-    public static function addPhoto(Db $db, int $accountId, string $dataUrl): ?string
+    public static function addPhoto(Db $db, int $accountId, string $dataUrl, int $limit = self::MAX_PHOTOS): ?string
     {
-        if (count(self::photoIds($db, $accountId)) >= self::MAX_PHOTOS) {
-            return 'Puoi caricare al massimo ' . self::MAX_PHOTOS . ' foto: togline una prima di aggiungerne altre.';
+        if (count(self::photoIds($db, $accountId)) >= $limit) {
+            return 'Puoi caricare al massimo ' . $limit . ' foto' . ($limit < self::MAX_PHOTOS ? ' durante la prova (con l\'abbonamento fino a ' . self::MAX_PHOTOS . ')' : '') . ': togline una prima di aggiungerne altre.';
         }
         $img = self::parseImage($dataUrl, 1500);
         if ($img === null) {

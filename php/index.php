@@ -637,6 +637,15 @@ if ($path === '/admin') {
             }
             goto render_admin;
         }
+        if ($action === 'demo_photos') {
+            if (Admin::setDemoMaxPhotos($db, (int)($_POST['demo_photos'] ?? -1))) {
+                $cfg['demo_max_photos'] = (int)$_POST['demo_photos'];
+                $notice = 'Foto consentite in demo e durante la prova: ' . (int)$_POST['demo_photos'] . '. Chi ha l\'abbonamento attivo può averne fino a ' . Shop::MAX_PHOTOS . '.';
+            } else {
+                $error = 'Inserisci un numero di foto tra 0 e 30.';
+            }
+            goto render_admin;
+        }
         if ($action === 'trial_days') {
             if (Admin::setTrialDays($db, (int)($_POST['trial_days'] ?? 0))) {
                 $cfg['trial_days'] = (int)$_POST['trial_days'];

@@ -37,6 +37,7 @@ export interface AccountInfo {
   has_cover: boolean;
   review_url: string;
   photos: number[];
+  photo_limit?: number;
   daily_summary: boolean;
   impersonating?: boolean;
 }

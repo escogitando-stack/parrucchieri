@@ -66,6 +66,10 @@ function withSettings(Db $db, array $cfg): array
     if ($days !== null) {
         $cfg['trial_days'] = $days;
     }
+    $dp = Admin::demoMaxPhotos($db);
+    if ($dp !== null) {
+        $cfg['demo_max_photos'] = $dp;
+    }
     foreach (['secret_key' => 'stripe_secret_key', 'webhook_secret' => 'stripe_webhook_secret'] as $k => $meta) {
         $stored = $db->metaGet($meta);
         $v = Admin::unseal($cfg, $stored);

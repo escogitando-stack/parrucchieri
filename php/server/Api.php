@@ -24,6 +24,17 @@ final class Api
     private const STATUSES = ['requested', 'booked', 'confirmed', 'in_progress', 'completed', 'cancelled', 'no_show'];
 
     /** @param array<string,mixed> $cfg */
+    /** Quante foto può avere la galleria: nella demo e durante la prova vale il numero scelto dall'amministratore, altrimenti il massimo. */
+    private function photoLimit(array $acct): int
+    {
+        $d = $this->cfg['demo_max_photos'] ?? null;
+        if ($d === null) {
+            return Shop::MAX_PHOTOS;
+        }
+        $trial = !empty($this->cfg['is_demo']) || ($acct !== [] && Auth::plan($acct)['state'] === 'trial');
+        return $trial ? (int)$d : Shop::MAX_PHOTOS;
+    }
+
     public function __construct(private Db $db, private int $acct, private array $cfg = [])
     {
     }
@@ -229,6 +240,7 @@ final class Api
             'has_cover' => ($acct['cover_mime'] ?? '') !== '',
             'review_url' => (string)($acct['review_url'] ?? ''),
             'photos' => Shop::photoIds($this->db, $this->acct),
+            'photo_limit' => $this->photoLimit($acct),
             'impersonating' => Auth::impersonator() !== null,
             'daily_summary' => $this->db->metaGet('nosummary_' . $this->acct) !== '1',
         ];
@@ -329,7 +341,7 @@ final class Api
         }
         $addPhoto = $this->optString($b, 'add_photo');
         if ($addPhoto !== null && $addPhoto !== '') {
-            $err = Shop::addPhoto($this->db, $this->acct, $addPhoto);
+            $err = Shop::addPhoto($this->db, $this->acct, $addPhoto, $this->photoLimit(Auth::account($this->db, $this->acct) ?? []));
             if ($err !== null) {
                 throw new HttpError(400, $err);
             }
