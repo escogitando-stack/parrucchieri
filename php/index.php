@@ -8,6 +8,7 @@ use App\Pages;
 use App\Booking;
 use App\Shop;
 use App\Availability;
+use App\Assistant;
 
 require __DIR__ . '/server/bootstrap.php';
 
